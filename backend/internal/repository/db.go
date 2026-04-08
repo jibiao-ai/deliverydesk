@@ -113,17 +113,20 @@ func seedDefaultData(db *gorm.DB) {
 			Role:        "admin",
 			AuthType:    "local",
 		}
-		db.Create(&admin)
-		logger.Log.Info("Default admin user created")
-	} else {
-		// Admin exists — verify password is correct, if not, reset it
-		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(adminPlainPassword)); err != nil {
-			// Password hash is invalid or doesn't match, reset it
-			db.Model(&admin).Update("password", adminPasswordHash)
-			logger.Log.Warn("Admin password was invalid, has been reset to default")
-		} else {
-			logger.Log.Info("Admin user exists with correct password")
+		if err := db.Create(&admin).Error; err != nil {
+			logger.Log.Errorf("Failed to create admin user: %v", err)
+			return
 		}
+		logger.Log.Infof("Default admin user created (id=%d, hash_len=%d)", admin.ID, len(admin.Password))
+	} else {
+		// Admin exists — always force reset password to ensure it works
+		// This fixes issues where the password hash was corrupted or stored incorrectly
+		admin.Password = adminPasswordHash
+		if err := db.Save(&admin).Error; err != nil {
+			logger.Log.Errorf("Failed to reset admin password: %v", err)
+			return
+		}
+		logger.Log.Infof("Admin password has been reset to default (id=%d, hash_len=%d)", admin.ID, len(admin.Password))
 	}
 
 	// Seed default AI providers (13 vendors)
