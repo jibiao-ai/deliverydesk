@@ -1,5 +1,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# Use China mainland npm mirror for faster installs
+RUN npm config set registry https://registry.npmmirror.com
+
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
