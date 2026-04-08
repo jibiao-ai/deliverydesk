@@ -74,7 +74,9 @@ export const testLDAPConfig = (id) => api.post(`/ldap-configs/${id}/test`);
 
 // AI Providers
 export const getAIProviders = () => api.get('/ai-providers');
+export const createAIProvider = (data) => api.post('/ai-providers', data);
 export const updateAIProvider = (id, data) => api.put(`/ai-providers/${id}`, data);
+export const deleteAIProvider = (id) => api.delete(`/ai-providers/${id}`);
 export const testAIProvider = (id) => api.post(`/ai-providers/${id}/test`);
 
 // Website Links

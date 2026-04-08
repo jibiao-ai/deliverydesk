@@ -572,6 +572,7 @@ func (h *Handler) GetAIProviders(c *gin.Context) {
 		IsDefault   bool      `json:"is_default"`
 		IsEnabled   bool      `json:"is_enabled"`
 		Description string    `json:"description"`
+		IconURL     string    `json:"icon_url"`
 		Configured  bool      `json:"configured"`
 	}
 	views := make([]AIProviderView, len(providers))
@@ -581,20 +582,85 @@ func (h *Handler) GetAIProviders(c *gin.Context) {
 			Name: p.Name, Label: p.Label, APIKey: maskAPIKey(p.APIKey),
 			BaseURL: p.BaseURL, Model: p.Model, IsDefault: p.IsDefault,
 			IsEnabled: p.IsEnabled, Description: p.Description,
-			Configured: p.APIKey != "",
+			IconURL: p.IconURL, Configured: p.APIKey != "",
 		}
 	}
 	response.Success(c, views)
 }
 
+func (h *Handler) CreateAIProvider(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name" binding:"required"`
+		Label       string `json:"label" binding:"required"`
+		APIKey      string `json:"api_key"`
+		BaseURL     string `json:"base_url" binding:"required"`
+		Model       string `json:"model" binding:"required"`
+		IsDefault   bool   `json:"is_default"`
+		IsEnabled   bool   `json:"is_enabled"`
+		Description string `json:"description"`
+		IconURL     string `json:"icon_url"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请填写必要字段: name, label, base_url, model")
+		return
+	}
+	// Check uniqueness
+	var existing model.AIProvider
+	if err := repository.DB.Where("name = ?", req.Name).First(&existing).Error; err == nil {
+		response.BadRequest(c, fmt.Sprintf("厂商标识 '%s' 已存在", req.Name))
+		return
+	}
+	provider := model.AIProvider{
+		Name:        req.Name,
+		Label:       req.Label,
+		APIKey:      req.APIKey,
+		BaseURL:     req.BaseURL,
+		Model:       req.Model,
+		IsDefault:   req.IsDefault,
+		IsEnabled:   req.IsEnabled,
+		Description: req.Description,
+		IconURL:     req.IconURL,
+	}
+	if req.IsDefault {
+		repository.DB.Model(&model.AIProvider{}).Where("1=1").Update("is_default", false)
+	}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	recordOperationLog(c, "ai_provider", "create", provider.ID, provider.Label,
+		fmt.Sprintf("新增AI模型厂商: %s (%s)", provider.Label, provider.Name))
+	provider.APIKey = maskAPIKey(provider.APIKey)
+	response.Success(c, provider)
+}
+
+func (h *Handler) DeleteAIProvider(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	var provider model.AIProvider
+	if err := repository.DB.First(&provider, id).Error; err != nil {
+		response.BadRequest(c, "provider not found")
+		return
+	}
+	if err := repository.DB.Delete(&model.AIProvider{}, id).Error; err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	recordOperationLog(c, "ai_provider", "delete", uint(id), provider.Label,
+		fmt.Sprintf("删除AI模型厂商: %s (%s)", provider.Label, provider.Name))
+	response.Success(c, nil)
+}
+
 func (h *Handler) UpdateAIProvider(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	var req struct {
-		APIKey    string `json:"api_key"`
-		BaseURL   string `json:"base_url"`
-		Model     string `json:"model"`
-		IsDefault bool   `json:"is_default"`
-		IsEnabled bool   `json:"is_enabled"`
+		Label       string `json:"label"`
+		APIKey      string `json:"api_key"`
+		BaseURL     string `json:"base_url"`
+		Model       string `json:"model"`
+		IsDefault   bool   `json:"is_default"`
+		IsEnabled   bool   `json:"is_enabled"`
+		Description string `json:"description"`
+		IconURL     string `json:"icon_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
@@ -605,6 +671,9 @@ func (h *Handler) UpdateAIProvider(c *gin.Context) {
 		response.BadRequest(c, "provider not found")
 		return
 	}
+	if req.Label != "" {
+		provider.Label = req.Label
+	}
 	if req.APIKey != "" && req.APIKey != maskAPIKey(provider.APIKey) {
 		provider.APIKey = req.APIKey
 	}
@@ -613,6 +682,12 @@ func (h *Handler) UpdateAIProvider(c *gin.Context) {
 	}
 	if req.Model != "" {
 		provider.Model = req.Model
+	}
+	if req.Description != "" {
+		provider.Description = req.Description
+	}
+	if req.IconURL != "" {
+		provider.IconURL = req.IconURL
 	}
 	provider.IsEnabled = req.IsEnabled
 	if req.IsDefault {
@@ -625,6 +700,8 @@ func (h *Handler) UpdateAIProvider(c *gin.Context) {
 		response.InternalError(c, err.Error())
 		return
 	}
+	recordOperationLog(c, "ai_provider", "update", provider.ID, provider.Label,
+		fmt.Sprintf("更新AI模型厂商: %s", provider.Label))
 	provider.APIKey = maskAPIKey(provider.APIKey)
 	response.Success(c, provider)
 }

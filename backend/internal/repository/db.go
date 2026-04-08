@@ -112,13 +112,21 @@ func seedDefaultData(db *gorm.DB) {
 		logger.Log.Info("Default admin user created")
 	}
 
-	// Seed default AI providers
+	// Seed default AI providers (13 vendors)
 	defaultProviders := []model.AIProvider{
-		{Name: "openai", Label: "OpenAI", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o", IsDefault: true, IsEnabled: true, Description: "OpenAI GPT 系列模型"},
-		{Name: "deepseek", Label: "DeepSeek", BaseURL: "https://api.deepseek.com/v1", Model: "deepseek-chat", IsDefault: false, IsEnabled: true, Description: "深度求索 DeepSeek 系列模型"},
-		{Name: "qwen", Label: "通义千问", BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", Model: "qwen-plus", IsDefault: false, IsEnabled: true, Description: "阿里云通义千问系列模型"},
-		{Name: "glm", Label: "智谱 GLM", BaseURL: "https://open.bigmodel.cn/api/paas/v4", Model: "glm-4", IsDefault: false, IsEnabled: true, Description: "智谱 AI GLM 系列模型"},
-		{Name: "siliconflow", Label: "硅基流动 SiliconFlow", BaseURL: "https://api.siliconflow.cn/v1", Model: "Qwen/Qwen2.5-7B-Instruct", IsDefault: false, IsEnabled: true, Description: "硅基流动，支持多种开源模型"},
+		{Name: "openai", Label: "OpenAI", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o", IsDefault: true, IsEnabled: true, Description: "GPT-4o / GPT-4 / GPT-3.5 系列", IconURL: "openai"},
+		{Name: "deepseek", Label: "DeepSeek", BaseURL: "https://api.deepseek.com/v1", Model: "deepseek-chat", IsDefault: false, IsEnabled: true, Description: "深度求索，高性价比国产大模型", IconURL: "deepseek"},
+		{Name: "qwen", Label: "通义千问", BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", Model: "qwen-plus", IsDefault: false, IsEnabled: true, Description: "阿里云 Qwen-Plus / Qwen-Max 系列", IconURL: "qwen"},
+		{Name: "glm", Label: "智谱 GLM", BaseURL: "https://open.bigmodel.cn/api/paas/v4", Model: "glm-4", IsDefault: false, IsEnabled: true, Description: "智谱 AI GLM-4 / GLM-4-Flash 系列", IconURL: "glm"},
+		{Name: "minimax", Label: "MiniMax", BaseURL: "https://api.minimax.chat/v1", Model: "abab6.5s-chat", IsDefault: false, IsEnabled: true, Description: "MiniMax abab 系列", IconURL: "minimax"},
+		{Name: "siliconflow", Label: "硅基流动", BaseURL: "https://api.siliconflow.cn/v1", Model: "Qwen/Qwen2.5-7B-Instruct", IsDefault: false, IsEnabled: true, Description: "支持 Qwen / DeepSeek / GLM 开源模型推理", IconURL: "siliconflow"},
+		{Name: "moonshot", Label: "Moonshot (Kimi)", BaseURL: "https://api.moonshot.cn/v1", Model: "moonshot-v1-8k", IsDefault: false, IsEnabled: true, Description: "超长上下文，8k / 32k / 128k", IconURL: "moonshot"},
+		{Name: "ernie", Label: "百度文心一言", BaseURL: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat", Model: "ernie-4.5-8k", IsDefault: false, IsEnabled: true, Description: "ERNIE 4.5 / 4.0 / Speed 系列", IconURL: "ernie"},
+		{Name: "doubao", Label: "火山引擎（豆包）", BaseURL: "https://ark.cn-beijing.volces.com/api/v3", Model: "doubao-pro-4k", IsDefault: false, IsEnabled: true, Description: "字节豆包 doubao-pro / lite 系列", IconURL: "doubao"},
+		{Name: "hunyuan", Label: "腾讯混元", BaseURL: "https://hunyuan.tencentcloudapi.com", Model: "hunyuan-pro", IsDefault: false, IsEnabled: true, Description: "混元 pro / standard 系列", IconURL: "hunyuan"},
+		{Name: "baichuan", Label: "百川智能", BaseURL: "https://api.baichuan-ai.com/v1", Model: "Baichuan4", IsDefault: false, IsEnabled: true, Description: "Baichuan4 / Baichuan3-Turbo 系列", IconURL: "baichuan"},
+		{Name: "anthropic", Label: "Anthropic Claude", BaseURL: "https://api.anthropic.com/v1", Model: "claude-3-5-sonnet-20241022", IsDefault: false, IsEnabled: true, Description: "claude-3-5-sonnet / haiku / opus", IconURL: "anthropic"},
+		{Name: "gemini", Label: "Google Gemini", BaseURL: "https://generativelanguage.googleapis.com/v1beta", Model: "gemini-2.0-flash", IsDefault: false, IsEnabled: true, Description: "gemini-2.0-flash / 1.5-pro 系列", IconURL: "gemini"},
 	}
 	for _, p := range defaultProviders {
 		var existing model.AIProvider

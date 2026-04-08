@@ -96,7 +96,9 @@ func main() {
 
 			// AI Providers
 			auth.GET("/ai-providers", h.GetAIProviders)
+			auth.POST("/ai-providers", h.CreateAIProvider)
 			auth.PUT("/ai-providers/:id", h.UpdateAIProvider)
+			auth.DELETE("/ai-providers/:id", h.DeleteAIProvider)
 			auth.POST("/ai-providers/:id/test", h.TestAIProvider)
 
 			// Website Links
