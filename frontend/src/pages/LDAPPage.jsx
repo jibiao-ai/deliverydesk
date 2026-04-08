@@ -60,7 +60,7 @@ export default function LDAPPage() {
     finally { setTesting(p => ({ ...p, [id]: false })); }
   };
 
-  if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>;
+  if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary-600" /></div>;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -71,7 +71,7 @@ export default function LDAPPage() {
               <h2 className="text-lg font-semibold text-gray-800">LDAP 认证配置</h2>
               <p className="text-sm text-gray-400">管理企业LDAP/Active Directory服务对接，普通用户可通过LDAP登录</p>
             </div>
-            <button onClick={openCreate} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            <button onClick={openCreate} className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
               <Plus className="w-4 h-4" /> 新增 LDAP
             </button>
           </div>
@@ -86,23 +86,23 @@ export default function LDAPPage() {
               <div className="space-y-3">
                 {configs.map(cfg => (
                   <div key={cfg.id} className="flex items-center gap-4 px-5 py-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all">
-                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                      <Server className="w-5 h-5 text-blue-600" />
+                    <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">
+                      <Server className="w-5 h-5 text-primary-600" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-800 text-sm">{cfg.name}</span>
-                        {cfg.is_default && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">默认</span>}
+                        {cfg.is_default && <span className="text-xs px-2 py-0.5 rounded-full bg-primary-50 text-primary-600 border border-primary-200">默认</span>}
                         {cfg.is_enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-gray-400" />}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">{cfg.host}:{cfg.port} | BaseDN: {cfg.base_dn}</p>
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => handleTest(cfg.id)} disabled={testing[cfg.id]}
-                        className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg" title="测试连接">
+                        className="p-1.5 text-gray-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg" title="测试连接">
                         {testing[cfg.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
                       </button>
-                      <button onClick={() => openEdit(cfg)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="编辑">
+                      <button onClick={() => openEdit(cfg)} className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg" title="编辑">
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button onClick={() => handleDelete(cfg.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg" title="删除">
@@ -117,12 +117,12 @@ export default function LDAPPage() {
         </div>
 
         {/* Info card */}
-        <div className="bg-blue-50 rounded-xl border border-blue-200 p-5">
+        <div className="bg-primary-50 rounded-xl border border-primary-200 p-5">
           <div className="flex items-start gap-3">
-            <Shield className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <Shield className="w-5 h-5 text-primary-600 mt-0.5 flex-shrink-0" />
             <div>
-              <h3 className="text-sm font-semibold text-blue-800">LDAP 认证说明</h3>
-              <ul className="text-xs text-blue-600 mt-1 space-y-1 list-disc list-inside">
+              <h3 className="text-sm font-semibold text-primary-800">LDAP 认证说明</h3>
+              <ul className="text-xs text-primary-600 mt-1 space-y-1 list-disc list-inside">
                 <li>管理员可在此页面配置企业LDAP/AD服务器信息</li>
                 <li>配置完成后，普通用户可在登录页选择"LDAP登录"使用域账号</li>
                 <li>首次LDAP登录的用户将自动创建平台账号（默认普通用户角色）</li>
@@ -145,28 +145,28 @@ export default function LDAPPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">名称</label>
-                  <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="如：公司LDAP" />
+                  <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="如：公司LDAP" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">服务器地址</label>
-                  <input value={form.host} onChange={e => setForm({...form, host: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="ldap.example.com" />
+                  <input value={form.host} onChange={e => setForm({...form, host: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="ldap.example.com" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">端口</label>
-                  <input type="number" value={form.port} onChange={e => setForm({...form, port: parseInt(e.target.value)||389})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" value={form.port} onChange={e => setForm({...form, port: parseInt(e.target.value)||389})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Base DN</label>
-                  <input value={form.base_dn} onChange={e => setForm({...form, base_dn: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="dc=example,dc=com" />
+                  <input value={form.base_dn} onChange={e => setForm({...form, base_dn: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="dc=example,dc=com" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">Bind DN</label>
-                <input value={form.bind_dn} onChange={e => setForm({...form, bind_dn: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="cn=admin,dc=example,dc=com" />
+                <input value={form.bind_dn} onChange={e => setForm({...form, bind_dn: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="cn=admin,dc=example,dc=com" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">Bind Password {editConfig && <span className="text-xs text-gray-400">(留空不修改)</span>}</label>
-                <input type="password" value={form.bind_password} onChange={e => setForm({...form, bind_password: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                <input type="password" value={form.bind_password} onChange={e => setForm({...form, bind_password: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" />
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
@@ -199,7 +199,7 @@ export default function LDAPPage() {
             </div>
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
               <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-sm">取消</button>
-              <button onClick={handleSave} disabled={saving} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
+              <button onClick={handleSave} disabled={saving} className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editConfig ? '保存修改' : '创建配置'}
               </button>

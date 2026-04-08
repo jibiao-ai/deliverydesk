@@ -52,11 +52,11 @@ function ProviderCard({ provider, onEdit, onTest, onToggle, onSetDefault, onDele
 
   return (
     <div className={`relative bg-white rounded-xl border-2 transition-all duration-200 hover:shadow-lg group ${
-      provider.is_enabled ? 'border-gray-200 hover:border-blue-300' : 'border-gray-100 opacity-60'
-    } ${provider.is_default ? 'ring-2 ring-blue-400 ring-offset-2' : ''}`}>
+      provider.is_enabled ? 'border-gray-200 hover:border-primary-300' : 'border-gray-100 opacity-60'
+    } ${provider.is_default ? 'ring-2 ring-primary-400 ring-offset-2' : ''}`}>
       {/* Default badge */}
       {provider.is_default && (
-        <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 bg-blue-500 text-white text-xs font-medium rounded-full shadow-sm">
+        <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 bg-primary-500 text-white text-xs font-medium rounded-full shadow-sm">
           默认模型
         </div>
       )}
@@ -94,7 +94,7 @@ function ProviderCard({ provider, onEdit, onTest, onToggle, onSetDefault, onDele
           <div className="flex items-center gap-2 text-sm">
             <Cpu className="w-4 h-4 text-gray-400" />
             <span className="text-gray-500">推荐模型:</span>
-            <span className="font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded text-xs">{provider.model}</span>
+            <span className="font-mono text-primary-600 bg-primary-50 px-2 py-0.5 rounded text-xs">{provider.model}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <Globe className="w-4 h-4 text-gray-400" />
@@ -117,7 +117,7 @@ function ProviderCard({ provider, onEdit, onTest, onToggle, onSetDefault, onDele
           <div className="flex items-center gap-1">
             <button
               onClick={() => onEdit(provider)}
-              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
               title="编辑配置"
             >
               <Settings className="w-4 h-4" />
@@ -152,7 +152,7 @@ function ProviderCard({ provider, onEdit, onTest, onToggle, onSetDefault, onDele
           <button
             onClick={() => onToggle(provider)}
             className={`relative w-11 h-6 rounded-full transition-colors ${
-              provider.is_enabled ? 'bg-blue-500' : 'bg-gray-300'
+              provider.is_enabled ? 'bg-primary-500' : 'bg-gray-300'
             }`}
             title={provider.is_enabled ? '点击禁用' : '点击启用'}
           >
@@ -234,7 +234,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 rounded-t-2xl flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-blue-500" />
+            <Cpu className="w-5 h-5 text-primary-500" />
             {isNew ? '添加 AI 模型厂商' : `编辑 ${provider?.label}`}
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
@@ -255,7 +255,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
                       key={key}
                       onClick={() => setForm(f => ({ ...f, icon_url: key }))}
                       className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg transition-all ${
-                        form.icon_url === key ? 'ring-2 ring-blue-500 scale-110 shadow-md' : 'hover:scale-105'
+                        form.icon_url === key ? 'ring-2 ring-primary-500 scale-110 shadow-md' : 'hover:scale-105'
                       } ${ic.color}`}
                       title={key}
                     >
@@ -277,7 +277,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               disabled={!isNew}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm font-mono disabled:opacity-50"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm font-mono disabled:opacity-50"
               placeholder="例如: openai, deepseek, qwen"
             />
           </div>
@@ -290,7 +290,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
             <input
               value={form.label}
               onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
               placeholder="例如: OpenAI, 通义千问, 智谱 GLM"
             />
           </div>
@@ -303,7 +303,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
             <input
               value={form.base_url}
               onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm font-mono"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm font-mono"
               placeholder="https://api.openai.com/v1"
             />
           </div>
@@ -316,7 +316,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
             <input
               value={form.model}
               onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm font-mono"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm font-mono"
               placeholder="例如: gpt-4o, deepseek-chat, qwen-plus"
             />
           </div>
@@ -331,7 +331,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
               value={form.api_key}
               onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))}
               type="password"
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm font-mono"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm font-mono"
               placeholder={isNew ? '输入 API Key' : '留空保持原密钥不变'}
             />
           </div>
@@ -342,7 +342,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
             <input
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
               placeholder="模型厂商简要说明"
             />
           </div>
@@ -354,7 +354,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
                 type="checkbox"
                 checked={form.is_enabled}
                 onChange={e => setForm(f => ({ ...f, is_enabled: e.target.checked }))}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
               />
               <span className="text-sm text-gray-700">启用</span>
             </label>
@@ -363,7 +363,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
                 type="checkbox"
                 checked={form.is_default}
                 onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
               />
               <span className="text-sm text-gray-700">设为默认</span>
             </label>
@@ -381,7 +381,7 @@ function ProviderModal({ provider, isNew, onClose, onSave }) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-5 py-2.5 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50"
+            className="px-5 py-2.5 text-sm text-white bg-primary-500 hover:bg-primary-600 rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {isNew ? '添加' : '保存'}
@@ -532,8 +532,8 @@ export default function AIModelsPage() {
                 <p className="text-xs text-gray-500 mb-1">总厂商数</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
               </div>
-              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                <Cpu className="w-5 h-5 text-blue-500" />
+              <div className="w-10 h-10 bg-primary-50 rounded-xl flex items-center justify-center">
+                <Cpu className="w-5 h-5 text-primary-500" />
               </div>
             </div>
           </div>
@@ -582,7 +582,7 @@ export default function AIModelsPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="搜索厂商名称、模型..."
-                className="pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none w-64"
+                className="pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none w-64"
               />
             </div>
             {/* Filter */}
@@ -597,7 +597,7 @@ export default function AIModelsPage() {
                   onClick={() => setFilter(f.key)}
                   className={`px-4 py-2.5 text-sm transition-colors ${
                     filter === f.key
-                      ? 'bg-blue-500 text-white'
+                      ? 'bg-primary-500 text-white'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -610,14 +610,14 @@ export default function AIModelsPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={loadProviders}
-              className="p-2.5 text-gray-500 hover:text-blue-600 bg-white border border-gray-200 hover:border-blue-300 rounded-xl transition-colors"
+              className="p-2.5 text-gray-500 hover:text-primary-600 bg-white border border-gray-200 hover:border-primary-300 rounded-xl transition-colors"
               title="刷新"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
             <button
               onClick={() => { setIsNewProvider(true); setEditingProvider({}); }}
-              className="px-4 py-2.5 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors flex items-center gap-2 shadow-sm"
+              className="px-4 py-2.5 text-sm text-white bg-primary-500 hover:bg-primary-600 rounded-xl transition-colors flex items-center gap-2 shadow-sm"
             >
               <Plus className="w-4 h-4" />
               添加厂商
@@ -626,11 +626,11 @@ export default function AIModelsPage() {
         </div>
 
         {/* Info Banner */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+        <div className="bg-primary-50 border border-primary-200 rounded-xl p-4 flex items-start gap-3">
+          <Info className="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-sm text-blue-800 font-medium">AI 模型厂商配置</p>
-            <p className="text-xs text-blue-600 mt-1">
+            <p className="text-sm text-primary-800 font-medium">AI 模型厂商配置</p>
+            <p className="text-xs text-primary-600 mt-1">
               配置各厂商的 API Key 后，智能体即可调用对应的大语言模型。支持 {stats.total} 家主流 AI 模型提供商，包括 OpenAI、DeepSeek、通义千问、智谱GLM、MiniMax、硅基流动、Moonshot、百度文心一言、火山引擎、腾讯混元、百川智能、Anthropic Claude、Google Gemini 等。
             </p>
           </div>
@@ -639,7 +639,7 @@ export default function AIModelsPage() {
         {/* Provider Grid */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
             <span className="ml-3 text-gray-500">加载中...</span>
           </div>
         ) : filteredProviders.length === 0 ? (
@@ -667,7 +667,7 @@ export default function AIModelsPage() {
         {/* Provider Reference Table */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-blue-500" />
+            <Zap className="w-5 h-5 text-primary-500" />
             <h3 className="font-semibold text-gray-900">支持的 AI 模型厂商参考</h3>
           </div>
           <div className="overflow-x-auto">
@@ -700,7 +700,7 @@ export default function AIModelsPage() {
                     <td className="px-4 py-3 font-medium text-gray-900">{row.name}</td>
                     <td className="px-4 py-3 text-xl">{row.icon}</td>
                     <td className="px-4 py-3">
-                      <span className="font-mono text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">{row.model}</span>
+                      <span className="font-mono text-xs bg-primary-50 text-primary-700 px-2 py-1 rounded">{row.model}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-500">{row.desc}</td>
                   </tr>

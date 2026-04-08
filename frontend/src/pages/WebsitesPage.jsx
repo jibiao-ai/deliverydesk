@@ -14,7 +14,7 @@ const ICON_MAP = {
 };
 
 const CATEGORY_COLORS = [
-  { bg: 'bg-blue-50', border: 'border-blue-200', iconBg: 'bg-blue-100', iconColor: 'text-blue-600', hoverBorder: 'hover:border-blue-400' },
+  { bg: 'bg-primary-50', border: 'border-primary-200', iconBg: 'bg-primary-100', iconColor: 'text-primary-600', hoverBorder: 'hover:border-primary-400' },
   { bg: 'bg-emerald-50', border: 'border-emerald-200', iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', hoverBorder: 'hover:border-emerald-400' },
   { bg: 'bg-purple-50', border: 'border-purple-200', iconBg: 'bg-purple-100', iconColor: 'text-purple-600', hoverBorder: 'hover:border-purple-400' },
   { bg: 'bg-orange-50', border: 'border-orange-200', iconBg: 'bg-orange-100', iconColor: 'text-orange-600', hoverBorder: 'hover:border-orange-400' },
@@ -52,7 +52,7 @@ export default function WebsitesPage() {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
       </div>
     );
   }
@@ -70,7 +70,7 @@ export default function WebsitesPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="搜索工具名称或链接..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
               />
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-500 flex-shrink-0">
@@ -111,7 +111,7 @@ export default function WebsitesPage() {
                           <ExternalLink className={`w-4 h-4 ${color.iconColor}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-700 group-hover:text-blue-600 truncate transition-colors">
+                          <p className="text-sm font-medium text-gray-700 group-hover:text-primary-600 truncate transition-colors">
                             {link.name}
                           </p>
                           <p className="text-xs text-gray-400 truncate">{new URL(link.url).hostname}</p>

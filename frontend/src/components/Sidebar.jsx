@@ -54,18 +54,18 @@ export default function Sidebar() {
       <div className="flex items-center h-16 px-3 flex-shrink-0 border-b border-gray-200">
         <button
           onClick={toggleSidebar}
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors flex-shrink-0 text-gray-500 hover:text-blue-600 hover:bg-blue-50"
+          className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors flex-shrink-0 text-gray-500 hover:text-primary-600 hover:bg-primary-50"
         >
           <Menu className="w-5 h-5" />
         </button>
         {!sidebarCollapsed && (
           <div className="ml-2 flex items-center gap-2 overflow-hidden">
-            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
               <Shield className="w-4 h-4 text-white" />
             </div>
             <span className="text-sm font-semibold whitespace-nowrap text-gray-800">
-              <span className="text-gray-800">Delivery</span><span style={{ color: '#2563eb' }}>Desk</span>
-              <span className="text-xs ml-1 px-1 py-0.5 rounded" style={{ background: '#dbeafe', color: '#2563eb', fontSize: '10px' }}>AI</span>
+              <span className="text-gray-800">Delivery</span><span style={{ color: '#513CC8' }}>Desk</span>
+              <span className="text-xs ml-1 px-1 py-0.5 rounded" style={{ background: '#ddd5f6', color: '#513CC8', fontSize: '10px' }}>AI</span>
             </span>
           </div>
         )}
@@ -95,12 +95,12 @@ export default function Sidebar() {
                     sidebarCollapsed ? 'justify-center px-0' : 'px-4'
                   } cursor-pointer ${
                     isActive
-                      ? 'bg-blue-50 text-blue-600 font-medium'
+                      ? 'bg-primary-50 text-primary-600 font-medium'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   {isActive && !sidebarCollapsed && (
-                    <span className="absolute left-0 top-0 bottom-0 w-0.5 rounded-r bg-blue-600" />
+                    <span className="absolute left-0 top-0 bottom-0 w-0.5 rounded-r bg-primary-600" />
                   )}
                   <Icon className="w-4 h-4 flex-shrink-0" />
                   {!sidebarCollapsed && (
@@ -122,13 +122,13 @@ export default function Sidebar() {
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white bg-blue-600">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white bg-primary-600">
               {(user?.username || 'U').slice(0, 1).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate text-gray-700">{user?.username || 'admin'}</p>
               <span className="text-xs px-1.5 py-0.5 rounded"
-                style={{ background: user?.role === 'admin' ? '#dbeafe' : '#f3f4f6', color: user?.role === 'admin' ? '#2563eb' : '#6b7280', fontSize: '10px' }}>
+                style={{ background: user?.role === 'admin' ? '#ddd5f6' : '#f3f4f6', color: user?.role === 'admin' ? '#513CC8' : '#6b7280', fontSize: '10px' }}>
                 {user?.role === 'admin' ? '管理员' : '用户'}
               </span>
             </div>
