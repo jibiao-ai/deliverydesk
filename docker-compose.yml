@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: deliverydesk-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: deliverydesk
+      MYSQL_USER: deliverydesk
+      MYSQL_PASSWORD: deliverydesk123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - deliverydesk-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: deliverydesk-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - deliverydesk-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: deliverydesk-backend
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      GIN_MODE: release
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: deliverydesk
+      DB_PASSWORD: deliverydesk123
+      DB_NAME: deliverydesk
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_MODEL: ${AI_MODEL:-gpt-4}
+      JWT_SECRET: ${JWT_SECRET:-deliverydesk-secret-key-2024}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    networks:
+      - deliverydesk-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: deliverydesk-frontend
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:80:80"
+    depends_on:
+      - backend
+    networks:
+      - deliverydesk-net
+
+networks:
+  deliverydesk-net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  rabbitmq_data:

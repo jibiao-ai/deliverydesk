@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Go
+backend/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+*.log
+
+# Build
+dist/
+build/
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
