@@ -52,6 +52,28 @@ func recordOperationLog(c *gin.Context, module, action string, targetID uint, ta
 
 // ==================== Auth ====================
 
+func (h *Handler) HealthCheck(c *gin.Context) {
+	// Check database connectivity
+	sqlDB, err := repository.DB.DB()
+	dbOK := err == nil && sqlDB.Ping() == nil
+
+	// Check admin user exists and has valid password hash
+	var admin model.User
+	adminOK := false
+	adminHashLen := 0
+	if err := repository.DB.Where("username = ?", "admin").First(&admin).Error; err == nil {
+		adminOK = true
+		adminHashLen = len(admin.Password)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":         "ok",
+		"database":       dbOK,
+		"admin_exists":   adminOK,
+		"admin_hash_len": adminHashLen,
+	})
+}
+
 func (h *Handler) Login(c *gin.Context) {
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -60,7 +82,12 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 	resp, err := service.Login(req)
 	if err != nil {
-		response.Unauthorized(c, err.Error())
+		// Return HTTP 200 with error code so frontend can read the message
+		// (HTTP 401 would be swallowed by Axios interceptor)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    -1,
+			"message": err.Error(),
+		})
 		return
 	}
 	response.Success(c, resp)

@@ -67,6 +67,7 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.POST("/login", h.Login)
+		api.GET("/health", h.HealthCheck)
 
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())
