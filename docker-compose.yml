@@ -12,6 +12,7 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
@@ -47,6 +48,8 @@ services:
       dockerfile: Dockerfile
     container_name: deliverydesk-backend
     restart: unless-stopped
+    ports:
+      - "8080:8080"
     environment:
       SERVER_PORT: "8080"
       GIN_MODE: release

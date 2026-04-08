@@ -13,6 +13,7 @@ import (
 
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
+	"github.com/jibiao-ai/deliverydesk/pkg/logger"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -59,11 +60,19 @@ func loginLocal(req LoginRequest) (*LoginResponse, error) {
 	var user model.User
 	result := repository.DB.Where("username = ?", req.Username).First(&user)
 	if result.Error != nil {
-		return nil, errors.New("invalid username or password")
+		logger.Log.Warnf("Login failed: user '%s' not found in database", req.Username)
+		return nil, errors.New("用户名或密码错误")
+	}
+
+	// Check if password field is empty (broken user record)
+	if user.Password == "" {
+		logger.Log.Warnf("Login failed: user '%s' has empty password hash", req.Username)
+		return nil, errors.New("用户名或密码错误，请联系管理员重置密码")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid username or password")
+		logger.Log.Warnf("Login failed: password mismatch for user '%s' (hash len=%d)", req.Username, len(user.Password))
+		return nil, errors.New("用户名或密码错误")
 	}
 
 	token, err := generateToken(user)
@@ -71,6 +80,7 @@ func loginLocal(req LoginRequest) (*LoginResponse, error) {
 		return nil, fmt.Errorf("generate token failed: %w", err)
 	}
 
+	logger.Log.Infof("User '%s' logged in successfully", req.Username)
 	return &LoginResponse{Token: token, User: user}, nil
 }
 

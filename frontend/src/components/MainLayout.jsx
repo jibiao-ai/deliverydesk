@@ -72,7 +72,7 @@ export default function MainLayout() {
                   title={t.label}
                   onClick={() => setTheme(t.id)}
                   className={`w-4 h-4 rounded-full transition-all ring-offset-1 ${
-                    theme === t.id ? 'ring-2 ring-blue-600 scale-110' : 'hover:ring-2 hover:ring-gray-300'
+                    theme === t.id ? 'ring-2 ring-primary-600 scale-110' : 'hover:ring-2 hover:ring-gray-300'
                   }`}
                   style={{ backgroundColor: t.bg, border: `1.5px solid ${t.border}` }}
                 />
@@ -83,7 +83,7 @@ export default function MainLayout() {
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
             </button>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-blue-600">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-primary-600">
                 {(user?.username || 'U').slice(0, 1).toUpperCase()}
               </div>
               <span className="text-sm font-medium text-gray-700 hidden md:block">

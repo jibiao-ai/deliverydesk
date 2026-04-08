@@ -80,7 +80,7 @@ export default function ChatPage() {
             <option value="">选择智能体</option>
             {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
-          <button onClick={handleNewConv} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+          <button onClick={handleNewConv} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">
             <Plus className="w-4 h-4" /> 新建对话
           </button>
         </div>
@@ -88,7 +88,7 @@ export default function ChatPage() {
           {convs.map(conv => (
             <div key={conv.id}
               onClick={() => setCurrentConv(conv)}
-              className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer border-b border-gray-50 group ${currentConv?.id === conv.id ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50'}`}>
+              className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer border-b border-gray-50 group ${currentConv?.id === conv.id ? 'bg-primary-50 text-primary-600' : 'hover:bg-gray-50'}`}>
               <Bot className="w-4 h-4 flex-shrink-0" />
               <span className="text-sm truncate flex-1">{conv.title}</span>
               <button onClick={(e) => { e.stopPropagation(); handleDeleteConv(conv.id); }}
@@ -111,17 +111,17 @@ export default function ChatPage() {
               {msgs.map((msg, i) => (
                 <div key={msg.id || i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                   {msg.role !== 'user' && (
-                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-blue-600" />
+                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-4 h-4 text-primary-600" />
                     </div>
                   )}
                   <div className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm ${
-                    msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'
+                    msg.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-800'
                   }`}>
                     <div className="chat-message whitespace-pre-wrap">{msg.content}</div>
                   </div>
                   {msg.role === 'user' && (
-                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
                       <User className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -129,8 +129,8 @@ export default function ChatPage() {
               ))}
               {sending && (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-blue-600" />
+                  <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-primary-600" />
                   </div>
                   <div className="bg-gray-100 px-4 py-3 rounded-2xl">
                     <div className="flex gap-1"><span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" /></div>
@@ -144,9 +144,9 @@ export default function ChatPage() {
                 <input value={input} onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                   placeholder="输入消息..." disabled={sending}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
                 <button onClick={handleSend} disabled={sending || !input.trim()}
-                  className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm">
+                  className="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2 text-sm">
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               </div>
@@ -157,7 +157,7 @@ export default function ChatPage() {
             <div className="text-center">
               <Bot className="w-16 h-16 text-gray-200 mx-auto mb-4" />
               <p className="text-gray-400 mb-2">选择一个会话或创建新的对话</p>
-              <button onClick={handleNewConv} className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button onClick={handleNewConv} className="text-sm px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
                 <Plus className="w-4 h-4 inline mr-1" /> 开始对话
               </button>
             </div>

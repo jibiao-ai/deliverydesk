@@ -41,7 +41,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
-      <div className="hidden md:flex md:w-2/5 flex-col justify-between p-10 relative overflow-hidden" style={{ background: '#2563eb' }}>
+      <div className="hidden md:flex md:w-2/5 flex-col justify-between p-10 relative overflow-hidden" style={{ background: '#513CC8' }}>
         <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full opacity-15" style={{ background: '#ffffff' }} />
         <div className="absolute -bottom-16 -left-16 w-56 h-56 rounded-full opacity-15" style={{ background: '#ffffff' }} />
         <div className="relative z-10">
@@ -91,13 +91,13 @@ export default function LoginPage() {
           <div className="flex gap-2 mb-5 bg-gray-100 rounded-xl p-1">
             <button onClick={() => setAuthType('local')}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all ${
-                authType === 'local' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'
+                authType === 'local' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'
               }`}>
               <User className="w-3.5 h-3.5" /> 本地登录
             </button>
             <button onClick={() => setAuthType('ldap')}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-all ${
-                authType === 'ldap' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'
+                authType === 'ldap' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'
               }`}>
               <Server className="w-3.5 h-3.5" /> LDAP登录
             </button>
@@ -110,7 +110,7 @@ export default function LoginPage() {
                 <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input type="text" value={username} onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none transition"
-                  onFocus={e => { e.target.style.borderColor = '#2563eb'; e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.1)'; }}
+                  onFocus={e => { e.target.style.borderColor = '#513CC8'; e.target.style.boxShadow = '0 0 0 3px rgba(81,60,200,0.1)'; }}
                   onBlur={e => { e.target.style.borderColor = '#e5e7eb'; e.target.style.boxShadow = 'none'; }}
                   placeholder="请输入用户名" required />
               </div>
@@ -121,7 +121,7 @@ export default function LoginPage() {
                 <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none transition"
-                  onFocus={e => { e.target.style.borderColor = '#2563eb'; e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.1)'; }}
+                  onFocus={e => { e.target.style.borderColor = '#513CC8'; e.target.style.boxShadow = '0 0 0 3px rgba(81,60,200,0.1)'; }}
                   onBlur={e => { e.target.style.borderColor = '#e5e7eb'; e.target.style.boxShadow = 'none'; }}
                   placeholder="请输入密码" required />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
@@ -132,9 +132,9 @@ export default function LoginPage() {
             </div>
             <button type="submit" disabled={loading}
               className="w-full py-2.5 rounded-xl text-white font-medium text-sm transition-all disabled:opacity-50"
-              style={{ background: loading ? '#60a5fa' : '#2563eb' }}
-              onMouseEnter={e => { if (!loading) e.currentTarget.style.background = '#1d4ed8'; }}
-              onMouseLeave={e => { if (!loading) e.currentTarget.style.background = '#2563eb'; }}>
+              style={{ background: loading ? '#7757db' : '#513CC8' }}
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.background = '#4230a0'; }}
+              onMouseLeave={e => { if (!loading) e.currentTarget.style.background = '#513CC8'; }}>
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

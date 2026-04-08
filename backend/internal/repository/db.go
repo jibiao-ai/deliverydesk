@@ -92,14 +92,19 @@ func InitDB(cfg config.DatabaseConfig) error {
 }
 
 func seedDefaultData(db *gorm.DB) {
-	// Ensure default admin user
+	// Ensure default admin user with correct password
 	const adminPlainPassword = "Admin@2024!"
-	adminHashBytes, _ := bcrypt.GenerateFromPassword([]byte(adminPlainPassword), 10)
+	adminHashBytes, err := bcrypt.GenerateFromPassword([]byte(adminPlainPassword), 10)
+	if err != nil {
+		logger.Log.Errorf("Failed to hash admin password: %v", err)
+		return
+	}
 	adminPasswordHash := string(adminHashBytes)
 
 	var admin model.User
 	result := db.Where("username = ?", "admin").First(&admin)
 	if result.Error != nil {
+		// Admin does not exist, create it
 		admin = model.User{
 			Username:    "admin",
 			Password:    adminPasswordHash,
@@ -110,6 +115,15 @@ func seedDefaultData(db *gorm.DB) {
 		}
 		db.Create(&admin)
 		logger.Log.Info("Default admin user created")
+	} else {
+		// Admin exists — verify password is correct, if not, reset it
+		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(adminPlainPassword)); err != nil {
+			// Password hash is invalid or doesn't match, reset it
+			db.Model(&admin).Update("password", adminPasswordHash)
+			logger.Log.Warn("Admin password was invalid, has been reset to default")
+		} else {
+			logger.Log.Info("Admin user exists with correct password")
+		}
 	}
 
 	// Seed default AI providers (13 vendors)
