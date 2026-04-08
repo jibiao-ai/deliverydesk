@@ -1,4 +1,9 @@
 FROM golang:1.22-alpine AS builder
+
+# Use China mainland Go proxy for faster module downloads
+ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+ENV GONOSUMCHECK=*
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
