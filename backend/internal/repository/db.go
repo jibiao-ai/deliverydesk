@@ -41,16 +41,29 @@ func InitDB(cfg config.DatabaseConfig) error {
 		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 
-		for i := 0; i < 30; i++ {
+		logger.Log.Infof("Connecting to MySQL: %s@tcp(%s:%d)/%s", cfg.User, cfg.Host, cfg.Port, cfg.DBName)
+
+		for i := 0; i < 60; i++ {
 			db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 			if err == nil {
-				break
+				// Verify connection actually works
+				sqlDB, pingErr := db.DB()
+				if pingErr == nil && sqlDB.Ping() == nil {
+					break
+				}
+				if pingErr != nil {
+					err = pingErr
+				} else {
+					err = sqlDB.Ping()
+				}
 			}
-			logger.Log.Warnf("Failed to connect to database (attempt %d/30): %v", i+1, err)
+			if i%10 == 0 {
+				logger.Log.Warnf("Waiting for MySQL (attempt %d/60): %v", i+1, err)
+			}
 			time.Sleep(2 * time.Second)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to connect to database after retries: %w", err)
+			return fmt.Errorf("failed to connect to MySQL after 60 attempts (2 min): %w", err)
 		}
 
 		sqlDB, err := db.DB()
@@ -113,17 +126,20 @@ func seedDefaultData(db *gorm.DB) {
 			Role:        "admin",
 			AuthType:    "local",
 		}
-		db.Create(&admin)
-		logger.Log.Info("Default admin user created")
-	} else {
-		// Admin exists — verify password is correct, if not, reset it
-		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(adminPlainPassword)); err != nil {
-			// Password hash is invalid or doesn't match, reset it
-			db.Model(&admin).Update("password", adminPasswordHash)
-			logger.Log.Warn("Admin password was invalid, has been reset to default")
-		} else {
-			logger.Log.Info("Admin user exists with correct password")
+		if err := db.Create(&admin).Error; err != nil {
+			logger.Log.Errorf("Failed to create admin user: %v", err)
+			return
 		}
+		logger.Log.Infof("Default admin user created (id=%d, hash_len=%d)", admin.ID, len(admin.Password))
+	} else {
+		// Admin exists — always force reset password to ensure it works
+		// This fixes issues where the password hash was corrupted or stored incorrectly
+		admin.Password = adminPasswordHash
+		if err := db.Save(&admin).Error; err != nil {
+			logger.Log.Errorf("Failed to reset admin password: %v", err)
+			return
+		}
+		logger.Log.Infof("Admin password has been reset to default (id=%d, hash_len=%d)", admin.ID, len(admin.Password))
 	}
 
 	// Seed default AI providers (13 vendors)

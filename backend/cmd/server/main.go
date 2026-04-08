@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -25,9 +26,21 @@ func main() {
 	cfg := config.Load()
 	gin.SetMode(cfg.Server.Mode)
 
-	// Initialize database
-	if err := repository.InitDB(cfg.Database); err != nil {
-		logger.Log.Fatalf("Failed to initialize database: %v", err)
+	// Initialize database (with extended retry for container orchestration)
+	var dbErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		dbErr = repository.InitDB(cfg.Database)
+		if dbErr == nil {
+			break
+		}
+		logger.Log.Warnf("Database init attempt %d/3 failed: %v", attempt, dbErr)
+		if attempt < 3 {
+			logger.Log.Info("Waiting 10 seconds before retry...")
+			time.Sleep(10 * time.Second)
+		}
+	}
+	if dbErr != nil {
+		logger.Log.Fatalf("Failed to initialize database after 3 attempts: %v", dbErr)
 	}
 
 	// Initialize RabbitMQ
@@ -67,6 +80,7 @@ func main() {
 	api := r.Group("/api")
 	{
 		api.POST("/login", h.Login)
+		api.GET("/health", h.HealthCheck)
 
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())

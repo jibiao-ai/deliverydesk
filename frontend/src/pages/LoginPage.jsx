@@ -27,7 +27,9 @@ export default function LoginPage() {
         toast.error(res.message || '登录失败');
       }
     } catch (err) {
-      toast.error('登录失败，请检查用户名和密码');
+      // err may be the backend response object { code, message } or a network error
+      const msg = err?.message || err?.response?.data?.message || '网络错误，请检查后端服务是否运行';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
