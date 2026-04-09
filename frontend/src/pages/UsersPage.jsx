@@ -3,6 +3,7 @@ import {
   Users, Plus, Search, Edit2, Trash2, Shield, ShieldCheck,
   User, X, Check, RefreshCw, AlertCircle, Server, Lock,
   Mail, UserCircle, KeyRound, Eye, EyeOff, Download,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, deleteUser, syncLDAPUsers, getLDAPConfigs } from '../services/api';
 import toast from 'react-hot-toast';
@@ -37,12 +38,106 @@ const AUTH_TYPE_CONFIG = {
   },
 };
 
+const PAGE_SIZE = 10;
+
 // ── Format date ─────────────────────────────────────────────────────────────
 function formatTime(dateStr) {
   if (!dateStr) return '--';
   const d = new Date(dateStr);
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ── Pagination component ────────────────────────────────────────────────────
+function Pagination({ page, pageSize, total, onPageChange }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return null;
+
+  // Generate page numbers to show
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxShow = 7;
+    if (totalPages <= maxShow) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      let start = Math.max(2, page - 2);
+      let end = Math.min(totalPages - 1, page + 2);
+      if (page <= 3) { start = 2; end = 5; }
+      if (page >= totalPages - 2) { start = totalPages - 4; end = totalPages - 1; }
+      if (start > 2) pages.push('...');
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (end < totalPages - 1) pages.push('...');
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  return (
+    <div className="flex items-center justify-between px-6 py-3.5 border-t border-gray-100 bg-gray-50/30">
+      <div className="text-xs text-gray-500">
+        共 <strong className="text-gray-700">{total}</strong> 个用户，第 <strong className="text-gray-700">{page}</strong> / {totalPages} 页
+      </div>
+      <div className="flex items-center gap-1">
+        {/* First page */}
+        <button
+          onClick={() => onPageChange(1)}
+          disabled={page <= 1}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="第一页"
+        >
+          <ChevronsLeft className="w-4 h-4" />
+        </button>
+        {/* Previous */}
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="上一页"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        {/* Page numbers */}
+        {getPageNumbers().map((p, idx) =>
+          p === '...' ? (
+            <span key={`dots-${idx}`} className="px-1 text-gray-400 text-xs">...</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`min-w-[32px] h-8 px-2 rounded-lg text-xs font-medium transition-colors ${
+                p === page
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+
+        {/* Next */}
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="下一页"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        {/* Last page */}
+        <button
+          onClick={() => onPageChange(totalPages)}
+          disabled={page >= totalPages}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="最后一页"
+        >
+          <ChevronsRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ── Modal component ─────────────────────────────────────────────────────────
@@ -76,9 +171,7 @@ function UserModal({ user, onClose, onSave }) {
       let res;
       if (isEdit) {
         const updateData = { ...form };
-        // Don't send empty password (means no change)
         if (!updateData.password) delete updateData.password;
-        // Don't allow changing auth_type during edit
         delete updateData.auth_type;
         res = await updateUser(user.id, updateData);
       } else {
@@ -99,7 +192,6 @@ function UserModal({ user, onClose, onSave }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-800">
             {isEdit ? '编辑用户' : '新建用户'}
@@ -108,8 +200,6 @@ function UserModal({ user, onClose, onSave }) {
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-xl text-sm">
@@ -117,7 +207,6 @@ function UserModal({ user, onClose, onSave }) {
               {error}
             </div>
           )}
-
           {/* Username */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">用户名 *</label>
@@ -133,7 +222,6 @@ function UserModal({ user, onClose, onSave }) {
               />
             </div>
           </div>
-
           {/* Password (only for local users) */}
           {!(isEdit && user?.auth_type === 'ldap') && (
             <div>
@@ -159,7 +247,6 @@ function UserModal({ user, onClose, onSave }) {
               </div>
             </div>
           )}
-
           {/* Email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">邮箱</label>
@@ -174,7 +261,6 @@ function UserModal({ user, onClose, onSave }) {
               />
             </div>
           </div>
-
           {/* Display Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">显示名称</label>
@@ -186,7 +272,6 @@ function UserModal({ user, onClose, onSave }) {
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none"
             />
           </div>
-
           {/* Role */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">角色 *</label>
@@ -215,7 +300,6 @@ function UserModal({ user, onClose, onSave }) {
               })}
             </div>
           </div>
-
           {/* Auth Type display (read-only for LDAP users during edit) */}
           {isEdit && user?.auth_type === 'ldap' && (
             <div>
@@ -226,7 +310,6 @@ function UserModal({ user, onClose, onSave }) {
               </div>
             </div>
           )}
-
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
@@ -287,25 +370,53 @@ function DeleteConfirm({ username, onCancel, onConfirm, deleting }) {
 // ── Main page component ─────────────────────────────────────────────────────
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [editUser, setEditUser] = useState(null);   // null = closed, {} = create, user = edit
+  const [searchInput, setSearchInput] = useState('');
+  const [editUser, setEditUser] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [hasLDAP, setHasLDAP] = useState(false);
 
-  const loadUsers = useCallback(async () => {
+  // Stats are from total data, not just current page
+  const [stats, setStats] = useState({ total: 0, admin: 0, user: 0, ldap: 0 });
+
+  const loadUsers = useCallback(async (p, q) => {
     setLoading(true);
     try {
-      const res = await getUsers();
+      const params = { page: p, page_size: PAGE_SIZE };
+      if (q) params.search = q;
+      const res = await getUsers(params);
       if (res.code === 0) {
-        setUsers(res.data || []);
+        const data = res.data || {};
+        setUsers(data.items || []);
+        setTotal(data.total || 0);
       }
     } catch (err) {
       console.error('Failed to load users:', err);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      // Load all users for stats (no pagination)
+      const res = await getUsers({ page: 1, page_size: 9999 });
+      if (res.code === 0) {
+        const allUsers = (res.data?.items) || [];
+        setStats({
+          total: res.data?.total || allUsers.length,
+          admin: allUsers.filter((u) => u.role === 'admin').length,
+          user: allUsers.filter((u) => u.role === 'user').length,
+          ldap: allUsers.filter((u) => u.auth_type === 'ldap').length,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load stats:', err);
     }
   }, []);
 
@@ -322,9 +433,26 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
-    loadUsers();
+    loadUsers(page, search);
+  }, [page, search, loadUsers]);
+
+  useEffect(() => {
+    loadStats();
     checkLDAP();
-  }, [loadUsers, checkLDAP]);
+  }, [loadStats, checkLDAP]);
+
+  const handleSearch = () => {
+    setPage(1);
+    setSearch(searchInput);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') handleSearch();
+  };
+
+  const handlePageChange = (newPage) => {
+    setPage(newPage);
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -333,7 +461,8 @@ export default function UsersPage() {
       const res = await deleteUser(deleteTarget.id);
       if (res.code === 0) {
         setDeleteTarget(null);
-        loadUsers();
+        loadUsers(page, search);
+        loadStats();
       }
     } catch (err) {
       console.error('Failed to delete user:', err);
@@ -351,12 +480,16 @@ export default function UsersPage() {
         const newCount = data.new_users || 0;
         const updatedCount = data.updated_users || 0;
         const totalCount = data.total_ldap_users || 0;
-        if (newCount > 0 || updatedCount > 0) {
+        const errors = data.errors || [];
+        if (errors.length > 0) {
+          toast.error(`LDAP同步部分失败：${errors[0]}`);
+        } else if (newCount > 0 || updatedCount > 0) {
           toast.success(`LDAP同步完成：新增 ${newCount} 人，更新 ${updatedCount} 人（共 ${totalCount} 个LDAP用户）`);
         } else {
           toast.success(`LDAP同步完成：无新增用户（共 ${totalCount} 个LDAP用户）`);
         }
-        loadUsers();
+        loadUsers(page, search);
+        loadStats();
       } else {
         toast.error(res.message || 'LDAP同步失败');
       }
@@ -368,20 +501,11 @@ export default function UsersPage() {
     }
   };
 
-  // Filter users by search
-  const filteredUsers = users.filter((u) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      u.username?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.display_name?.toLowerCase().includes(q)
-    );
-  });
-
-  const adminCount = users.filter((u) => u.role === 'admin').length;
-  const userCount = users.filter((u) => u.role === 'user').length;
-  const ldapCount = users.filter((u) => u.auth_type === 'ldap').length;
+  const handleUserSaved = () => {
+    setEditUser(null);
+    loadUsers(page, search);
+    loadStats();
+  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -395,16 +519,16 @@ export default function UsersPage() {
                 <div className="w-6 h-6 rounded-lg bg-primary-50 flex items-center justify-center">
                   <Users className="w-3.5 h-3.5 text-primary-600" />
                 </div>
-                <span className="text-gray-500">总计 <strong className="text-gray-800">{users.length}</strong></span>
+                <span className="text-gray-500">总计 <strong className="text-gray-800">{stats.total}</strong></span>
               </div>
               <div className="w-px h-4 bg-gray-200" />
-              <span className="text-gray-500">管理员 <strong className="text-primary-600">{adminCount}</strong></span>
+              <span className="text-gray-500">管理员 <strong className="text-primary-600">{stats.admin}</strong></span>
               <div className="w-px h-4 bg-gray-200" />
-              <span className="text-gray-500">普通用户 <strong className="text-gray-700">{userCount}</strong></span>
-              {ldapCount > 0 && (
+              <span className="text-gray-500">普通用户 <strong className="text-gray-700">{stats.user}</strong></span>
+              {stats.ldap > 0 && (
                 <>
                   <div className="w-px h-4 bg-gray-200" />
-                  <span className="text-gray-500">LDAP <strong className="text-amber-600">{ldapCount}</strong></span>
+                  <span className="text-gray-500">LDAP <strong className="text-amber-600">{stats.ldap}</strong></span>
                 </>
               )}
             </div>
@@ -415,12 +539,21 @@ export default function UsersPage() {
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索用户名、邮箱..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="搜索用户名、邮箱... (回车搜索)"
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none bg-gray-50 focus:bg-white"
                 />
               </div>
+              {search && (
+                <button
+                  onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }}
+                  className="px-3 py-2 text-xs font-medium text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" /> 清除
+                </button>
+              )}
               {hasLDAP && (
                 <button
                   onClick={handleSyncLDAP}
@@ -464,7 +597,7 @@ export default function UsersPage() {
                       <p className="text-sm text-gray-400">加载中...</p>
                     </td>
                   </tr>
-                ) : filteredUsers.length === 0 ? (
+                ) : users.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-16 text-center">
                       <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -472,14 +605,13 @@ export default function UsersPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((u) => {
+                  users.map((u) => {
                     const roleCfg = ROLE_CONFIG[u.role] || ROLE_CONFIG.user;
                     const authCfg = AUTH_TYPE_CONFIG[u.auth_type] || AUTH_TYPE_CONFIG.local;
                     const RoleIcon = roleCfg.icon;
                     const AuthIcon = authCfg.icon;
                     return (
                       <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
-                        {/* User */}
                         <td className="px-6 py-3.5">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${
@@ -495,25 +627,21 @@ export default function UsersPage() {
                             </div>
                           </div>
                         </td>
-                        {/* Email */}
                         <td className="px-6 py-3.5">
                           <span className="text-sm text-gray-600">{u.email || '--'}</span>
                         </td>
-                        {/* Role */}
                         <td className="px-6 py-3.5">
                           <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${roleCfg.badgeCls}`}>
                             <RoleIcon className="w-3 h-3" />
                             {roleCfg.label}
                           </span>
                         </td>
-                        {/* Auth Type */}
                         <td className="px-6 py-3.5">
                           <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${authCfg.badgeCls}`}>
                             <AuthIcon className="w-3 h-3" />
                             {authCfg.label}
                           </span>
                         </td>
-                        {/* Permissions */}
                         <td className="px-6 py-3.5">
                           {u.role === 'admin' ? (
                             <div className="text-xs text-gray-500">
@@ -527,11 +655,9 @@ export default function UsersPage() {
                             </div>
                           )}
                         </td>
-                        {/* Created */}
                         <td className="px-6 py-3.5 whitespace-nowrap">
                           <span className="text-sm text-gray-500">{formatTime(u.created_at)}</span>
                         </td>
-                        {/* Actions */}
                         <td className="px-6 py-3.5">
                           <div className="flex items-center justify-center gap-1">
                             <button
@@ -559,6 +685,9 @@ export default function UsersPage() {
             </table>
           </div>
 
+          {/* ── Pagination ── */}
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
+
           {/* ── Permissions legend ── */}
           <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50">
             <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500">
@@ -584,7 +713,7 @@ export default function UsersPage() {
               <div>
                 <h4 className="text-sm font-semibold text-amber-800">LDAP用户管理说明</h4>
                 <ul className="text-xs text-amber-700 mt-1.5 space-y-1 list-disc list-inside">
-                  <li>点击「同步LDAP用户」可将LDAP服务器中的用户拉取到平台用户列表</li>
+                  <li>点击「同步LDAP用户」将连接LDAP服务器，拉取真实用户数据到平台</li>
                   <li>新同步的LDAP用户默认为「普通用户」角色，管理员可在列表中修改其角色</li>
                   <li>LDAP用户使用域账号密码登录，平台不存储其密码</li>
                   <li>手动创建的用户均为「本地用户」，使用本地密码认证</li>
@@ -599,7 +728,7 @@ export default function UsersPage() {
           <UserModal
             user={editUser.id ? editUser : null}
             onClose={() => setEditUser(null)}
-            onSave={() => { setEditUser(null); loadUsers(); }}
+            onSave={handleUserSaved}
           />
         )}
 

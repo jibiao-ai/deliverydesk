@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-ldap/ldap/v3"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/internal/service"
@@ -391,12 +392,36 @@ func (h *Handler) GetAgentSkills(c *gin.Context) {
 // ==================== Users (Admin) ====================
 
 func (h *Handler) ListUsers(c *gin.Context) {
-	users, err := service.GetUsers()
-	if err != nil {
-		response.InternalError(c, err.Error())
-		return
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	search := c.Query("search")
+
+	if page < 1 {
+		page = 1
 	}
-	response.Success(c, users)
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	query := repository.DB.Model(&model.User{})
+	if search != "" {
+		like := "%" + search + "%"
+		query = query.Where("username LIKE ? OR email LIKE ? OR display_name LIKE ?", like, like, like)
+	}
+
+	var total int64
+	query.Count(&total)
+
+	var users []model.User
+	offset := (page - 1) * pageSize
+	query.Order("id ASC").Offset(offset).Limit(pageSize).Find(&users)
+
+	response.Success(c, gin.H{
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"items":     users,
+	})
 }
 
 func (h *Handler) CreateUser(c *gin.Context) {
@@ -600,12 +625,39 @@ func (h *Handler) TestLDAPConfig(c *gin.Context) {
 		response.BadRequest(c, "LDAP config not found")
 		return
 	}
-	// Simulate LDAP connection test
-	// In production, use go-ldap to actually dial and bind
+
+	// Real LDAP connection test
+	conn, err := dialLDAP(config)
+	if err != nil {
+		response.BadRequest(c, fmt.Sprintf("LDAP 连接失败: %v", err))
+		return
+	}
+	defer conn.Close()
+
+	// Try to bind with the configured credentials
+	if config.BindDN != "" {
+		// Retrieve the bind password (it's stored but hidden from JSON)
+		var fullConfig model.LDAPConfig
+		repository.DB.Select("bind_password").First(&fullConfig, id)
+		if err := conn.Bind(config.BindDN, fullConfig.BindPassword); err != nil {
+			response.BadRequest(c, fmt.Sprintf("LDAP Bind 失败: %v", err))
+			return
+		}
+	}
+
 	response.Success(c, gin.H{
 		"status":  "ok",
 		"message": fmt.Sprintf("LDAP 连接测试成功: %s:%d", config.Host, config.Port),
 	})
+}
+
+// dialLDAP establishes a connection to the LDAP server
+func dialLDAP(config model.LDAPConfig) (*ldap.Conn, error) {
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	if config.UseTLS {
+		return ldap.DialTLS("tcp", addr, nil)
+	}
+	return ldap.Dial("tcp", addr)
 }
 
 // SyncLDAPUsers pulls users from all enabled LDAP configurations into the platform
@@ -623,58 +675,119 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 
 	newUsers := 0
 	updatedUsers := 0
+	var syncErrors []string
 
-	// For each LDAP config, simulate user discovery
-	// In production, this would use go-ldap to search the directory
 	for _, ldapCfg := range ldapConfigs {
-		// Simulate discovering users from LDAP server
-		// In real implementation: connect to ldapCfg.Host:ldapCfg.Port,
-		// bind with BindDN/BindPassword, search BaseDN with UserFilter
-		// For now, we generate a set of simulated LDAP users based on the BaseDN
-		domain := extractDomainFromBaseDN(ldapCfg.BaseDN)
+		// Retrieve bind password (excluded from JSON serialization)
+		var fullCfg model.LDAPConfig
+		repository.DB.First(&fullCfg, ldapCfg.ID)
 
-		// Simulate a list of discovered LDAP users
-		// In production this would come from an actual LDAP search
-		simulatedUsers := []struct {
-			Username    string
-			Email       string
-			DisplayName string
-		}{
-			{Username: "zhangsan", Email: "zhangsan@" + domain, DisplayName: "张三"},
-			{Username: "lisi", Email: "lisi@" + domain, DisplayName: "李四"},
-			{Username: "wangwu", Email: "wangwu@" + domain, DisplayName: "王五"},
-			{Username: "zhaoliu", Email: "zhaoliu@" + domain, DisplayName: "赵六"},
-			{Username: "sunqi", Email: "sunqi@" + domain, DisplayName: "孙七"},
+		// Connect to LDAP server
+		conn, err := dialLDAP(ldapCfg)
+		if err != nil {
+			errMsg := fmt.Sprintf("连接 %s:%d 失败: %v", ldapCfg.Host, ldapCfg.Port, err)
+			logger.Log.Warnf("LDAP sync: %s", errMsg)
+			syncErrors = append(syncErrors, errMsg)
+			continue
 		}
 
-		for _, su := range simulatedUsers {
+		// Bind with service account
+		if fullCfg.BindDN != "" && fullCfg.BindPassword != "" {
+			if err := conn.Bind(fullCfg.BindDN, fullCfg.BindPassword); err != nil {
+				conn.Close()
+				errMsg := fmt.Sprintf("Bind %s 失败: %v", ldapCfg.Name, err)
+				logger.Log.Warnf("LDAP sync: %s", errMsg)
+				syncErrors = append(syncErrors, errMsg)
+				continue
+			}
+		}
+
+		// Build search filter
+		searchFilter := "(objectClass=person)"
+		if ldapCfg.UserFilter != "" {
+			// Replace %s placeholder with * for listing all users
+			filter := strings.ReplaceAll(ldapCfg.UserFilter, "%s", "*")
+			searchFilter = filter
+		}
+
+		// Determine attribute names
+		attrUsername := ldapCfg.AttrUsername
+		if attrUsername == "" {
+			attrUsername = "uid"
+		}
+		attrEmail := ldapCfg.AttrEmail
+		if attrEmail == "" {
+			attrEmail = "mail"
+		}
+		attrDisplay := ldapCfg.AttrDisplay
+		if attrDisplay == "" {
+			attrDisplay = "cn"
+		}
+
+		// Search for users
+		searchReq := ldap.NewSearchRequest(
+			ldapCfg.BaseDN,
+			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 30, false,
+			searchFilter,
+			[]string{attrUsername, attrEmail, attrDisplay},
+			nil,
+		)
+
+		result, err := conn.Search(searchReq)
+		conn.Close()
+
+		if err != nil {
+			errMsg := fmt.Sprintf("搜索 %s 失败: %v", ldapCfg.Name, err)
+			logger.Log.Warnf("LDAP sync: %s", errMsg)
+			syncErrors = append(syncErrors, errMsg)
+			continue
+		}
+
+		domain := extractDomainFromBaseDN(ldapCfg.BaseDN)
+
+		// Process each LDAP entry
+		for _, entry := range result.Entries {
+			username := entry.GetAttributeValue(attrUsername)
+			if username == "" {
+				continue
+			}
+			email := entry.GetAttributeValue(attrEmail)
+			if email == "" {
+				email = username + "@" + domain
+			}
+			displayName := entry.GetAttributeValue(attrDisplay)
+			if displayName == "" {
+				displayName = username
+			}
+
+			// Check if user already exists in DB
 			var existing model.User
-			result := repository.DB.Where("username = ? AND auth_type = ?", su.Username, "ldap").First(&existing)
-			if result.Error != nil {
-				// User doesn't exist - create as LDAP user with default role
+			dbResult := repository.DB.Where("username = ? AND auth_type = ?", username, "ldap").First(&existing)
+			if dbResult.Error != nil {
+				// Create new LDAP user
 				newUser := model.User{
-					Username:    su.Username,
-					Password:    "", // LDAP users have no local password
-					Email:       su.Email,
-					DisplayName: su.DisplayName,
+					Username:    username,
+					Password:    "",
+					Email:       email,
+					DisplayName: displayName,
 					Role:        "user",
 					AuthType:    "ldap",
 				}
 				if err := repository.DB.Create(&newUser).Error; err != nil {
-					logger.Log.Warnf("Failed to create LDAP user %s: %v", su.Username, err)
+					logger.Log.Warnf("Failed to create LDAP user %s: %v", username, err)
 					continue
 				}
 				newUsers++
-				logger.Log.Infof("Synced new LDAP user: %s (%s)", su.Username, su.DisplayName)
+				logger.Log.Infof("Synced new LDAP user: %s (%s) from %s", username, displayName, ldapCfg.Name)
 			} else {
-				// User exists - update email and display name from LDAP
+				// Update existing user's email/display name from LDAP
 				needsUpdate := false
-				if existing.Email != su.Email {
-					existing.Email = su.Email
+				if existing.Email != email {
+					existing.Email = email
 					needsUpdate = true
 				}
-				if existing.DisplayName != su.DisplayName {
-					existing.DisplayName = su.DisplayName
+				if existing.DisplayName != displayName {
+					existing.DisplayName = displayName
 					needsUpdate = true
 				}
 				if needsUpdate {
@@ -683,6 +796,8 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 				}
 			}
 		}
+
+		logger.Log.Infof("LDAP sync from %s: found %d entries", ldapCfg.Name, len(result.Entries))
 	}
 
 	// Count total LDAP users in the platform
@@ -692,11 +807,16 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 	recordOperationLog(c, "ldap", "sync_users", 0, "",
 		fmt.Sprintf("同步LDAP用户: 新增 %d 人, 更新 %d 人, 总计 %d 个LDAP用户", newUsers, updatedUsers, totalLDAPUsers))
 
-	response.Success(c, gin.H{
+	result := gin.H{
 		"new_users":        newUsers,
 		"updated_users":    updatedUsers,
 		"total_ldap_users": totalLDAPUsers,
-	})
+	}
+	if len(syncErrors) > 0 {
+		result["errors"] = syncErrors
+	}
+
+	response.Success(c, result)
 }
 
 func extractDomainFromBaseDN(baseDN string) string {
