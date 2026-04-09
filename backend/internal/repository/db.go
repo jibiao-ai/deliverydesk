@@ -41,16 +41,29 @@ func InitDB(cfg config.DatabaseConfig) error {
 		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 
-		for i := 0; i < 30; i++ {
+		logger.Log.Infof("Connecting to MySQL: %s@tcp(%s:%d)/%s", cfg.User, cfg.Host, cfg.Port, cfg.DBName)
+
+		for i := 0; i < 60; i++ {
 			db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 			if err == nil {
-				break
+				// Verify connection actually works
+				sqlDB, pingErr := db.DB()
+				if pingErr == nil && sqlDB.Ping() == nil {
+					break
+				}
+				if pingErr != nil {
+					err = pingErr
+				} else {
+					err = sqlDB.Ping()
+				}
 			}
-			logger.Log.Warnf("Failed to connect to database (attempt %d/30): %v", i+1, err)
+			if i%10 == 0 {
+				logger.Log.Warnf("Waiting for MySQL (attempt %d/60): %v", i+1, err)
+			}
 			time.Sleep(2 * time.Second)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to connect to database after retries: %w", err)
+			return fmt.Errorf("failed to connect to MySQL after 60 attempts (2 min): %w", err)
 		}
 
 		sqlDB, err := db.DB()
