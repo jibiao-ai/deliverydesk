@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -381,6 +382,92 @@ func (h *Handler) SendMessage(c *gin.Context) {
 		"user_message":      userMsg,
 		"assistant_message": assistantMsg,
 	})
+}
+
+// SendMessageStream handles streaming AI responses via Server-Sent Events (SSE).
+// The client receives incremental tokens as they arrive from the upstream AI API.
+func (h *Handler) SendMessageStream(c *gin.Context) {
+	convID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID := c.GetUint("user_id")
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "content is required"})
+		return
+	}
+
+	// Set SSE headers
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
+
+	// Create cancellable context for abort support
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	// Register stream so it can be aborted
+	service.RegisterStream(uint(convID), cancel)
+	defer service.UnregisterStream(uint(convID))
+
+	flusher, _ := c.Writer.(http.Flusher)
+
+	// Stream tokens to client
+	onToken := func(token string) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		// SSE format: data: {"token": "..."}\n\n
+		data, _ := json.Marshal(gin.H{"token": token})
+		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	userMsg, asstMsg, err := h.chatService.SendMessageStream(ctx, uint(convID), userID, req.Content, service.StreamCallback(onToken))
+
+	// Send final event with complete messages
+	if err != nil && err != context.Canceled {
+		data, _ := json.Marshal(gin.H{"error": err.Error()})
+		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+	}
+
+	donePayload := gin.H{"done": true}
+	if userMsg != nil {
+		donePayload["user_message"] = userMsg
+	}
+	if asstMsg != nil {
+		donePayload["assistant_message"] = asstMsg
+	}
+	data, _ := json.Marshal(donePayload)
+	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	// Record operation log
+	contentPreview := req.Content
+	if len(contentPreview) > 50 {
+		contentPreview = contentPreview[:50] + "..."
+	}
+	recordOperationLog(c, "conversation", "send_message_stream", uint(convID), contentPreview,
+		fmt.Sprintf("流式发送消息到对话 #%d", convID))
+}
+
+// AbortStream cancels an in-progress streaming response for a conversation.
+func (h *Handler) AbortStream(c *gin.Context) {
+	convID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	aborted := service.AbortStream(uint(convID))
+	if aborted {
+		logger.Log.Infof("Stream aborted for conversation %d", convID)
+		response.Success(c, gin.H{"aborted": true, "message": "已中断回复"})
+	} else {
+		response.Success(c, gin.H{"aborted": false, "message": "没有活跃的流式回复"})
+	}
 }
 
 // ==================== Skills ====================
