@@ -57,6 +57,8 @@ type Agent struct {
 	Temperature  float64        `gorm:"default:0.7" json:"temperature"`
 	MaxTokens    int            `gorm:"default:4096" json:"max_tokens"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
+	IsPublished  bool           `gorm:"default:false" json:"is_published"` // published for external access
+	IronRules    bool           `gorm:"default:false" json:"iron_rules"`   // enforce iron rules for responses
 	CreatedBy    uint           `json:"created_by"`
 	AgentSkills  []AgentSkill   `gorm:"foreignKey:AgentID" json:"agent_skills,omitempty"`
 }
@@ -69,10 +71,30 @@ type Skill struct {
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 	Name        string         `gorm:"size:128;not null" json:"name"`
 	Description string         `gorm:"type:text" json:"description"`
-	Type        string         `gorm:"size:32" json:"type"`     // delivery, ops, knowledge
-	Config      string         `gorm:"type:text" json:"config"` // JSON config
+	Type        string         `gorm:"size:32" json:"type"`       // delivery, ops, knowledge, community
+	Category    string         `gorm:"size:64" json:"category"`   // delivery-skill, k8s-operator, openstack-operator
+	Config      string         `gorm:"type:text" json:"config"`   // JSON config
 	ToolDefs    string         `gorm:"type:text" json:"tool_defs"`
 	IsActive    bool           `gorm:"default:true" json:"is_active"`
+	DocCount    int            `gorm:"default:0" json:"doc_count"`    // number of knowledge documents
+	ChunkCount  int            `gorm:"default:0" json:"chunk_count"`  // number of text chunks indexed
+	Documents   []SkillDocument `gorm:"foreignKey:SkillID" json:"documents,omitempty"`
+}
+
+// SkillDocument stores uploaded documents for a skill's knowledge base
+type SkillDocument struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	SkillID   uint           `gorm:"index;not null" json:"skill_id"`
+	FileName  string         `gorm:"size:512;not null" json:"file_name"`
+	FilePath  string         `gorm:"size:1024" json:"file_path"`
+	FileType  string         `gorm:"size:32" json:"file_type"` // docx, xlsx, pdf, md
+	FileSize  int64          `json:"file_size"`
+	Content   string         `gorm:"type:longtext" json:"-"`  // extracted text content
+	Chunks    int            `gorm:"default:0" json:"chunks"` // number of text chunks
+	Status    string         `gorm:"size:32;default:pending" json:"status"` // pending, processing, ready, error
 }
 
 // AgentSkill is the many-to-many join table linking agents to skills

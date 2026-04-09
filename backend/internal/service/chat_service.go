@@ -11,6 +11,7 @@ import (
 
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
+	"github.com/jibiao-ai/deliverydesk/internal/skill"
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
 	"gorm.io/gorm"
 )
@@ -36,6 +37,9 @@ func (s *ChatService) GetDashboardStats(userID uint) (map[string]interface{}, er
 	var linkCount int64
 	repository.DB.Model(&model.WebsiteLink{}).Count(&linkCount)
 
+	var skillCount int64
+	repository.DB.Model(&model.Skill{}).Where("is_active = ?", true).Count(&skillCount)
+
 	// Recent conversations
 	var recentConvs []model.Conversation
 	repository.DB.Where("user_id = ?", userID).Order("updated_at DESC").Limit(6).Find(&recentConvs)
@@ -45,6 +49,7 @@ func (s *ChatService) GetDashboardStats(userID uint) (map[string]interface{}, er
 		"ai_models":            aiModelCount,
 		"conversations":        convCount,
 		"website_links":        linkCount,
+		"skills":               skillCount,
 		"recent_conversations": recentConvs,
 	}, nil
 }
@@ -89,8 +94,32 @@ func (s *ChatService) UpdateAgentSkills(agentID uint, skillIDs []uint) error {
 
 func (s *ChatService) GetSkills() ([]model.Skill, error) {
 	var skills []model.Skill
-	err := repository.DB.Find(&skills).Error
+	err := repository.DB.Preload("Documents").Find(&skills).Error
 	return skills, err
+}
+
+func (s *ChatService) GetSkill(id uint) (*model.Skill, error) {
+	var sk model.Skill
+	err := repository.DB.Preload("Documents").First(&sk, id).Error
+	return &sk, err
+}
+
+func (s *ChatService) CreateSkill(sk *model.Skill) error {
+	return repository.DB.Create(sk).Error
+}
+
+func (s *ChatService) UpdateSkill(sk *model.Skill) error {
+	return repository.DB.Save(sk).Error
+}
+
+func (s *ChatService) DeleteSkill(id uint) error {
+	// Clear indexed chunks
+	skill.GetStore().ClearSkill(id)
+	// Delete documents
+	repository.DB.Where("skill_id = ?", id).Delete(&model.SkillDocument{})
+	// Remove agent-skill links
+	repository.DB.Where("skill_id = ?", id).Delete(&model.AgentSkill{})
+	return repository.DB.Delete(&model.Skill{}, id).Error
 }
 
 func (s *ChatService) GetSkillsByAgent(agentID uint) ([]model.Skill, error) {
@@ -101,6 +130,90 @@ func (s *ChatService) GetSkillsByAgent(agentID uint) ([]model.Skill, error) {
 		skills = append(skills, as.Skill)
 	}
 	return skills, nil
+}
+
+// ==================== Skill Documents ====================
+
+func (s *ChatService) AddSkillDocument(doc *model.SkillDocument) error {
+	if err := repository.DB.Create(doc).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ChatService) IndexSkillDocument(doc *model.SkillDocument) error {
+	// Update status
+	repository.DB.Model(doc).Update("status", "processing")
+
+	// Parse and index the document
+	chunks, err := skill.IndexDocumentFile(doc.SkillID, doc.ID, doc.FileName, doc.FilePath)
+	if err != nil {
+		repository.DB.Model(doc).Updates(map[string]interface{}{
+			"status": "error",
+		})
+		return err
+	}
+
+	// Update document and skill stats
+	repository.DB.Model(doc).Updates(map[string]interface{}{
+		"status": "ready",
+		"chunks": chunks,
+	})
+
+	// Update skill chunk count
+	totalChunks := skill.GetStore().GetChunkCount(doc.SkillID)
+	var docCount int64
+	repository.DB.Model(&model.SkillDocument{}).Where("skill_id = ? AND status = ?", doc.SkillID, "ready").Count(&docCount)
+	repository.DB.Model(&model.Skill{}).Where("id = ?", doc.SkillID).Updates(map[string]interface{}{
+		"doc_count":   docCount,
+		"chunk_count": totalChunks,
+	})
+
+	return nil
+}
+
+// IndexSkillDocumentFromContent indexes a document from already-parsed content
+func (s *ChatService) IndexSkillDocumentFromContent(doc *model.SkillDocument, content string) error {
+	repository.DB.Model(doc).Update("status", "processing")
+
+	chunks := skill.GetStore().IndexDocument(doc.SkillID, doc.ID, doc.FileName, content)
+
+	repository.DB.Model(doc).Updates(map[string]interface{}{
+		"status":  "ready",
+		"chunks":  chunks,
+		"content": content,
+	})
+
+	totalChunks := skill.GetStore().GetChunkCount(doc.SkillID)
+	var docCount int64
+	repository.DB.Model(&model.SkillDocument{}).Where("skill_id = ? AND status = ?", doc.SkillID, "ready").Count(&docCount)
+	repository.DB.Model(&model.Skill{}).Where("id = ?", doc.SkillID).Updates(map[string]interface{}{
+		"doc_count":   docCount,
+		"chunk_count": totalChunks,
+	})
+
+	logger.Log.Infof("Indexed document '%s' for skill %d: %d chunks", doc.FileName, doc.SkillID, chunks)
+	return nil
+}
+
+// ReindexSkill reloads all documents for a skill from the database
+func (s *ChatService) ReindexSkill(skillID uint) error {
+	skill.GetStore().ClearSkill(skillID)
+
+	var docs []model.SkillDocument
+	repository.DB.Where("skill_id = ? AND status = ?", skillID, "ready").Find(&docs)
+
+	for _, doc := range docs {
+		if doc.Content != "" {
+			skill.GetStore().IndexDocument(skillID, doc.ID, doc.FileName, doc.Content)
+		} else if doc.FilePath != "" {
+			skill.IndexDocumentFile(skillID, doc.ID, doc.FileName, doc.FilePath)
+		}
+	}
+
+	totalChunks := skill.GetStore().GetChunkCount(skillID)
+	repository.DB.Model(&model.Skill{}).Where("id = ?", skillID).Update("chunk_count", totalChunks)
+	return nil
 }
 
 // ==================== Conversations ====================
@@ -143,7 +256,7 @@ func (s *ChatService) GetMessages(convID, userID uint) ([]model.Message, error) 
 
 func (s *ChatService) SendMessage(convID, userID uint, content string) (*model.Message, *model.Message, error) {
 	var conv model.Conversation
-	if err := repository.DB.Preload("Agent").First(&conv, convID).Error; err != nil {
+	if err := repository.DB.Preload("Agent").Preload("Agent.AgentSkills").Preload("Agent.AgentSkills.Skill").First(&conv, convID).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -155,7 +268,7 @@ func (s *ChatService) SendMessage(convID, userID uint, content string) (*model.M
 	}
 	repository.DB.Create(&userMsg)
 
-	// Get AI response
+	// Get AI response (with skill-aware RAG)
 	aiContent := s.getAIResponse(conv.Agent, content, convID)
 
 	// Save assistant message
@@ -181,6 +294,82 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 		}
 	}
 
+	aiConfig := skill.AIConfig{
+		BaseURL: provider.BaseURL,
+		APIKey:  provider.APIKey,
+		Model:   provider.Model,
+	}
+
+	modelName := agent.Model
+	if modelName == "" {
+		modelName = provider.Model
+	} else {
+		aiConfig.Model = modelName
+	}
+
+	// Check if agent has delivery skills with indexed documents - use RAG
+	if agent.IronRules || hasDeliverySkills(agent) {
+		ragResult := s.runSkillRAG(agent, aiConfig, userContent)
+		if ragResult != "" {
+			return ragResult
+		}
+	}
+
+	// Standard AI response (no RAG)
+	return s.standardAIResponse(agent, provider, modelName, userContent, convID)
+}
+
+func hasDeliverySkills(agent model.Agent) bool {
+	for _, as := range agent.AgentSkills {
+		if as.Skill.Type == "delivery" && skill.GetStore().GetChunkCount(as.Skill.ID) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *ChatService) runSkillRAG(agent model.Agent, aiConfig skill.AIConfig, question string) string {
+	var allResults []skill.RAGResult
+
+	for _, as := range agent.AgentSkills {
+		sk := as.Skill
+		if !sk.IsActive {
+			continue
+		}
+		chunkCount := skill.GetStore().GetChunkCount(sk.ID)
+		if chunkCount == 0 {
+			continue
+		}
+
+		result := skill.RunRAG(aiConfig, sk.ID, sk.Name, question, agent.IronRules)
+		if !result.Empty {
+			allResults = append(allResults, result)
+		}
+	}
+
+	if len(allResults) == 0 {
+		if agent.IronRules {
+			return "无有效数据，无法判断。当前绑定的技能知识库中没有与您的问题相关的文档内容。\n\n[置信度: 0/10]\n[低置信度警告]"
+		}
+		return "" // fall through to standard AI response
+	}
+
+	// Combine results from multiple skills
+	if len(allResults) == 1 {
+		return allResults[0].Answer
+	}
+
+	var sb strings.Builder
+	sb.WriteString("综合多个技能知识库的查询结果：\n\n")
+	for _, r := range allResults {
+		sb.WriteString(fmt.Sprintf("### 来自技能「%s」的回答\n", r.SkillName))
+		sb.WriteString(r.Answer)
+		sb.WriteString("\n\n")
+	}
+	return sb.String()
+}
+
+func (s *ChatService) standardAIResponse(agent model.Agent, provider model.AIProvider, modelName, userContent string, convID uint) string {
 	// Build messages for the API call
 	messages := []map[string]string{}
 	if agent.SystemPrompt != "" {
@@ -198,11 +387,6 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 	}
 	messages = append(messages, map[string]string{"role": "user", "content": userContent})
 
-	modelName := agent.Model
-	if modelName == "" {
-		modelName = provider.Model
-	}
-
 	payload := map[string]interface{}{
 		"model":      modelName,
 		"messages":   messages,
@@ -215,9 +399,104 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 	payloadBytes, _ := json.Marshal(payload)
 	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
 
+	// Retry up to 5 times on failure (Iron Rule #7)
+	maxRetries := 1
+	if agent.IronRules {
+		maxRetries = 5
+	}
+
+	var lastErr string
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payloadBytes))
+		if err != nil {
+			lastErr = fmt.Sprintf("AI 请求创建失败: %v", err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+
+		client := &http.Client{Timeout: 120 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Sprintf("AI 服务请求失败: %v", err)
+			logger.Log.Errorf("AI request failed (attempt %d): %v", attempt+1, err)
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			lastErr = fmt.Sprintf("AI 服务返回错误 (HTTP %d)", resp.StatusCode)
+			logger.Log.Errorf("AI API error (HTTP %d, attempt %d): %s", resp.StatusCode, attempt+1, string(body[:min(len(body), 500)]))
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+			continue
+		}
+
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			lastErr = "AI 响应解析失败"
+			continue
+		}
+		if len(result.Choices) > 0 {
+			return result.Choices[0].Message.Content
+		}
+		lastErr = "AI 未返回内容"
+	}
+
+	return lastErr
+}
+
+// ==================== Website Links ====================
+
+// SendMessageToAgent handles a single message to a published agent (stateless)
+func (s *ChatService) SendMessageToAgent(agent model.Agent, provider model.AIProvider, message string) string {
+	aiConfig := skill.AIConfig{
+		BaseURL: provider.BaseURL,
+		APIKey:  provider.APIKey,
+		Model:   provider.Model,
+	}
+
+	if agent.Model != "" {
+		aiConfig.Model = agent.Model
+	}
+
+	// Try RAG first if agent has delivery skills
+	if agent.IronRules || hasDeliverySkills(agent) {
+		ragResult := s.runSkillRAG(agent, aiConfig, message)
+		if ragResult != "" {
+			return ragResult
+		}
+	}
+
+	// Standard AI response
+	messages := []map[string]string{}
+	if agent.SystemPrompt != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": agent.SystemPrompt})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": message})
+
+	payload := map[string]interface{}{
+		"model":      aiConfig.Model,
+		"messages":   messages,
+		"max_tokens": agent.MaxTokens,
+	}
+	if agent.Temperature > 0 {
+		payload["temperature"] = agent.Temperature
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payloadBytes))
 	if err != nil {
-		logger.Log.Errorf("Create AI request failed: %v", err)
 		return "AI 请求创建失败"
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -226,14 +505,12 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Log.Errorf("AI request failed: %v", err)
 		return "AI 服务请求失败，请稍后重试"
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		logger.Log.Errorf("AI API error (HTTP %d): %s", resp.StatusCode, string(body[:min(len(body), 500)]))
 		return fmt.Sprintf("AI 服务返回错误 (HTTP %d)", resp.StatusCode)
 	}
 
@@ -252,8 +529,6 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 	}
 	return "AI 未返回内容"
 }
-
-// ==================== Website Links ====================
 
 func (s *ChatService) GetWebsiteCategories() ([]model.WebsiteCategory, error) {
 	var categories []model.WebsiteCategory

@@ -20,14 +20,11 @@ api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
     const requestUrl = error.config?.url || '';
-    // Don't redirect on 401 from login endpoint — let the login page handle the error
     if (error.response?.status === 401 && !requestUrl.includes('/login')) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
-    // Return the response data (with error code/message) instead of rejecting,
-    // so callers can read backend error messages
     if (error.response?.data) {
       return error.response.data;
     }
@@ -64,7 +61,25 @@ export const sendMessage = (conversationId, content) =>
 
 // Skills
 export const getSkills = () => api.get('/skills');
+export const getSkill = (id) => api.get(`/skills/${id}`);
+export const createSkill = (data) => api.post('/skills', data);
+export const updateSkill = (id, data) => api.put(`/skills/${id}`, data);
+export const deleteSkill = (id) => api.delete(`/skills/${id}`);
+export const uploadSkillDocument = (skillId, file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post(`/skills/${skillId}/upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300000,
+  });
+};
+export const reindexSkill = (id) => api.post(`/skills/${id}/reindex`);
 export const getAgentSkills = (agentId) => api.get(`/agents/${agentId}/skills`);
+
+// Published Agents (External)
+export const getPublishedAgents = () => api.get('/published-agents');
+export const chatWithPublishedAgent = (agentId, message) =>
+  api.post(`/published-agents/${agentId}/chat`, { message });
 
 // Users (Admin)
 export const getUsers = (params) => api.get('/users', { params });

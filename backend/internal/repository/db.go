@@ -112,6 +112,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"LDAPConfig":      &model.LDAPConfig{},
 		"Agent":           &model.Agent{},
 		"Skill":           &model.Skill{},
+		"SkillDocument":   &model.SkillDocument{},
 		"AgentSkill":      &model.AgentSkill{},
 		"Conversation":    &model.Conversation{},
 		"Message":         &model.Message{},
@@ -122,7 +123,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"OperationLog":    &model.OperationLog{},
 	}
 	migrationOrder := []string{
-		"User", "LDAPConfig", "Agent", "Skill", "AgentSkill",
+		"User", "LDAPConfig", "Agent", "Skill", "SkillDocument", "AgentSkill",
 		"Conversation", "Message", "TaskLog",
 		"WebsiteCategory", "WebsiteLink", "AIProvider", "OperationLog",
 	}
@@ -221,53 +222,82 @@ func seedDefaultData(db *gorm.DB) {
 	}
 	logger.Log.Info("Default AI providers seeded")
 
+	// Seed default skills (delivery skill + community skills)
+	var skillCount int64
+	db.Model(&model.Skill{}).Count(&skillCount)
+	if skillCount == 0 {
+		skills := []model.Skill{
+			{
+				Name:        "交付技能的skills",
+				Description: "基于交付文档知识库的技能，可以帮助用户编写实施方案、回答交付相关问题（交付边界、兼容性等）",
+				Type:        "delivery",
+				Category:    "delivery-skill",
+				IsActive:    true,
+			},
+		}
+		for _, s := range skills {
+			db.Create(&s)
+		}
+		logger.Log.Info("Default delivery skill created")
+	}
+
+	// Seed community skills (k8s-operator, openstack-operator)
+	seedCommunitySkills(db)
+
 	// Seed default agents
 	var agentCount int64
 	db.Model(&model.Agent{}).Count(&agentCount)
 	if agentCount == 0 {
+		// Get the delivery skill ID for linking
+		var deliverySkill model.Skill
+		db.Where("category = ?", "delivery-skill").First(&deliverySkill)
+
 		agents := []model.Agent{
 			{
 				Name:        "交付黄页智能体",
 				Description: "汇聚交付团队常用知识库、文档链接和操作指南的智能体，快速导航到需要的资源",
 				SystemPrompt: "你是交付黄页智能助手，帮助交付工程师快速找到所需的文档、工具和资源链接。你熟悉所有常用的交付工具和系统，能够根据用户的需求推荐最合适的资源。",
-				Model:       "gpt-4",
+				Model:       "",
 				Temperature: 0.3,
 				MaxTokens:   4096,
 				IsActive:    true,
 				CreatedBy:   1,
 			},
 			{
-				Name:        "交付技能智能体",
-				Description: "提供云平台交付技能指导，包括安装部署、运维手册、升级操作等专业技能支持",
-				SystemPrompt: "你是交付技能专家智能体，专注于 EasyStack 云平台的交付技能指导。你可以帮助工程师解决安装部署、运维管理、升级操作等方面的问题。请基于最佳实践给出详细的操作步骤和建议。",
-				Model:       "gpt-4",
-				Temperature: 0.2,
-				MaxTokens:   8192,
-				IsActive:    true,
-				CreatedBy:   1,
+				Name:         "交付专家",
+				Description:  "交付专家智能体 - 连接交付技能知识库，提供实施方案编写、交付边界确认、兼容性查询等专业服务。严格遵循铁律规则，所有回答基于真实文档数据。",
+				SystemPrompt: deliveryExpertSystemPrompt(),
+				Model:        "",
+				Temperature:  0.2,
+				MaxTokens:    8192,
+				IsActive:     true,
+				IsPublished:  true,
+				IronRules:    true,
+				CreatedBy:    1,
 			},
 		}
 		for _, a := range agents {
 			db.Create(&a)
 		}
-		logger.Log.Info("Default agents created")
-	}
-
-	// Seed default skills
-	var skillCount int64
-	db.Model(&model.Skill{}).Count(&skillCount)
-	if skillCount == 0 {
-		skills := []model.Skill{
-			{Name: "文档检索", Description: "从知识库中检索交付相关文档和操作手册", Type: "knowledge", IsActive: true},
-			{Name: "安装部署指导", Description: "V6.x版本安装部署流程和注意事项", Type: "delivery", IsActive: true},
-			{Name: "升级迁移", Description: "云平台版本升级和数据迁移操作指南", Type: "delivery", IsActive: true},
-			{Name: "运维巡检", Description: "日常运维巡检和故障排查技能", Type: "ops", IsActive: true},
-			{Name: "网络配置", Description: "SDN网络、存储网络等配置包制作技能", Type: "delivery", IsActive: true},
+		// Link delivery expert to delivery skill
+		if deliverySkill.ID > 0 {
+			var expert model.Agent
+			db.Where("name = ?", "交付专家").First(&expert)
+			if expert.ID > 0 {
+				db.Create(&model.AgentSkill{AgentID: expert.ID, SkillID: deliverySkill.ID})
+				// Also link community skills
+				var k8sSkill, osSkill model.Skill
+				db.Where("category = ?", "k8s-operator").First(&k8sSkill)
+				db.Where("category = ?", "openstack-operator").First(&osSkill)
+				if k8sSkill.ID > 0 {
+					db.Create(&model.AgentSkill{AgentID: expert.ID, SkillID: k8sSkill.ID})
+				}
+				if osSkill.ID > 0 {
+					db.Create(&model.AgentSkill{AgentID: expert.ID, SkillID: osSkill.ID})
+				}
+			}
 		}
-		for _, s := range skills {
-			db.Create(&s)
-		}
-		logger.Log.Info("Default skills created")
+		logger.Log.Info("Default agents created (including 交付专家)")
 	}
 
 	// Seed website links from Excel data
@@ -378,4 +408,67 @@ func seedWebsiteLinks(db *gorm.DB) {
 		}
 	}
 	logger.Log.Info("Website links seeded (5 categories)")
+}
+
+func seedCommunitySkills(db *gorm.DB) {
+	communityDefs := []struct {
+		Name        string
+		Description string
+		Category    string
+		ToolDefs    string
+	}{
+		{
+			Name:        "k8s-operator",
+			Description: "Kubernetes 集群管理技能 - 提供 K8S 集群运维、故障排查、资源管理、Pod调度、网络策略、存储管理等操作指导",
+			Category:    "k8s-operator",
+			ToolDefs:    `[{"name":"k8s_cluster_status","description":"获取K8S集群状态"},{"name":"k8s_pod_diagnosis","description":"诊断Pod异常"},{"name":"k8s_resource_check","description":"检查资源配额"},{"name":"k8s_yaml_generator","description":"生成K8S YAML配置"}]`,
+		},
+		{
+			Name:        "openstack-operator",
+			Description: "OpenStack 云平台管理技能 - 提供 OpenStack 部署运维、计算/网络/存储服务管理、故障排查、性能调优等操作指导",
+			Category:    "openstack-operator",
+			ToolDefs:    `[{"name":"os_service_status","description":"检查OpenStack服务状态"},{"name":"os_compute_diagnosis","description":"诊断计算服务问题"},{"name":"os_network_diagnosis","description":"诊断网络问题"},{"name":"os_compatibility_check","description":"检查兼容性"}]`,
+		},
+	}
+	for _, def := range communityDefs {
+		var existing model.Skill
+		if err := db.Where("category = ?", def.Category).First(&existing).Error; err != nil {
+			skill := model.Skill{
+				Name:        def.Name,
+				Description: def.Description,
+				Type:        "community",
+				Category:    def.Category,
+				ToolDefs:    def.ToolDefs,
+				IsActive:    true,
+			}
+			db.Create(&skill)
+			logger.Log.Infof("Community skill '%s' seeded", def.Name)
+		}
+	}
+}
+
+func deliveryExpertSystemPrompt() string {
+	return `你是「交付专家」智能体，专注于 EasyStack 云平台的交付服务。你连接了交付技能知识库、K8S管理技能和OpenStack管理技能。
+
+## 核心能力
+1. **实施方案编写**: 基于知识库中的模板和标准，帮助用户编写项目实施方案
+2. **交付边界确认**: 根据产品规划文档确认交付范围和边界
+3. **兼容性查询**: 根据兼容性列表回答硬件/软件兼容性问题
+4. **安装部署指导**: 提供 ECF V6.2.1 安装部署步骤和注意事项
+5. **新功能特性**: 解答 EHV 计算虚拟化和镜像服务的新功能特性
+
+## 铁律规则（必须严格遵守）
+1. 所有指标、标签、数值必须来自技能知识库的具体结果，禁止编造数据
+2. 如果没有技能数据，不要推断根因或编造趋势
+3. 阈值必须来自具体技能数据，禁止自定义阈值
+4. 回答必须引用具体的技能和绑定的环境信息
+5. 如果数据为空，直接回复"无有效数据，无法判断"
+6. 每个回答需要给出1-10的置信度评分，低于7分需标注"[低置信度警告]"
+7. 遵守 token 限制，失败时最多重试5次
+
+## 回答格式
+- 引用来源: [1] [2] 标注引用的文档片段
+- 置信度: [置信度: X/10]
+- 技能来源: 标注数据来自哪个技能
+- 低置信度时: 添加 [低置信度警告] 标签`
 }

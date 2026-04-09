@@ -82,6 +82,10 @@ func main() {
 		api.POST("/login", h.Login)
 		api.GET("/health", h.HealthCheck)
 
+		// Published agents external API (no auth required)
+		api.GET("/published-agents", h.ListPublishedAgents)
+		api.POST("/published-agents/:id/chat", h.PublishedAgentChat)
+
 		auth := api.Group("")
 		auth.Use(middleware.AuthMiddleware())
 		{
@@ -106,6 +110,12 @@ func main() {
 
 			// Skills
 			auth.GET("/skills", h.ListSkills)
+			auth.GET("/skills/:id", h.GetSkill)
+			auth.POST("/skills", h.CreateSkill)
+			auth.PUT("/skills/:id", h.UpdateSkill)
+			auth.DELETE("/skills/:id", h.DeleteSkill)
+			auth.POST("/skills/:id/upload", h.UploadSkillDocument)
+			auth.POST("/skills/:id/reindex", h.ReindexSkill)
 			auth.GET("/agents/:id/skills", h.GetAgentSkills)
 
 			// AI Providers
