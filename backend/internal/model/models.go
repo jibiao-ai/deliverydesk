@@ -34,7 +34,7 @@ type LDAPConfig struct {
 	BindDN       string         `gorm:"size:512" json:"bind_dn"`
 	BindPassword string         `gorm:"size:256" json:"-"`
 	BaseDN       string         `gorm:"size:512;not null" json:"base_dn"`
-	UserFilter   string         `gorm:"size:512;default:(uid=%s)" json:"user_filter"`
+	UserFilter   string         `gorm:"size:512" json:"user_filter"`
 	GroupFilter  string         `gorm:"size:512" json:"group_filter"`
 	AttrUsername string         `gorm:"size:64;default:uid" json:"attr_username"`
 	AttrEmail    string         `gorm:"size:64;default:mail" json:"attr_email"`
