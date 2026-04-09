@@ -43,7 +43,9 @@ func UpdateUser(user *model.User) error {
 	if err := repository.DB.First(&existing, user.ID).Error; err != nil {
 		return errors.New("user not found")
 	}
-	if user.Password != "" {
+	// Preserve auth_type - it cannot be changed via update
+	user.AuthType = existing.AuthType
+	if user.Password != "" && existing.AuthType == "local" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), 10)
 		if err != nil {
 			return err
