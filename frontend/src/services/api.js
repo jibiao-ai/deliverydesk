@@ -169,6 +169,7 @@ export const createLDAPConfig = (data) => api.post('/ldap-configs', data);
 export const updateLDAPConfig = (id, data) => api.put(`/ldap-configs/${id}`, data);
 export const deleteLDAPConfig = (id) => api.delete(`/ldap-configs/${id}`);
 export const testLDAPConfig = (id) => api.post(`/ldap-configs/${id}/test`);
+export const diagnoseLDAPConfig = (id) => api.get(`/ldap-configs/${id}/diagnose`);
 export const syncLDAPUsers = () => api.post('/ldap-configs/sync-users');
 
 // AI Providers

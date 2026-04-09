@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Server, Plus, Edit2, Trash2, CheckCircle, XCircle, Loader2, X, Wifi, Shield } from 'lucide-react';
-import { getLDAPConfigs, createLDAPConfig, updateLDAPConfig, deleteLDAPConfig, testLDAPConfig } from '../services/api';
+import { Server, Plus, Edit2, Trash2, CheckCircle, XCircle, Loader2, X, Wifi, Shield, Search } from 'lucide-react';
+import { getLDAPConfigs, createLDAPConfig, updateLDAPConfig, deleteLDAPConfig, testLDAPConfig, diagnoseLDAPConfig } from '../services/api';
 import toast from 'react-hot-toast';
 
 export default function LDAPPage() {
@@ -11,6 +11,8 @@ export default function LDAPPage() {
   const [form, setForm] = useState({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState({});
+  const [diagnosing, setDiagnosing] = useState({});
+  const [diagResult, setDiagResult] = useState(null);
 
   useEffect(() => { loadConfigs(); }, []);
 
@@ -60,6 +62,19 @@ export default function LDAPPage() {
     finally { setTesting(p => ({ ...p, [id]: false })); }
   };
 
+  const handleDiagnose = async (id) => {
+    setDiagnosing(p => ({ ...p, [id]: true }));
+    try {
+      const res = await diagnoseLDAPConfig(id);
+      if (res.code === 0) {
+        setDiagResult(res.data);
+      } else {
+        toast.error(res.message || '诊断失败');
+      }
+    } catch (e) { toast.error('诊断请求失败'); }
+    finally { setDiagnosing(p => ({ ...p, [id]: false })); }
+  };
+
   if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary-600" /></div>;
 
   return (
@@ -98,6 +113,10 @@ export default function LDAPPage() {
                       <p className="text-sm text-gray-400">{cfg.host}:{cfg.port} | BaseDN: {cfg.base_dn}{cfg.user_ou ? ` | 用户OU: ${cfg.user_ou.split('|').length > 1 ? cfg.user_ou.split('|').length + '个OU' : cfg.user_ou}` : ''}</p>
                     </div>
                     <div className="flex gap-1">
+                      <button onClick={() => handleDiagnose(cfg.id)} disabled={diagnosing[cfg.id]}
+                        className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="诊断同步">
+                        {diagnosing[cfg.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      </button>
                       <button onClick={() => handleTest(cfg.id)} disabled={testing[cfg.id]}
                         className="p-1.5 text-gray-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg" title="测试连接">
                         {testing[cfg.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
@@ -135,7 +154,7 @@ export default function LDAPPage() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* LDAP Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
@@ -209,6 +228,98 @@ export default function LDAPPage() {
               <button onClick={handleSave} disabled={saving} className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editConfig ? '保存修改' : '创建配置'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diagnostic Result Modal */}
+      {diagResult && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-800">LDAP 同步诊断报告</h2>
+              <button onClick={() => setDiagResult(null)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4 text-sm">
+              {/* Config info */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-700 mb-2">配置信息</h3>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                  <div>名称: <strong>{diagResult.config_name}</strong></div>
+                  <div>服务器: <strong>{diagResult.host}</strong></div>
+                  <div>Base DN: <strong>{diagResult.base_dn}</strong></div>
+                  <div>用户 OU: <strong>{diagResult.user_ou || '(未设置)'}</strong></div>
+                </div>
+              </div>
+
+              {/* Steps */}
+              {(diagResult.steps || []).map((step, idx) => (
+                <div key={idx} className={`rounded-xl p-4 ${step.status === 'OK' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    {step.status === 'OK'
+                      ? <CheckCircle className="w-4 h-4 text-green-600" />
+                      : <XCircle className="w-4 h-4 text-red-600" />
+                    }
+                    <span className={`font-semibold ${step.status === 'OK' ? 'text-green-700' : 'text-red-700'}`}>
+                      {step.step === 'connect' ? '连接' : step.step === 'bind' ? '认证绑定' : step.step === 'search_bases' ? '搜索范围' : step.step === 'search' ? 'LDAP搜索' : step.step === 'database' ? '数据库状态' : step.step}
+                    </span>
+                  </div>
+                  {step.error && <p className="text-xs text-red-600 ml-6">{step.error}</p>}
+                  {step.hint && <p className="text-xs text-amber-600 ml-6">{step.hint}</p>}
+                  {step.bases && (
+                    <div className="text-xs text-green-700 ml-6">
+                      {step.bases.map((b, i) => <div key={i}>OU {i + 1}: {b}</div>)}
+                    </div>
+                  )}
+                  {step.filter && (
+                    <div className="text-xs text-green-700 ml-6">
+                      过滤器: {step.filter} | 找到: <strong>{step.total_found}</strong> 条 | 空用户名: {step.empty_username} 条
+                    </div>
+                  )}
+                  {step.details && (
+                    <div className="ml-6 mt-2 space-y-1">
+                      {step.details.map((d, di) => (
+                        <div key={di} className={`text-xs p-2 rounded ${d.status === 'OK' ? 'bg-green-100' : 'bg-red-100'}`}>
+                          <strong>{d.base}</strong>: {d.entries_found != null ? `${d.entries_found} 条` : d.error}
+                          {d.method && <span className="text-gray-500 ml-1">({d.method})</span>}
+                          {d.sample_users && d.sample_users.length > 0 && (
+                            <span className="text-gray-500 ml-1">示例: {d.sample_users.join(', ')}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {step.total_users != null && (
+                    <div className="text-xs text-green-700 ml-6">
+                      数据库用户总数: {step.total_users} | LDAP用户: {step.ldap_users} | 软删除: {step.soft_deleted}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Summary */}
+              {diagResult.summary && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <h3 className="font-semibold text-blue-700 mb-2">诊断总结</h3>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
+                    <div>LDAP找到: <strong>{diagResult.summary.ldap_entries_found}</strong></div>
+                    <div>有效用户: <strong>{diagResult.summary.ldap_usable_entries}</strong></div>
+                    <div>数据库LDAP用户: <strong>{diagResult.summary.db_ldap_users}</strong></div>
+                    <div>差距: <strong className={diagResult.summary.gap > 0 ? 'text-red-600' : 'text-green-600'}>{diagResult.summary.gap}</strong></div>
+                  </div>
+                  {diagResult.summary.recommendation && (
+                    <p className="text-xs text-blue-800 mt-2 bg-blue-100 rounded-lg p-2">{diagResult.summary.recommendation}</p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button onClick={() => setDiagResult(null)} className="px-4 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium">
+                关闭
               </button>
             </div>
           </div>

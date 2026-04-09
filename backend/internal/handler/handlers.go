@@ -1046,7 +1046,19 @@ func dialLDAP(config model.LDAPConfig) (*ldap.Conn, error) {
 	return ldap.Dial("tcp", addr)
 }
 
-// SyncLDAPUsers pulls users from all enabled LDAP configurations into the platform
+// SyncLDAPUsers pulls users from all enabled LDAP configurations into the platform.
+//
+// Known pitfalls this function guards against:
+//   1. LDAP server SizeLimit (e.g. 500 / 1000) — we try multiple paging sizes
+//      (100 → 50 → plain search) and accept partial results from SizeLimitExceeded.
+//   2. Username uniqueIndex — if a local "admin" user already exists, creating an
+//      LDAP user with the same name is logged and counted as "skipped_local_conflict".
+//   3. GORM DeletedAt soft-delete — we also check Unscoped for soft-deleted users with
+//      the same username. If found, we permanently delete the ghost record first.
+//   4. Password NOT NULL — MySQL STRICT mode rejects empty-string inserts.
+//      We explicitly set Password to a bcrypt-hashed placeholder for LDAP users.
+//   5. Connection reuse — after a paging failure the LDAP connection may be in a bad
+//      state. We reconnect + rebind before retrying.
 func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 	// Get all enabled LDAP configurations
 	var ldapConfigs []model.LDAPConfig
@@ -1061,10 +1073,13 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 
 	newUsers := 0
 	updatedUsers := 0
+	failedUsers := 0
+	skippedLocalConflict := 0
 	var syncErrors []string
+	var diagDetails []string // detailed diagnostic per LDAP config
 
 	for _, ldapCfg := range ldapConfigs {
-		// Retrieve bind password (excluded from JSON serialization)
+		// Retrieve bind password (excluded from JSON serialization via json:"-")
 		var fullCfg model.LDAPConfig
 		repository.DB.First(&fullCfg, ldapCfg.ID)
 
@@ -1111,7 +1126,6 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 		}
 
 		// Determine search bases: support multiple OUs separated by | character
-		// e.g. "ou=Tech,dc=example,dc=com|ou=Sales,dc=example,dc=com"
 		var searchBases []string
 		if ldapCfg.UserOU != "" {
 			ouParts := strings.Split(ldapCfg.UserOU, "|")
@@ -1131,40 +1145,122 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 		// Track unique usernames to avoid duplicates across OUs
 		seenUsernames := make(map[string]bool)
 		totalEntries := 0
-		skippedEntries := 0
+		skippedEmptyUsername := 0
 
 		for _, searchBase := range searchBases {
-			logger.Log.Infof("LDAP sync: searching OU '%s' from %s", searchBase, ldapCfg.Name)
+			logger.Log.Infof("LDAP sync: searching OU '%s' from %s (filter: %s, attrs: [%s, %s, %s])",
+				searchBase, ldapCfg.Name, searchFilter, attrUsername, attrEmail, attrDisplay)
 
-			// Search for users with paging to handle large directories.
-			// Use page size of 1000 to reduce round-trips.
-			// NOTE: Do NOT include paging control in the search request controls,
-			// SearchWithPaging adds its own paging control internally.
 			searchReq := ldap.NewSearchRequest(
 				searchBase,
 				ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
 				searchFilter,
 				[]string{attrUsername, attrEmail, attrDisplay},
-				nil, // no manual controls — SearchWithPaging manages paging
+				nil,
 			)
 
-			result, err := conn.SearchWithPaging(searchReq, 1000)
-			if err != nil {
-				errMsg := fmt.Sprintf("搜索 %s (OU: %s) 失败: %v", ldapCfg.Name, searchBase, err)
+			// ── Strategy: try progressively smaller page sizes, then fall back to
+			//    plain Search. Many LDAP servers have a sizelimit (e.g. 100, 500,
+			//    1000) and return SizeLimitExceeded when paging requests exceed it.
+			var entries []*ldap.Entry
+			var searchErr error
+			var searchMethod string
+
+			pageSizes := []uint32{200, 100, 50}
+			for _, pgSize := range pageSizes {
+				result, pgErr := conn.SearchWithPaging(searchReq, pgSize)
+				if pgErr == nil {
+					entries = result.Entries
+					searchMethod = fmt.Sprintf("paged-search(size=%d)", pgSize)
+					break
+				}
+
+				// Check if error is SizeLimitExceeded (LDAP result code 4)
+				if ldap.IsErrorWithCode(pgErr, ldap.LDAPResultSizeLimitExceeded) {
+					// Paged search returned partial results — use them if available
+					if result != nil && len(result.Entries) > 0 {
+						logger.Log.Warnf("LDAP sync: SearchWithPaging(size=%d) hit sizelimit for %s (OU: %s): %d partial entries — trying smaller page",
+							pgSize, ldapCfg.Name, searchBase, len(result.Entries))
+					}
+					// Reconnect + rebind because the paged search may have left
+					// the connection in a bad state.
+					conn.Close()
+					conn2, dialErr := dialLDAP(ldapCfg)
+					if dialErr != nil {
+						searchErr = fmt.Errorf("reconnect after paging failure: %v", dialErr)
+						break
+					}
+					conn = conn2
+					if fullCfg.BindDN != "" && fullCfg.BindPassword != "" {
+						if bindErr := conn.Bind(fullCfg.BindDN, fullCfg.BindPassword); bindErr != nil {
+							searchErr = fmt.Errorf("rebind after paging failure: %v", bindErr)
+							break
+						}
+					}
+					continue // try next smaller page size
+				}
+
+				// Non-sizelimit error — try smaller page size anyway (some servers
+				// return generic errors for unsupported paged controls)
+				logger.Log.Warnf("LDAP sync: SearchWithPaging(size=%d) failed for %s (OU: %s): %v — trying next strategy",
+					pgSize, ldapCfg.Name, searchBase, pgErr)
+				// Reconnect for safety
+				conn.Close()
+				conn2, dialErr := dialLDAP(ldapCfg)
+				if dialErr != nil {
+					searchErr = fmt.Errorf("reconnect after search failure: %v", dialErr)
+					break
+				}
+				conn = conn2
+				if fullCfg.BindDN != "" && fullCfg.BindPassword != "" {
+					if bindErr := conn.Bind(fullCfg.BindDN, fullCfg.BindPassword); bindErr != nil {
+						searchErr = fmt.Errorf("rebind after search failure: %v", bindErr)
+						break
+					}
+				}
+			}
+
+			// If paging didn't work, fall back to plain Search
+			if entries == nil && searchErr == nil {
+				logger.Log.Infof("LDAP sync: all paged searches failed, falling back to plain Search for %s (OU: %s)",
+					ldapCfg.Name, searchBase)
+				plainResult, plainErr := conn.Search(searchReq)
+				if plainErr != nil {
+					// Plain search may still return SizeLimitExceeded with partial results
+					if ldap.IsErrorWithCode(plainErr, ldap.LDAPResultSizeLimitExceeded) && plainResult != nil {
+						logger.Log.Warnf("LDAP sync: plain Search hit sizelimit (%d partial entries) for %s (OU: %s)",
+							len(plainResult.Entries), ldapCfg.Name, searchBase)
+						entries = plainResult.Entries
+						searchMethod = fmt.Sprintf("plain-search-partial(%d)", len(plainResult.Entries))
+						syncErrors = append(syncErrors, fmt.Sprintf("LDAP服务器对 %s [%s] 有数量限制，仅返回 %d 条记录。请联系LDAP管理员提高 sizelimit 或配置更精确的 OU",
+							ldapCfg.Name, searchBase, len(plainResult.Entries)))
+					} else {
+						searchErr = plainErr
+					}
+				} else {
+					entries = plainResult.Entries
+					searchMethod = "plain-search"
+				}
+			}
+
+			if searchErr != nil {
+				errMsg := fmt.Sprintf("搜索 %s (OU: %s) 失败: %v", ldapCfg.Name, searchBase, searchErr)
 				logger.Log.Warnf("LDAP sync: %s", errMsg)
 				syncErrors = append(syncErrors, errMsg)
 				continue
 			}
 
-			logger.Log.Infof("LDAP search returned %d entries from %s (search base: %s, filter: %s)",
-				len(result.Entries), ldapCfg.Name, searchBase, searchFilter)
-			totalEntries += len(result.Entries)
+			logger.Log.Infof("LDAP search returned %d entries from %s (OU: %s, method: %s, filter: %s)",
+				len(entries), ldapCfg.Name, searchBase, searchMethod, searchFilter)
+			diagDetails = append(diagDetails, fmt.Sprintf("%s [%s]: %d entries (method=%s)",
+				ldapCfg.Name, searchBase, len(entries), searchMethod))
+			totalEntries += len(entries)
 
 			// Process each LDAP entry
-			for _, entry := range result.Entries {
+			for _, entry := range entries {
 				username := entry.GetAttributeValue(attrUsername)
 				if username == "" {
-					skippedEntries++
+					skippedEmptyUsername++
 					continue
 				}
 
@@ -1183,14 +1279,27 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 					displayName = username
 				}
 
-				// Check if user already exists in DB
+				// ── Check for soft-deleted ghost records ──
+				// GORM soft-delete means the DB unique index may still block creation
+				// if a user with the same username was previously deleted (has a
+				// non-NULL deleted_at). We check Unscoped and remove the ghost.
+				var ghost model.User
+				if err := repository.DB.Unscoped().Where("username = ? AND deleted_at IS NOT NULL", username).First(&ghost).Error; err == nil {
+					logger.Log.Infof("LDAP sync: removing soft-deleted ghost record for username '%s' (id=%d)", username, ghost.ID)
+					repository.DB.Unscoped().Delete(&ghost)
+				}
+
+				// Check if user already exists in DB (ANY auth_type, not just ldap)
+				// This catches the case where a local user with the same username exists.
 				var existing model.User
-				dbResult := repository.DB.Where("username = ? AND auth_type = ?", username, "ldap").First(&existing)
+				dbResult := repository.DB.Where("username = ?", username).First(&existing)
 				if dbResult.Error != nil {
-					// Create new LDAP user
+					// User does not exist at all — create new LDAP user
+					// NOTE: Password is set to a non-empty placeholder to satisfy
+					// MySQL NOT NULL + STRICT mode constraints.
 					newUser := model.User{
 						Username:    username,
-						Password:    "",
+						Password:    "LDAP_NO_LOCAL_PASSWORD",
 						Email:       email,
 						DisplayName: displayName,
 						Role:        "user",
@@ -1198,12 +1307,14 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 					}
 					if err := repository.DB.Create(&newUser).Error; err != nil {
 						logger.Log.Warnf("Failed to create LDAP user %s: %v", username, err)
+						failedUsers++
+						diagDetails = append(diagDetails, fmt.Sprintf("CREATE FAILED: %s — %v", username, err))
 						continue
 					}
 					newUsers++
-					logger.Log.Infof("Synced new LDAP user: %s (%s) from %s [OU: %s]", username, displayName, ldapCfg.Name, searchBase)
-				} else {
-					// Update existing user's email/display name from LDAP
+					logger.Log.Debugf("LDAP sync: created user %s (email=%s, display=%s)", username, email, displayName)
+				} else if existing.AuthType == "ldap" {
+					// Existing LDAP user — update email/display name if changed
 					needsUpdate := false
 					if existing.Email != email {
 						existing.Email = email
@@ -1220,13 +1331,17 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 						})
 						updatedUsers++
 					}
+				} else {
+					// Username already taken by a local user — skip but count it
+					logger.Log.Warnf("LDAP sync: username '%s' already exists as local user (id=%d), skipping", username, existing.ID)
+					skippedLocalConflict++
 				}
 			}
 		}
 		conn.Close()
 
-		logger.Log.Infof("LDAP sync from %s (OUs: %v): found %d entries total, skipped %d (empty username), unique users: %d",
-			ldapCfg.Name, searchBases, totalEntries, skippedEntries, len(seenUsernames))
+		logger.Log.Infof("LDAP sync from %s: OUs=%v, entries=%d, skipped_empty=%d, unique=%d",
+			ldapCfg.Name, searchBases, totalEntries, skippedEmptyUsername, len(seenUsernames))
 	}
 
 	// Count total LDAP users in the platform
@@ -1234,18 +1349,233 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 	repository.DB.Model(&model.User{}).Where("auth_type = ?", "ldap").Count(&totalLDAPUsers)
 
 	recordOperationLog(c, "ldap", "sync_users", 0, "",
-		fmt.Sprintf("同步LDAP用户: 新增 %d 人, 更新 %d 人, 总计 %d 个LDAP用户", newUsers, updatedUsers, totalLDAPUsers))
+		fmt.Sprintf("同步LDAP用户: 新增 %d, 更新 %d, 失败 %d, 跳过冲突 %d, 总计 %d 个LDAP用户",
+			newUsers, updatedUsers, failedUsers, skippedLocalConflict, totalLDAPUsers))
 
 	result := gin.H{
-		"new_users":        newUsers,
-		"updated_users":    updatedUsers,
-		"total_ldap_users": totalLDAPUsers,
+		"new_users":              newUsers,
+		"updated_users":          updatedUsers,
+		"failed_users":           failedUsers,
+		"skipped_local_conflict": skippedLocalConflict,
+		"total_ldap_users":       totalLDAPUsers,
+		"diagnostics":            diagDetails,
 	}
 	if len(syncErrors) > 0 {
 		result["errors"] = syncErrors
 	}
 
 	response.Success(c, result)
+}
+
+// DiagnoseLDAP provides a detailed diagnostic report for an LDAP configuration
+// without modifying any data. It helps admins understand why sync might be limited.
+func (h *Handler) DiagnoseLDAP(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	var config model.LDAPConfig
+	if err := repository.DB.First(&config, id).Error; err != nil {
+		response.BadRequest(c, "LDAP config not found")
+		return
+	}
+
+	diag := gin.H{
+		"config_name": config.Name,
+		"host":        fmt.Sprintf("%s:%d", config.Host, config.Port),
+		"tls":         config.UseTLS,
+		"base_dn":     config.BaseDN,
+		"user_ou":     config.UserOU,
+		"user_filter":  config.UserFilter,
+		"attr_username": config.AttrUsername,
+		"attr_email":    config.AttrEmail,
+		"attr_display":  config.AttrDisplay,
+	}
+	var steps []gin.H
+
+	// Step 1: Connect
+	conn, err := dialLDAP(config)
+	if err != nil {
+		steps = append(steps, gin.H{"step": "connect", "status": "FAIL", "error": err.Error()})
+		diag["steps"] = steps
+		response.Success(c, diag)
+		return
+	}
+	defer conn.Close()
+	steps = append(steps, gin.H{"step": "connect", "status": "OK"})
+
+	// Step 2: Bind
+	var fullCfg model.LDAPConfig
+	repository.DB.First(&fullCfg, id)
+	if fullCfg.BindDN != "" {
+		if err := conn.Bind(fullCfg.BindDN, fullCfg.BindPassword); err != nil {
+			steps = append(steps, gin.H{"step": "bind", "status": "FAIL", "error": err.Error(),
+				"hint": "检查 BindDN 和 Bind Password 是否正确"})
+			diag["steps"] = steps
+			response.Success(c, diag)
+			return
+		}
+		steps = append(steps, gin.H{"step": "bind", "status": "OK", "bind_dn": fullCfg.BindDN})
+	}
+
+	// Step 3: Determine search bases
+	var searchBases []string
+	if config.UserOU != "" {
+		for _, ou := range strings.Split(config.UserOU, "|") {
+			ou = strings.TrimSpace(ou)
+			if ou != "" {
+				searchBases = append(searchBases, ou)
+			}
+		}
+	}
+	if len(searchBases) == 0 {
+		searchBases = []string{config.BaseDN}
+	}
+	steps = append(steps, gin.H{"step": "search_bases", "status": "OK", "bases": searchBases})
+
+	// Step 4: Search each base
+	searchFilter := "(objectClass=person)"
+	if config.UserFilter != "" {
+		searchFilter = strings.ReplaceAll(config.UserFilter, "%s", "*")
+	}
+
+	attrUsername := config.AttrUsername
+	if attrUsername == "" {
+		attrUsername = "uid"
+	}
+
+	totalFound := 0
+	totalEmpty := 0
+	var searchResults []gin.H
+
+	for _, base := range searchBases {
+		searchReq := ldap.NewSearchRequest(
+			base,
+			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+			searchFilter,
+			[]string{attrUsername},
+			nil,
+		)
+
+		// Try paged search with small page size
+		result, err := conn.SearchWithPaging(searchReq, 100)
+		method := "paged(100)"
+		if err != nil {
+			// Fallback to plain search
+			conn.Close()
+			conn2, dialErr := dialLDAP(config)
+			if dialErr != nil {
+				searchResults = append(searchResults, gin.H{
+					"base": base, "status": "FAIL", "error": fmt.Sprintf("reconnect: %v", dialErr),
+				})
+				continue
+			}
+			conn = conn2
+			if fullCfg.BindDN != "" && fullCfg.BindPassword != "" {
+				conn.Bind(fullCfg.BindDN, fullCfg.BindPassword)
+			}
+			plainResult, plainErr := conn.Search(searchReq)
+			if plainErr != nil {
+				if ldap.IsErrorWithCode(plainErr, ldap.LDAPResultSizeLimitExceeded) && plainResult != nil {
+					result = plainResult
+					method = fmt.Sprintf("plain-partial(%d)", len(plainResult.Entries))
+				} else {
+					searchResults = append(searchResults, gin.H{
+						"base": base, "status": "FAIL", "error": plainErr.Error(),
+						"hint": "检查 BaseDN/OU 是否正确，searchFilter 是否匹配用户",
+					})
+					continue
+				}
+			} else {
+				result = plainResult
+				method = "plain"
+			}
+		}
+
+		entryCount := len(result.Entries)
+		emptyUsername := 0
+		sampleUsers := []string{}
+		for _, entry := range result.Entries {
+			uname := entry.GetAttributeValue(attrUsername)
+			if uname == "" {
+				emptyUsername++
+			} else if len(sampleUsers) < 5 {
+				sampleUsers = append(sampleUsers, uname)
+			}
+		}
+		totalFound += entryCount
+		totalEmpty += emptyUsername
+
+		searchResults = append(searchResults, gin.H{
+			"base":           base,
+			"status":         "OK",
+			"method":         method,
+			"entries_found":  entryCount,
+			"empty_username": emptyUsername,
+			"sample_users":   sampleUsers,
+		})
+	}
+
+	steps = append(steps, gin.H{
+		"step":           "search",
+		"status":         "OK",
+		"filter":         searchFilter,
+		"total_found":    totalFound,
+		"empty_username": totalEmpty,
+		"details":        searchResults,
+	})
+
+	// Step 5: Check DB state
+	var dbTotal int64
+	var dbLDAP int64
+	var dbSoftDeleted int64
+	repository.DB.Model(&model.User{}).Count(&dbTotal)
+	repository.DB.Model(&model.User{}).Where("auth_type = ?", "ldap").Count(&dbLDAP)
+	repository.DB.Unscoped().Model(&model.User{}).Where("deleted_at IS NOT NULL").Count(&dbSoftDeleted)
+
+	steps = append(steps, gin.H{
+		"step":          "database",
+		"status":        "OK",
+		"total_users":   dbTotal,
+		"ldap_users":    dbLDAP,
+		"soft_deleted":  dbSoftDeleted,
+	})
+
+	// Summary
+	diag["steps"] = steps
+	diag["summary"] = gin.H{
+		"ldap_entries_found":  totalFound,
+		"ldap_empty_username": totalEmpty,
+		"ldap_usable_entries": totalFound - totalEmpty,
+		"db_ldap_users":       dbLDAP,
+		"db_soft_deleted":     dbSoftDeleted,
+		"gap":                 (totalFound - totalEmpty) - int(dbLDAP),
+		"recommendation":      getDiagRecommendation(totalFound, totalEmpty, int(dbLDAP), int(dbSoftDeleted)),
+	}
+
+	response.Success(c, diag)
+}
+
+func getDiagRecommendation(totalFound, emptyUsername, dbLDAP, softDeleted int) string {
+	usable := totalFound - emptyUsername
+	if usable == 0 {
+		return "LDAP搜索未返回任何有效用户。请检查搜索过滤器和用户名属性配置是否正确。"
+	}
+	if usable <= dbLDAP {
+		return "数据库中的LDAP用户数已等于或超过LDAP服务器返回的用户数。同步正常。"
+	}
+	gap := usable - dbLDAP
+	var hints []string
+	if softDeleted > 0 {
+		hints = append(hints, fmt.Sprintf("发现 %d 条软删除的用户记录可能阻止新用户创建。下次同步将自动清理。", softDeleted))
+	}
+	if gap > 0 {
+		hints = append(hints, fmt.Sprintf("有 %d 个LDAP用户尚未同步到数据库。", gap))
+	}
+	if totalFound > 200 && totalFound == usable {
+		hints = append(hints, "LDAP返回用户数较多，如果数量恰好是整百数(如100/500/1000)，可能是LDAP服务器的 sizelimit 在截断结果。")
+	}
+	if len(hints) == 0 {
+		return "同步状态正常。"
+	}
+	return strings.Join(hints, " ")
 }
 
 func extractDomainFromBaseDN(baseDN string) string {

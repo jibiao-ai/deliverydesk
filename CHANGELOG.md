@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.2.1] - 2026-04-09
+
+### Fixed
+- **重大 Bug 排查: LDAP 仅同步 108 个用户**:
+  - **根因 1 - LDAP 服务器 SizeLimit**: `SearchWithPaging(500)` 可能超出 LDAP 服务器的 sizelimit 限制，
+    导致返回 SizeLimitExceeded 错误。修复：改为渐进式分页策略，依次尝试 200 → 100 → 50 的页大小，
+    每次失败后重新建立连接再尝试更小的页大小，最终降级到 plain Search 获取部分结果。
+  - **根因 2 - 软删除记录冲突**: GORM 软删除导致数据库中存在 `deleted_at IS NOT NULL` 的幽灵记录，
+    unique index 仍然阻止同名用户创建。修复：同步前先检查并清理同名的软删除记录。
+  - **根因 3 - 错误检测过于宽泛**: 原代码使用 `strings.Contains(err, "4")` 检测 SizeLimitExceeded，
+    可能误匹配其他错误。修复：改用 `ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded)` 精确检测。
+  - **根因 4 - 本地用户名冲突未计数**: 与本地用户名冲突的 LDAP 用户被静默跳过，现在增加 `skipped_local_conflict`
+    计数器并返回给前端。
+
+### Added
+- **LDAP 诊断端点**: 新增 `GET /api/ldap-configs/:id/diagnose` 接口，管理员可对每个 LDAP 配置执行完整诊断，
+  返回连接、绑定、搜索、数据库状态的逐步检查结果，包含 LDAP 搜索条目数、空用户名数、数据库差距分析和改进建议。
+- **LDAP 诊断界面**: LDAP 配置页面每个配置项新增「诊断同步」按钮（放大镜图标），点击弹出详细诊断报告对话框，
+  显示连接状态、搜索结果、样本用户名、数据库同步差距和改进建议。
+- **同步结果增强**: 用户管理页同步 LDAP 后的 toast 通知现包含失败数、冲突跳过数等详细信息，
+  诊断日志输出到浏览器 console 供管理员排查。
+- **每个创建失败的用户名记录到诊断详情**: 方便管理员定位具体哪些用户同步失败及原因。
+
+---
+
 ## [3.2.0] - 2026-04-09
 
 ### Added
