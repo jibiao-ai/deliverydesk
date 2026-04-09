@@ -1,13 +1,124 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Bot, User, Plus, Trash2, Loader2, X, Square, MessageSquare,
-  Zap, ChevronDown, PanelLeftClose, PanelLeftOpen, Sparkles,
+  Zap, ChevronDown, PanelLeftClose, PanelLeftOpen, Sparkles, Check,
 } from 'lucide-react';
 import {
   getAgents, getConversations, createConversation, deleteConversation,
   getMessages, sendMessageStream, abortStream,
 } from '../services/api';
 import toast from 'react-hot-toast';
+
+// ============================================================================
+// Elegant Agent Selector Dropdown
+// ============================================================================
+
+function AgentSelector({ agents, selectedId, onSelect, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // Close on click outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const activeAgents = agents.filter(a => a.is_active);
+  const selected = activeAgents.find(a => a.id === selectedId);
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Trigger button */}
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-2 w-full border rounded-xl text-left transition-all ${
+          open
+            ? 'border-primary-300 ring-2 ring-primary-500/20 bg-white'
+            : 'border-gray-200 bg-white hover:border-gray-300'
+        } ${compact ? 'px-3 py-2' : 'px-3.5 py-2.5'}`}
+      >
+        {selected ? (
+          <>
+            <div className={`flex-shrink-0 rounded-lg bg-primary-50 flex items-center justify-center ${compact ? 'w-7 h-7' : 'w-8 h-8'}`}>
+              <Bot className={`text-primary-600 ${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`font-medium text-gray-800 truncate ${compact ? 'text-xs' : 'text-sm'}`}>{selected.name}</p>
+              {!compact && selected.description && (
+                <p className="text-[10px] text-gray-400 truncate">{selected.description}</p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={`flex-shrink-0 rounded-lg bg-gray-100 flex items-center justify-center ${compact ? 'w-7 h-7' : 'w-8 h-8'}`}>
+              <Bot className={`text-gray-400 ${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'}`} />
+            </div>
+            <span className={`text-gray-400 ${compact ? 'text-xs' : 'text-sm'}`}>选择智能体</span>
+          </>
+        )}
+        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Dropdown menu */}
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+          <div className="max-h-64 overflow-y-auto py-1">
+            {activeAgents.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <Bot className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                <p className="text-xs text-gray-400">暂无可用智能体</p>
+              </div>
+            ) : (
+              activeAgents.map(agent => {
+                const isSelected = agent.id === selectedId;
+                return (
+                  <button
+                    key={agent.id}
+                    onClick={() => { onSelect(agent.id); setOpen(false); }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? 'bg-primary-50'
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      isSelected ? 'bg-primary-100' : 'bg-gray-100'
+                    }`}>
+                      <Bot className={`w-4 h-4 ${isSelected ? 'text-primary-600' : 'text-gray-400'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary-700' : 'text-gray-700'}`}>
+                        {agent.name}
+                      </p>
+                      {agent.description && (
+                        <p className="text-[10px] text-gray-400 truncate">{agent.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {agent.iron_rules && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-orange-100 text-orange-600">铁律</span>
+                      )}
+                      {agent.is_published && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-600">已发布</span>
+                      )}
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-primary-600" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================================
 // Multi-Tab Chat Page
@@ -273,16 +384,12 @@ export default function ChatPage() {
           {/* New conversation controls */}
           <div className="p-3 border-b border-gray-100 space-y-2">
             <div className="flex items-center gap-2">
-              <select
-                value={selectedAgentId || ''}
-                onChange={(e) => setSelectedAgentId(Number(e.target.value) || null)}
-                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500/20 outline-none"
-              >
-                <option value="">选择智能体</option>
-                {agents.filter(a => a.is_active).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+              <AgentSelector
+                agents={agents}
+                selectedId={selectedAgentId}
+                onSelect={setSelectedAgentId}
+                compact
+              />
             </div>
             <button
               onClick={handleNewConv}
@@ -590,16 +697,13 @@ function EmptyState({ agents, selectedAgentId, setSelectedAgentId, handleNewConv
           智能体回复时可随时点击「中断」按钮停止回复。
         </p>
         <div className="flex flex-col items-center gap-3">
-          <select
-            value={selectedAgentId || ''}
-            onChange={(e) => setSelectedAgentId(Number(e.target.value) || null)}
-            className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-primary-500/20 outline-none w-64"
-          >
-            <option value="">选择智能体</option>
-            {agents.filter(a => a.is_active).map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </select>
+          <div className="w-64">
+            <AgentSelector
+              agents={agents}
+              selectedId={selectedAgentId}
+              onSelect={setSelectedAgentId}
+            />
+          </div>
           <button
             onClick={handleNewConv}
             className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors text-sm font-medium shadow-sm"

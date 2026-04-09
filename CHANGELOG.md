@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.2.4] - 2026-04-09
+
+### Fixed
+- **智能体删除弹窗不优雅**: 原使用浏览器原生 `confirm()` 弹窗，替换为自定义 `DeleteAgentConfirm` 组件，
+  采用统一设计语言：红色渐变顶部条、AlertTriangle 图标、primary 配色智能体名称标签、
+  backdrop-blur 遮罩、带 loading 状态的确认按钮，与用户管理页的 `DeleteConfirm` 风格一致。
+- **智能体选择不够优雅**: 原使用浏览器原生 `<select>` 下拉框，替换为自定义 `AgentSelector` 组件，
+  显示智能体图标、名称、描述、标签（铁律/已发布），支持选中高亮、primary 配色 focus ring、
+  空状态提示、点击外部关闭，同时应用于侧栏和空状态页面两处。
+
+---
+
 ## [3.2.3] - 2026-04-09
 
 ### Changed
