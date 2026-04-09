@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.2.2] - 2026-04-09
+
+### Fixed
+- **重大 Bug: docker-compose up -d 后 VM 不可达**:
+  - **根因**: Docker bridge 网络默认尝试启用 IPv6，触发内核 `ADDRCONF(NETDEV_UP): br-xxx: link is not ready` 错误。
+    IPv6 网桥初始化失败导致宿主机网络接口状态异常，SSH 连接断开，外部无法访问 VM。
+  - **修复**: `docker-compose.yml` 中 bridge 网络显式设置 `enable_ipv6: false`，配置固定子网 `172.28.0.0/16`，
+    启用 `ip_masquerade`，避免 IPv6 初始化对宿主机网络的干扰。
+- **端口冲突风险**: MySQL (3306)、RabbitMQ (5672/15672)、Backend (8080) 端口不再暴露到宿主机，
+  仅通过 Docker 内部网络通信。只有 Frontend 的 80 端口对外暴露。减少与 VM 已有服务的端口冲突。
+- **Nginx SSE 流式响应被缓冲**: 原 nginx.conf 缺少 `proxy_buffering off` 和 `X-Accel-Buffering no`，
+  导致 AI 流式回复被 nginx 缓冲，前端看不到实时 token 推送。修复后流式对话正常工作。
+- **Nginx 超时过短**: LDAP 同步和 AI 长对话可能超过原 120s 超时。`proxy_read_timeout` 提升至 300s，
+  `proxy_send_timeout` 提升至 120s。
+
+---
+
 ## [3.2.1] - 2026-04-09
 
 ### Fixed
