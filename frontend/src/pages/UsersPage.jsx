@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   Users, Plus, Search, Edit2, Trash2, Shield, ShieldCheck,
   User, X, Check, RefreshCw, AlertCircle, Server, Lock,
-  Mail, UserCircle, KeyRound, Eye, EyeOff,
+  Mail, UserCircle, KeyRound, Eye, EyeOff, Download,
 } from 'lucide-react';
-import { getUsers, createUser, updateUser, deleteUser } from '../services/api';
+import { getUsers, createUser, updateUser, deleteUser, syncLDAPUsers, getLDAPConfigs } from '../services/api';
+import toast from 'react-hot-toast';
 
 // ── Role badge display ──────────────────────────────────────────────────────
 const ROLE_CONFIG = {
@@ -65,7 +66,7 @@ function UserModal({ user, onClose, onSave }) {
       setError('用户名不能为空');
       return;
     }
-    if (!isEdit && !form.password && form.auth_type === 'local') {
+    if (!isEdit && !form.password) {
       setError('本地用户必须设置密码');
       return;
     }
@@ -133,29 +134,31 @@ function UserModal({ user, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Password */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              {isEdit ? '密码（留空不修改）' : '密码 *'}
-            </label>
-            <div className="relative">
-              <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder={isEdit ? '留空保持原密码' : '请输入密码'}
-                className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          {/* Password (only for local users) */}
+          {!(isEdit && user?.auth_type === 'ldap') && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {isEdit ? '密码（留空不修改）' : '密码 *'}
+              </label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder={isEdit ? '留空保持原密码' : '请输入密码'}
+                  className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Email */}
           <div>
@@ -213,30 +216,13 @@ function UserModal({ user, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Auth Type (only for creation) */}
-          {!isEdit && (
+          {/* Auth Type display (read-only for LDAP users during edit) */}
+          {isEdit && user?.auth_type === 'ldap' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">认证方式</label>
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(AUTH_TYPE_CONFIG).map(([key, cfg]) => {
-                  const Icon = cfg.icon;
-                  const isSelected = form.auth_type === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setForm({ ...form, auth_type: key })}
-                      className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 transition-all text-left ${
-                        isSelected
-                          ? 'border-primary-500 bg-primary-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <Icon className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-primary-600' : 'text-gray-400'}`} />
-                      <span className={`text-sm font-medium ${isSelected ? 'text-primary-700' : 'text-gray-700'}`}>{cfg.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+                <Server className="w-4 h-4" />
+                <span>LDAP用户 — 密码由LDAP服务器管理，此处无法修改</span>
               </div>
             </div>
           )}
@@ -306,6 +292,8 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState(null);   // null = closed, {} = create, user = edit
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [hasLDAP, setHasLDAP] = useState(false);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -321,9 +309,22 @@ export default function UsersPage() {
     }
   }, []);
 
+  const checkLDAP = useCallback(async () => {
+    try {
+      const res = await getLDAPConfigs();
+      if (res.code === 0) {
+        const enabledConfigs = (res.data || []).filter(c => c.is_enabled);
+        setHasLDAP(enabledConfigs.length > 0);
+      }
+    } catch (err) {
+      console.error('Failed to check LDAP configs:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadUsers();
-  }, [loadUsers]);
+    checkLDAP();
+  }, [loadUsers, checkLDAP]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -338,6 +339,32 @@ export default function UsersPage() {
       console.error('Failed to delete user:', err);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleSyncLDAP = async () => {
+    setSyncing(true);
+    try {
+      const res = await syncLDAPUsers();
+      if (res.code === 0) {
+        const data = res.data || {};
+        const newCount = data.new_users || 0;
+        const updatedCount = data.updated_users || 0;
+        const totalCount = data.total_ldap_users || 0;
+        if (newCount > 0 || updatedCount > 0) {
+          toast.success(`LDAP同步完成：新增 ${newCount} 人，更新 ${updatedCount} 人（共 ${totalCount} 个LDAP用户）`);
+        } else {
+          toast.success(`LDAP同步完成：无新增用户（共 ${totalCount} 个LDAP用户）`);
+        }
+        loadUsers();
+      } else {
+        toast.error(res.message || 'LDAP同步失败');
+      }
+    } catch (err) {
+      toast.error('LDAP同步请求失败');
+      console.error('Failed to sync LDAP users:', err);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -394,11 +421,21 @@ export default function UsersPage() {
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none bg-gray-50 focus:bg-white"
                 />
               </div>
+              {hasLDAP && (
+                <button
+                  onClick={handleSyncLDAP}
+                  disabled={syncing}
+                  className="px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors flex items-center gap-1.5 flex-shrink-0 disabled:opacity-60"
+                >
+                  {syncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  同步LDAP用户
+                </button>
+              )}
               <button
                 onClick={() => setEditUser({})}
                 className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-1.5 flex-shrink-0"
               >
-                <Plus className="w-4 h-4" /> 新建用户
+                <Plus className="w-4 h-4" /> 新建本地用户
               </button>
             </div>
           </div>
@@ -538,6 +575,24 @@ export default function UsersPage() {
             </div>
           </div>
         </div>
+
+        {/* ── LDAP Sync Info ── */}
+        {hasLDAP && (
+          <div className="bg-amber-50 rounded-2xl border border-amber-200 px-6 py-4">
+            <div className="flex items-start gap-3">
+              <Server className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <h4 className="text-sm font-semibold text-amber-800">LDAP用户管理说明</h4>
+                <ul className="text-xs text-amber-700 mt-1.5 space-y-1 list-disc list-inside">
+                  <li>点击「同步LDAP用户」可将LDAP服务器中的用户拉取到平台用户列表</li>
+                  <li>新同步的LDAP用户默认为「普通用户」角色，管理员可在列表中修改其角色</li>
+                  <li>LDAP用户使用域账号密码登录，平台不存储其密码</li>
+                  <li>手动创建的用户均为「本地用户」，使用本地密码认证</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Modals ── */}
         {editUser !== null && (

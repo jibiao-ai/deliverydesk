@@ -130,6 +130,7 @@ func main() {
 				// LDAP Configuration
 				admin.GET("/ldap-configs", h.ListLDAPConfigs)
 				admin.POST("/ldap-configs", h.CreateLDAPConfig)
+				admin.POST("/ldap-configs/sync-users", h.SyncLDAPUsers)
 				admin.PUT("/ldap-configs/:id", h.UpdateLDAPConfig)
 				admin.DELETE("/ldap-configs/:id", h.DeleteLDAPConfig)
 				admin.POST("/ldap-configs/:id/test", h.TestLDAPConfig)

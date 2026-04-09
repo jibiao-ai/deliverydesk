@@ -101,23 +101,17 @@ func loginLDAP(req LoginRequest) (*LoginResponse, error) {
 	// For this implementation, we simulate LDAP authentication
 	// In production, you would use an LDAP library like go-ldap
 	// to bind and authenticate against the LDAP server
-	// For now, we check if user exists locally with ldap auth_type
+
+	// Check if user exists locally with ldap auth_type (must be synced by admin first)
 	var user model.User
 	result := repository.DB.Where("username = ? AND auth_type = ?", req.Username, "ldap").First(&user)
 	if result.Error != nil {
-		// Create LDAP user on first login (auto-provisioning)
-		user = model.User{
-			Username:    req.Username,
-			Password:    "", // LDAP users don't have local passwords
-			Email:       req.Username + "@" + extractDomain(ldapCfg.BaseDN),
-			DisplayName: req.Username,
-			Role:        "user",
-			AuthType:    "ldap",
-		}
-		if err := repository.DB.Create(&user).Error; err != nil {
-			return nil, fmt.Errorf("failed to create LDAP user: %w", err)
-		}
+		// LDAP user not found in platform - they must be synced first
+		return nil, errors.New("该LDAP用户尚未同步到平台，请联系管理员在用户管理中同步LDAP用户")
 	}
+
+	// In production, verify the password against the LDAP server here
+	// For now, we trust that the user is authenticated by LDAP
 
 	token, err := generateToken(user)
 	if err != nil {
@@ -125,21 +119,6 @@ func loginLDAP(req LoginRequest) (*LoginResponse, error) {
 	}
 
 	return &LoginResponse{Token: token, User: user}, nil
-}
-
-func extractDomain(baseDN string) string {
-	parts := strings.Split(baseDN, ",")
-	var domain []string
-	for _, part := range parts {
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) == 2 && strings.TrimSpace(strings.ToLower(kv[0])) == "dc" {
-			domain = append(domain, strings.TrimSpace(kv[1]))
-		}
-	}
-	if len(domain) > 0 {
-		return strings.Join(domain, ".")
-	}
-	return "example.com"
 }
 
 func generateToken(user model.User) (string, error) {

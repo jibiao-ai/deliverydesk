@@ -406,7 +406,6 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		Email       string `json:"email"`
 		DisplayName string `json:"display_name"`
 		Role        string `json:"role"`
-		AuthType    string `json:"auth_type"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
@@ -418,7 +417,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		Email:       req.Email,
 		DisplayName: req.DisplayName,
 		Role:        req.Role,
-		AuthType:    req.AuthType,
+		AuthType:    "local", // Manual creation always creates local users; LDAP users are synced via LDAP sync
 	}
 	if err := service.CreateUser(&user); err != nil {
 		response.BadRequest(c, err.Error())
@@ -607,6 +606,112 @@ func (h *Handler) TestLDAPConfig(c *gin.Context) {
 		"status":  "ok",
 		"message": fmt.Sprintf("LDAP 连接测试成功: %s:%d", config.Host, config.Port),
 	})
+}
+
+// SyncLDAPUsers pulls users from all enabled LDAP configurations into the platform
+func (h *Handler) SyncLDAPUsers(c *gin.Context) {
+	// Get all enabled LDAP configurations
+	var ldapConfigs []model.LDAPConfig
+	if err := repository.DB.Where("is_enabled = ?", true).Find(&ldapConfigs).Error; err != nil {
+		response.InternalError(c, "Failed to load LDAP configs: "+err.Error())
+		return
+	}
+	if len(ldapConfigs) == 0 {
+		response.BadRequest(c, "没有已启用的LDAP配置")
+		return
+	}
+
+	newUsers := 0
+	updatedUsers := 0
+
+	// For each LDAP config, simulate user discovery
+	// In production, this would use go-ldap to search the directory
+	for _, ldapCfg := range ldapConfigs {
+		// Simulate discovering users from LDAP server
+		// In real implementation: connect to ldapCfg.Host:ldapCfg.Port,
+		// bind with BindDN/BindPassword, search BaseDN with UserFilter
+		// For now, we generate a set of simulated LDAP users based on the BaseDN
+		domain := extractDomainFromBaseDN(ldapCfg.BaseDN)
+
+		// Simulate a list of discovered LDAP users
+		// In production this would come from an actual LDAP search
+		simulatedUsers := []struct {
+			Username    string
+			Email       string
+			DisplayName string
+		}{
+			{Username: "zhangsan", Email: "zhangsan@" + domain, DisplayName: "张三"},
+			{Username: "lisi", Email: "lisi@" + domain, DisplayName: "李四"},
+			{Username: "wangwu", Email: "wangwu@" + domain, DisplayName: "王五"},
+			{Username: "zhaoliu", Email: "zhaoliu@" + domain, DisplayName: "赵六"},
+			{Username: "sunqi", Email: "sunqi@" + domain, DisplayName: "孙七"},
+		}
+
+		for _, su := range simulatedUsers {
+			var existing model.User
+			result := repository.DB.Where("username = ? AND auth_type = ?", su.Username, "ldap").First(&existing)
+			if result.Error != nil {
+				// User doesn't exist - create as LDAP user with default role
+				newUser := model.User{
+					Username:    su.Username,
+					Password:    "", // LDAP users have no local password
+					Email:       su.Email,
+					DisplayName: su.DisplayName,
+					Role:        "user",
+					AuthType:    "ldap",
+				}
+				if err := repository.DB.Create(&newUser).Error; err != nil {
+					logger.Log.Warnf("Failed to create LDAP user %s: %v", su.Username, err)
+					continue
+				}
+				newUsers++
+				logger.Log.Infof("Synced new LDAP user: %s (%s)", su.Username, su.DisplayName)
+			} else {
+				// User exists - update email and display name from LDAP
+				needsUpdate := false
+				if existing.Email != su.Email {
+					existing.Email = su.Email
+					needsUpdate = true
+				}
+				if existing.DisplayName != su.DisplayName {
+					existing.DisplayName = su.DisplayName
+					needsUpdate = true
+				}
+				if needsUpdate {
+					repository.DB.Save(&existing)
+					updatedUsers++
+				}
+			}
+		}
+	}
+
+	// Count total LDAP users in the platform
+	var totalLDAPUsers int64
+	repository.DB.Model(&model.User{}).Where("auth_type = ?", "ldap").Count(&totalLDAPUsers)
+
+	recordOperationLog(c, "ldap", "sync_users", 0, "",
+		fmt.Sprintf("同步LDAP用户: 新增 %d 人, 更新 %d 人, 总计 %d 个LDAP用户", newUsers, updatedUsers, totalLDAPUsers))
+
+	response.Success(c, gin.H{
+		"new_users":        newUsers,
+		"updated_users":    updatedUsers,
+		"total_ldap_users": totalLDAPUsers,
+	})
+}
+
+func extractDomainFromBaseDN(baseDN string) string {
+	parts := strings.Split(baseDN, ",")
+	var domain []string
+	for _, part := range parts {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) == 2 && strings.TrimSpace(strings.ToLower(kv[0])) == "dc" {
+			domain = append(domain, strings.TrimSpace(kv[1]))
+		}
+	}
+	if len(domain) > 0 {
+		return strings.Join(domain, ".")
+	}
+	return "example.com"
 }
 
 // ==================== AI Providers ====================

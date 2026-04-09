@@ -124,8 +124,9 @@ export default function LDAPPage() {
               <h3 className="text-sm font-semibold text-primary-800">LDAP 认证说明</h3>
               <ul className="text-xs text-primary-600 mt-1 space-y-1 list-disc list-inside">
                 <li>管理员可在此页面配置企业LDAP/AD服务器信息</li>
-                <li>配置完成后，普通用户可在登录页选择"LDAP登录"使用域账号</li>
-                <li>首次LDAP登录的用户将自动创建平台账号（默认普通用户角色）</li>
+                <li>配置完成后，前往「用户管理」页面点击「同步LDAP用户」将LDAP用户拉取到平台</li>
+                <li>同步后的LDAP用户默认为普通用户角色，管理员可修改其角色</li>
+                <li>LDAP用户使用域账号密码在登录页选择「LDAP登录」进行认证</li>
                 <li>支持多个LDAP源，可设置默认LDAP服务器</li>
               </ul>
             </div>

@@ -276,6 +276,9 @@ func seedDefaultData(db *gorm.DB) {
 	if catCount == 0 {
 		seedWebsiteLinks(db)
 	}
+
+	// Fix typo: 合适费控报销 -> 合思费控报销
+	db.Model(&model.WebsiteLink{}).Where("name = ?", "合适费控报销").Update("name", "合思费控报销")
 }
 
 func seedWebsiteLinks(db *gorm.DB) {
@@ -321,7 +324,7 @@ func seedWebsiteLinks(db *gorm.DB) {
 			Links: []linkData{
 				{Name: "Confluence使用介绍", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1099499945/04-Confluence", Icon: "confluence"},
 				{Name: "交付黄页", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1102644405/05-", Icon: "book"},
-				{Name: "合适费控报销", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1659373029/07-", Icon: "receipt"},
+				{Name: "合思费控报销", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1659373029/07-", Icon: "receipt"},
 			},
 		},
 		{
