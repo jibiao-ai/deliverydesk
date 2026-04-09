@@ -10,7 +10,7 @@ const menuGroups = [
     label: '交付工作台',
     items: [
       { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
-      { id: 'websites', label: '常用网站', icon: Globe },
+      { id: 'websites', label: '公司系统', icon: Globe },
       { id: 'chat', label: '即时对话', icon: MessageSquare },
       { id: 'agents', label: '智能体', icon: Bot },
     ],
