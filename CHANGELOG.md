@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.2.3] - 2026-04-09
+
+### Changed
+- **移除 LDAP UserFilter 过滤器限制**: LDAP 同步时不再使用自定义 `user_filter`（原默认 `(uid=%s)`），
+  统一使用 `(objectClass=person)` 查询所有用户。解决因 `(uid=*)` 过滤器导致部分用户无法被同步的问题
+  （如 AD 环境中使用 `sAMAccountName` 而非 `uid` 的用户会被排除）。
+- **前端 LDAP 配置页去掉 UserFilter 输入框**: 简化配置表单，避免管理员误配过滤器导致用户同步不全。
+- **LDAP 诊断端点同步更新**: 诊断报告中过滤器固定显示 `(objectClass=person)`。
+
+---
+
 ## [3.2.2] - 2026-04-09
 
 ### Fixed
