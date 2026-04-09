@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jibiao-ai/deliverydesk/internal/model"
@@ -15,6 +18,51 @@ import (
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
 	"gorm.io/gorm"
 )
+
+// ==================== Active Stream Tracking (for abort) ====================
+
+var (
+	activeStreams   = make(map[uint]context.CancelFunc) // key = conversation ID
+	activeStreamsMu sync.Mutex
+)
+
+func registerStream(convID uint, cancel context.CancelFunc) {
+	activeStreamsMu.Lock()
+	defer activeStreamsMu.Unlock()
+	// Cancel any existing stream for this conversation
+	if prev, ok := activeStreams[convID]; ok {
+		prev()
+	}
+	activeStreams[convID] = cancel
+}
+
+func unregisterStream(convID uint) {
+	activeStreamsMu.Lock()
+	defer activeStreamsMu.Unlock()
+	delete(activeStreams, convID)
+}
+
+// RegisterStream registers a cancel function for an active streaming conversation.
+func RegisterStream(convID uint, cancel context.CancelFunc) {
+	registerStream(convID, cancel)
+}
+
+// UnregisterStream removes the active stream tracker for a conversation.
+func UnregisterStream(convID uint) {
+	unregisterStream(convID)
+}
+
+// AbortStream cancels the active stream for a conversation. Returns true if aborted.
+func AbortStream(convID uint) bool {
+	activeStreamsMu.Lock()
+	defer activeStreamsMu.Unlock()
+	if cancel, ok := activeStreams[convID]; ok {
+		cancel()
+		delete(activeStreams, convID)
+		return true
+	}
+	return false
+}
 
 type ChatService struct{}
 
@@ -367,6 +415,200 @@ func (s *ChatService) runSkillRAG(agent model.Agent, aiConfig skill.AIConfig, qu
 		sb.WriteString("\n\n")
 	}
 	return sb.String()
+}
+
+// StreamCallback is called for each token chunk during streaming
+type StreamCallback func(token string)
+
+// SendMessageStream is like SendMessage but streams the AI response via a callback.
+// It respects the context for cancellation (abort).
+func (s *ChatService) SendMessageStream(ctx context.Context, convID, userID uint, content string, onToken StreamCallback) (*model.Message, *model.Message, error) {
+	var conv model.Conversation
+	if err := repository.DB.Preload("Agent").Preload("Agent.AgentSkills").Preload("Agent.AgentSkills.Skill").First(&conv, convID).Error; err != nil {
+		return nil, nil, err
+	}
+
+	// Save user message
+	userMsg := model.Message{
+		ConversationID: convID,
+		Role:           "user",
+		Content:        content,
+	}
+	repository.DB.Create(&userMsg)
+
+	// Check for context cancellation before starting AI call
+	select {
+	case <-ctx.Done():
+		return &userMsg, nil, ctx.Err()
+	default:
+	}
+
+	// Get AI provider
+	var provider model.AIProvider
+	if err := repository.DB.Where("is_default = ? AND is_enabled = ? AND api_key != ''", true, true).First(&provider).Error; err != nil {
+		if err := repository.DB.Where("is_enabled = ? AND api_key != ''", true).First(&provider).Error; err != nil {
+			errContent := "AI service not configured"
+			onToken(errContent)
+			asstMsg := model.Message{ConversationID: convID, Role: "assistant", Content: errContent}
+			repository.DB.Create(&asstMsg)
+			return &userMsg, &asstMsg, nil
+		}
+	}
+
+	aiConfig := skill.AIConfig{BaseURL: provider.BaseURL, APIKey: provider.APIKey, Model: provider.Model}
+	modelNameStr := conv.Agent.Model
+	if modelNameStr == "" {
+		modelNameStr = provider.Model
+	} else {
+		aiConfig.Model = modelNameStr
+	}
+
+	// RAG check - if RAG produces a result, stream it all at once
+	if conv.Agent.IronRules || hasDeliverySkills(conv.Agent) {
+		ragResult := s.runSkillRAG(conv.Agent, aiConfig, content)
+		if ragResult != "" {
+			onToken(ragResult)
+			asstMsg := model.Message{ConversationID: convID, Role: "assistant", Content: ragResult}
+			repository.DB.Create(&asstMsg)
+			repository.DB.Model(&conv).Update("updated_at", time.Now())
+			return &userMsg, &asstMsg, nil
+		}
+	}
+
+	// Streaming AI response
+	aiContent, err := s.streamAIResponse(ctx, conv.Agent, provider, modelNameStr, content, convID, onToken)
+	if err != nil {
+		// Context cancelled (aborted) - save partial content
+		if aiContent == "" {
+			aiContent = "[回复已中断]"
+		} else {
+			aiContent += "\n\n[回复已中断]"
+		}
+	}
+
+	asstMsg := model.Message{ConversationID: convID, Role: "assistant", Content: aiContent}
+	repository.DB.Create(&asstMsg)
+	repository.DB.Model(&conv).Update("updated_at", time.Now())
+
+	return &userMsg, &asstMsg, nil
+}
+
+// streamAIResponse calls the OpenAI-compatible API with stream=true and
+// invokes onToken for each delta. Returns the full accumulated content.
+func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, provider model.AIProvider, modelName, userContent string, convID uint, onToken StreamCallback) (string, error) {
+	// Build messages
+	messages := []map[string]string{}
+	if agent.SystemPrompt != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": agent.SystemPrompt})
+	}
+	var recentMsgs []model.Message
+	repository.DB.Where("conversation_id = ?", convID).Order("created_at DESC").Limit(10).Find(&recentMsgs)
+	for i := len(recentMsgs) - 1; i >= 0; i-- {
+		messages = append(messages, map[string]string{"role": recentMsgs[i].Role, "content": recentMsgs[i].Content})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": userContent})
+
+	payload := map[string]interface{}{
+		"model":      modelName,
+		"messages":   messages,
+		"max_tokens": agent.MaxTokens,
+		"stream":     true,
+	}
+	if agent.Temperature > 0 {
+		payload["temperature"] = agent.Temperature
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+
+	maxRetries := 1
+	if agent.IronRules {
+		maxRetries = 5
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payloadBytes))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+
+		client := &http.Client{Timeout: 180 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			logger.Log.Errorf("Stream AI request failed (attempt %d): %v", attempt+1, err)
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+			logger.Log.Errorf("Stream AI API error (attempt %d): %v", attempt+1, lastErr)
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+			continue
+		}
+
+		// Parse SSE stream from upstream
+		var accumulated strings.Builder
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				resp.Body.Close()
+				return accumulated.String(), ctx.Err()
+			default:
+			}
+
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				break
+			}
+
+			var chunk struct {
+				Choices []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+					FinishReason *string `json:"finish_reason"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				continue
+			}
+			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+				token := chunk.Choices[0].Delta.Content
+				accumulated.WriteString(token)
+				onToken(token)
+			}
+		}
+		resp.Body.Close()
+
+		result := accumulated.String()
+		if result != "" {
+			return result, nil
+		}
+		lastErr = fmt.Errorf("AI returned empty stream")
+	}
+
+	errMsg := fmt.Sprintf("AI streaming failed after %d attempts: %v", maxRetries, lastErr)
+	onToken(errMsg)
+	return errMsg, lastErr
 }
 
 func (s *ChatService) standardAIResponse(agent model.Agent, provider model.AIProvider, modelName, userContent string, convID uint) string {

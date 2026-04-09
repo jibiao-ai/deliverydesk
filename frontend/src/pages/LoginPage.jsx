@@ -152,7 +152,7 @@ export default function LoginPage() {
               <div className="flex items-center gap-1.5"><Server className="w-3.5 h-3.5" /><span>LDAP 认证</span></div>
               <div className="flex items-center gap-1.5"><Bot className="w-3.5 h-3.5" /><span>AI 驱动</span></div>
             </div>
-            <p className="text-center text-xs text-gray-300 mt-4">Powered by DeliveryDesk AI v3.1.1</p>
+            <p className="text-center text-xs text-gray-300 mt-4">Powered by DeliveryDesk AI v3.2.0</p>
           </div>
         </div>
       </div>

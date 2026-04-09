@@ -144,7 +144,7 @@ export default function Sidebar() {
           </div>
         )}
         {!sidebarCollapsed && (
-          <p className="text-center text-[10px] text-gray-300 mt-2">v3.1.1</p>
+          <p className="text-center text-[10px] text-gray-300 mt-2">v3.2.0</p>
         )}
       </div>
     </div>

@@ -107,6 +107,8 @@ func main() {
 			// Messages
 			auth.GET("/conversations/:id/messages", h.GetMessages)
 			auth.POST("/conversations/:id/messages", h.SendMessage)
+			auth.POST("/conversations/:id/messages/stream", h.SendMessageStream)
+			auth.POST("/conversations/:id/abort", h.AbortStream)
 
 			// Skills
 			auth.GET("/skills", h.ListSkills)

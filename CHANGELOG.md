@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.2.0] - 2026-04-09
+
+### Added
+- **Feature 5 - 多智能体即时对话 (Multi-Agent Concurrent Chat)**:
+  - 全新多标签页聊天界面，支持同时打开多个智能体对话，每个对话独立运行
+  - 标签页支持打开、切换、关闭，每个标签独立管理消息状态
+  - 正在回复的标签页显示动态闪烁图标，方便识别活跃对话
+
+- **流式回复 (Streaming Response)**:
+  - 后端新增 `POST /api/conversations/:id/messages/stream` SSE 流式端点
+  - AI 回复逐 token 推送到前端，实时渲染打字效果
+  - 后端使用 OpenAI `stream=true` 模式，解析 SSE 数据流并转发给客户端
+  - 前端使用 Fetch API + ReadableStream 接收并实时渲染
+
+- **中断回复 (Abort / Stop Generation)**:
+  - 智能体回复期间，发送按钮自动变为红色「中断」按钮（带方块图标）
+  - 点击「中断」立即停止回复，前端 abort fetch + 后端 cancel context 双重中断
+  - 后端新增 `POST /api/conversations/:id/abort` 端点，取消服务端活跃流
+  - 中断后已接收的部分回复内容自动保存，标记 `[回复已中断]`
+
+- **后端流式追踪架构**:
+  - `chat_service.go` 新增 `activeStreams` map 追踪每个对话的 `context.CancelFunc`
+  - `RegisterStream` / `UnregisterStream` / `AbortStream` 导出函数
+  - `SendMessageStream()` 方法支持 context 取消传播
+  - `streamAIResponse()` 使用 `http.NewRequestWithContext()` 确保 HTTP 请求随 context 取消
+  - 超时时间从 120s 提升到 180s 以支持长回复
+
+### Changed
+- 聊天页面完全重写为多标签架构，支持侧栏折叠
+- 输入框改为可自动扩展的 textarea，支持 Shift+Enter 换行
+- 消息气泡样式优化，添加圆角和阴影效果
+- 空状态页展示功能亮点（多标签对话 / 流式回复 / 随时中断）
+
+---
+
 ## [3.1.1] - 2026-04-09
 
 ### Fixed
