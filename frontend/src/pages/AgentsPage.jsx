@@ -1,7 +1,52 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bot, Plus, Trash2, Edit3, Loader2, Zap, Eye, EyeOff, Shield, X, Check, Copy, ExternalLink } from 'lucide-react';
+import { Bot, Plus, Trash2, Edit3, Loader2, Zap, Eye, EyeOff, Shield, X, Check, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
 import { getAgents, createAgent, updateAgent, deleteAgent, getSkills } from '../services/api';
 import toast from 'react-hot-toast';
+
+// ── Elegant Delete Confirmation Modal ─────────────────────────────────────────
+function DeleteAgentConfirm({ agent, onCancel, onConfirm, deleting }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Top accent bar */}
+        <div className="h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600" />
+        <div className="p-6 text-center">
+          <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-7 h-7 text-red-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">确认删除智能体</h3>
+          <p className="text-sm text-gray-500 mb-1">
+            确定要删除智能体
+          </p>
+          <p className="text-sm font-semibold text-gray-800 mb-1">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary-50 text-primary-700 rounded-lg">
+              <Bot className="w-3.5 h-3.5" />{agent.name}
+            </span>
+          </p>
+          <p className="text-xs text-gray-400 mt-3">
+            此操作不可撤销，相关的对话记录也将被清除
+          </p>
+        </div>
+        <div className="px-6 pb-6 flex items-center gap-3 justify-center">
+          <button
+            onClick={onCancel}
+            className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={deleting}
+            className="px-5 py-2.5 text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm shadow-red-200"
+          >
+            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            确认删除
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState([]);
@@ -10,6 +55,8 @@ export default function AgentsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [showApiModal, setShowApiModal] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({
     name: '', description: '', system_prompt: '', model: '',
     temperature: 0.7, max_tokens: 4096, is_active: true,
@@ -62,13 +109,15 @@ export default function AgentsPage() {
     } catch (e) { toast.error('操作失败'); }
   };
 
-  const handleDelete = async (agent) => {
-    if (!confirm(`确定删除智能体「${agent.name}」？`)) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await deleteAgent(agent.id);
-      if (res.code === 0) { toast.success('删除成功'); loadData(); }
+      const res = await deleteAgent(deleteTarget.id);
+      if (res.code === 0) { toast.success('删除成功'); setDeleteTarget(null); loadData(); }
       else toast.error(res.message || '删除失败');
     } catch (e) { toast.error('删除失败'); }
+    finally { setDeleting(false); }
   };
 
   const togglePublish = async (agent) => {
@@ -200,7 +249,7 @@ export default function AgentsPage() {
                     className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="编辑">
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handleDelete(agent)}
+                  <button onClick={() => setDeleteTarget(agent)}
                     className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500" title="删除">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -301,6 +350,16 @@ export default function AgentsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteAgentConfirm
+          agent={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleDelete}
+          deleting={deleting}
+        />
       )}
 
       {/* API Modal */}
