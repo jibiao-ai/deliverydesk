@@ -79,7 +79,7 @@ export default function LoginPage() {
             );
           })}
         </div>
-        <p className="relative z-10 text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>© 2024 DeliveryDesk. All rights reserved.</p>
+        <p className="relative z-10 text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>© 2024-2026 DeliveryDesk. All rights reserved.</p>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center bg-white px-8 py-12">
@@ -152,7 +152,7 @@ export default function LoginPage() {
               <div className="flex items-center gap-1.5"><Server className="w-3.5 h-3.5" /><span>LDAP 认证</span></div>
               <div className="flex items-center gap-1.5"><Bot className="w-3.5 h-3.5" /><span>AI 驱动</span></div>
             </div>
-            <p className="text-center text-xs text-gray-300 mt-4">Powered by DeliveryDesk AI v1.0.0</p>
+            <p className="text-center text-xs text-gray-300 mt-4">Powered by DeliveryDesk AI v2.1.1</p>
           </div>
         </div>
       </div>

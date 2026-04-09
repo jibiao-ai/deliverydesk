@@ -143,6 +143,9 @@ export default function Sidebar() {
             </button>
           </div>
         )}
+        {!sidebarCollapsed && (
+          <p className="text-center text-[10px] text-gray-300 mt-2">v2.1.1</p>
+        )}
       </div>
     </div>
   );
