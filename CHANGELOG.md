@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.1.1] - 2026-04-09
+
+### Fixed
+- **Bug: LDAP Bind Password 首次创建无法保存**: `LDAPConfig.BindPassword` 字段使用了 `json:"-"` 标签，
+  导致 Go JSON 反序列化时完全忽略该字段，首次创建 LDAP 配置时密码为空，测试连接必然报错
+  `"Empty password not allowed by the client"`。修复方案：`CreateLDAPConfig` 和 `UpdateLDAPConfig`
+  处理函数改用显式 struct 接收请求体，确保 `bind_password` 字段正确反序列化并存入数据库。
+- **Bug: LDAP 用户 OU 仅支持单个**: 原实现只支持指定单个 OU 进行同步。现支持用 `|` 分隔多个 OU，
+  例如 `ou=Tech,dc=xx,dc=cn|ou=Sales,dc=xx,dc=cn`。同步时会依次搜索每个 OU，自动去重跨 OU 的重复用户名。
+- **重大 Bug: 用户管理仅显示 109 个用户**: 原因为前端统计接口使用 `page_size=9999` 请求所有用户计算
+  统计数据，但后端 `ListUsers` 将 `page_size > 100` 强制归为 10，导致统计数据不准确。修复方案：
+  新增专用 `GET /api/users/stats` 端点，直接通过 SQL COUNT 查询获取用户统计（总数、管理员、普通用户、
+  LDAP 用户），不受分页限制。同时 LDAP 同步分页大小从 500 提升至 1000 以支持更多用户。
+- **前端 LDAPPage**: 更新 OU 输入框的 placeholder 和说明卡片，展示多 OU 分隔符 `|` 用法。
+- **前端 UsersPage**: 使用专用 `/users/stats` 端点获取用户统计，不再依赖 page_size hack。
+
+---
+
 ## [3.1.0] - 2026-04-09
 
 ### Added
