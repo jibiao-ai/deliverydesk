@@ -45,16 +45,27 @@ func UpdateUser(user *model.User) error {
 	}
 	// Preserve auth_type - it cannot be changed via update
 	user.AuthType = existing.AuthType
+
+	// Build update map — only update fields that are provided.
+	// Using a map with db.Model().Updates() avoids overwriting created_at
+	// with zero value (which causes MySQL Error 1292 on STRICT mode).
+	updates := map[string]interface{}{
+		"email":        user.Email,
+		"display_name": user.DisplayName,
+		"role":         user.Role,
+		"auth_type":    existing.AuthType,
+	}
+	if user.Username != "" {
+		updates["username"] = user.Username
+	}
 	if user.Password != "" && existing.AuthType == "local" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), 10)
 		if err != nil {
 			return err
 		}
-		user.Password = string(hash)
-	} else {
-		user.Password = existing.Password
+		updates["password"] = string(hash)
 	}
-	return repository.DB.Save(user).Error
+	return repository.DB.Model(&model.User{}).Where("id = ?", user.ID).Updates(updates).Error
 }
 
 func DeleteUser(id uint) error {

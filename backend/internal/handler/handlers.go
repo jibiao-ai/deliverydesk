@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -659,7 +660,9 @@ func (h *Handler) TestLDAPConfig(c *gin.Context) {
 func dialLDAP(config model.LDAPConfig) (*ldap.Conn, error) {
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	if config.UseTLS {
-		return ldap.DialTLS("tcp", addr, nil)
+		return ldap.DialTLS("tcp", addr, &tls.Config{
+			InsecureSkipVerify: true, // Enterprise internal LDAP often uses self-signed certs
+		})
 	}
 	return ldap.Dial("tcp", addr)
 }
@@ -734,16 +737,18 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 			searchBase = ldapCfg.UserOU
 		}
 
-		// Search for users with paging (1000 per page) to handle large directories
+		// Search for users with paging to handle large directories (> 100 entries).
+		// NOTE: Do NOT include paging control in the search request controls,
+		// SearchWithPaging adds its own paging control internally.
 		searchReq := ldap.NewSearchRequest(
 			searchBase,
 			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
 			searchFilter,
 			[]string{attrUsername, attrEmail, attrDisplay},
-			[]ldap.Control{ldap.NewControlPaging(1000)},
+			nil, // no manual controls — SearchWithPaging manages paging
 		)
 
-		result, err := conn.SearchWithPaging(searchReq, 1000)
+		result, err := conn.SearchWithPaging(searchReq, 500)
 		conn.Close()
 
 		if err != nil {
@@ -753,12 +758,17 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 			continue
 		}
 
+		logger.Log.Infof("LDAP search returned %d entries from %s (search base: %s, filter: %s)",
+			len(result.Entries), ldapCfg.Name, searchBase, searchFilter)
+
 		domain := extractDomainFromBaseDN(ldapCfg.BaseDN)
 
 		// Process each LDAP entry
+		skippedEntries := 0
 		for _, entry := range result.Entries {
 			username := entry.GetAttributeValue(attrUsername)
 			if username == "" {
+				skippedEntries++
 				continue
 			}
 			email := entry.GetAttributeValue(attrEmail)
@@ -801,13 +811,16 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 					needsUpdate = true
 				}
 				if needsUpdate {
-					repository.DB.Save(&existing)
+					repository.DB.Model(&existing).Updates(map[string]interface{}{
+						"email":        existing.Email,
+						"display_name": existing.DisplayName,
+					})
 					updatedUsers++
 				}
 			}
 		}
 
-		logger.Log.Infof("LDAP sync from %s (search base: %s): found %d entries", ldapCfg.Name, searchBase, len(result.Entries))
+		logger.Log.Infof("LDAP sync from %s (search base: %s): found %d entries, skipped %d (empty username)", ldapCfg.Name, searchBase, len(result.Entries), skippedEntries)
 	}
 
 	// Count total LDAP users in the platform
