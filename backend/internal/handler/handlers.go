@@ -82,6 +82,17 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 	resp, err := service.Login(req)
 	if err != nil {
+		// Record failed login attempt
+		log := model.OperationLog{
+			UserID:     0,
+			Username:   req.Username,
+			Module:     "auth",
+			Action:     "login_failed",
+			TargetName: req.Username,
+			Detail:     fmt.Sprintf("登录失败: %s (认证方式: %s)", err.Error(), req.AuthType),
+			IP:         c.ClientIP(),
+		}
+		repository.DB.Create(&log)
 		// Return HTTP 200 with error code so frontend can read the message
 		// (HTTP 401 would be swallowed by Axios interceptor)
 		c.JSON(http.StatusOK, gin.H{
@@ -90,6 +101,18 @@ func (h *Handler) Login(c *gin.Context) {
 		})
 		return
 	}
+	// Record successful login
+	log := model.OperationLog{
+		UserID:     resp.User.ID,
+		Username:   resp.User.Username,
+		Module:     "auth",
+		Action:     "login",
+		TargetID:   resp.User.ID,
+		TargetName: resp.User.Username,
+		Detail:     fmt.Sprintf("用户登录成功 (角色: %s, 认证方式: %s)", resp.User.Role, resp.User.AuthType),
+		IP:         c.ClientIP(),
+	}
+	repository.DB.Create(&log)
 	response.Success(c, resp)
 }
 
@@ -283,6 +306,13 @@ func (h *Handler) CreateConversation(c *gin.Context) {
 		response.InternalError(c, err.Error())
 		return
 	}
+	// Record agent usage
+	agentName := ""
+	if agent, aErr := h.chatService.GetAgent(req.AgentID); aErr == nil && agent != nil {
+		agentName = agent.Name
+	}
+	recordOperationLog(c, "conversation", "create", conv.ID, req.Title,
+		fmt.Sprintf("创建对话: %s (智能体: %s)", req.Title, agentName))
 	response.Success(c, conv)
 }
 
@@ -324,6 +354,13 @@ func (h *Handler) SendMessage(c *gin.Context) {
 		response.InternalError(c, err.Error())
 		return
 	}
+	// Record message send as agent usage
+	contentPreview := req.Content
+	if len(contentPreview) > 50 {
+		contentPreview = contentPreview[:50] + "..."
+	}
+	recordOperationLog(c, "conversation", "send_message", uint(convID), contentPreview,
+		fmt.Sprintf("发送消息到对话 #%d", convID))
 	response.Success(c, gin.H{
 		"user_message":      userMsg,
 		"assistant_message": assistantMsg,
@@ -795,6 +832,12 @@ func (h *Handler) ListOperationLogs(c *gin.Context) {
 	query := repository.DB.Model(&model.OperationLog{})
 	if m := c.Query("module"); m != "" {
 		query = query.Where("module = ?", m)
+	}
+	if action := c.Query("action"); action != "" {
+		query = query.Where("action = ?", action)
+	}
+	if username := c.Query("username"); username != "" {
+		query = query.Where("username LIKE ?", "%"+username+"%")
 	}
 	var total int64
 	query.Count(&total)
