@@ -1103,13 +1103,9 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 			}
 		}
 
-		// Build search filter
+		// Build search filter — always use (objectClass=person) to fetch ALL users
+		// without any additional filter restriction.
 		searchFilter := "(objectClass=person)"
-		if ldapCfg.UserFilter != "" {
-			// Replace %s placeholder with * for listing all users
-			filter := strings.ReplaceAll(ldapCfg.UserFilter, "%s", "*")
-			searchFilter = filter
-		}
 
 		// Determine attribute names
 		attrUsername := ldapCfg.AttrUsername
@@ -1383,7 +1379,7 @@ func (h *Handler) DiagnoseLDAP(c *gin.Context) {
 		"tls":         config.UseTLS,
 		"base_dn":     config.BaseDN,
 		"user_ou":     config.UserOU,
-		"user_filter":  config.UserFilter,
+		"user_filter":  "(objectClass=person)",
 		"attr_username": config.AttrUsername,
 		"attr_email":    config.AttrEmail,
 		"attr_display":  config.AttrDisplay,
@@ -1430,11 +1426,8 @@ func (h *Handler) DiagnoseLDAP(c *gin.Context) {
 	}
 	steps = append(steps, gin.H{"step": "search_bases", "status": "OK", "bases": searchBases})
 
-	// Step 4: Search each base
+	// Step 4: Search each base — always use (objectClass=person) to fetch ALL users
 	searchFilter := "(objectClass=person)"
-	if config.UserFilter != "" {
-		searchFilter = strings.ReplaceAll(config.UserFilter, "%s", "*")
-	}
 
 	attrUsername := config.AttrUsername
 	if attrUsername == "" {

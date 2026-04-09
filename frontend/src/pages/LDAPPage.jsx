@@ -8,7 +8,7 @@ export default function LDAPPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editConfig, setEditConfig] = useState(null);
-  const [form, setForm] = useState({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
+  const [form, setForm] = useState({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState({});
   const [diagnosing, setDiagnosing] = useState({});
@@ -23,7 +23,7 @@ export default function LDAPPage() {
 
   const openCreate = () => {
     setEditConfig(null);
-    setForm({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
+    setForm({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
     setShowModal(true);
   };
 
@@ -146,6 +146,7 @@ export default function LDAPPage() {
                 <li>配置完成后，前往「用户管理」页面点击「同步LDAP用户」将LDAP用户拉取到平台</li>
                 <li>同步后的LDAP用户默认为普通用户角色，管理员可修改其角色</li>
                 <li>LDAP用户使用域账号密码在登录页选择「LDAP登录」进行认证</li>
+                <li>同步时使用 (objectClass=person) 过滤器查询所有用户，不再有额外过滤限制</li>
                 <li>可配置「用户OU」字段来限定只同步特定组织单元的用户，支持多个 OU 用 | 分隔（如 ou=Tech,dc=xx,dc=cn|ou=Sales,dc=xx,dc=cn）</li>
                 <li>单次同步最多支持 1000 个用户，支持多个LDAP源，可设置默认LDAP服务器</li>
               </ul>
