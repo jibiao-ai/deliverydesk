@@ -8,7 +8,7 @@ export default function LDAPPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editConfig, setEditConfig] = useState(null);
-  const [form, setForm] = useState({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
+  const [form, setForm] = useState({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState({});
 
@@ -21,7 +21,7 @@ export default function LDAPPage() {
 
   const openCreate = () => {
     setEditConfig(null);
-    setForm({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
+    setForm({ name: '', host: '', port: 389, use_tls: false, bind_dn: '', bind_password: '', base_dn: '', user_ou: '', user_filter: '(uid=%s)', attr_username: 'uid', attr_email: 'mail', attr_display: 'cn', is_enabled: true, is_default: false });
     setShowModal(true);
   };
 
@@ -95,7 +95,7 @@ export default function LDAPPage() {
                         {cfg.is_default && <span className="text-xs px-2 py-0.5 rounded-full bg-primary-50 text-primary-600 border border-primary-200">默认</span>}
                         {cfg.is_enabled ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-gray-400" />}
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">{cfg.host}:{cfg.port} | BaseDN: {cfg.base_dn}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{cfg.host}:{cfg.port} | BaseDN: {cfg.base_dn}{cfg.user_ou ? ` | 用户OU: ${cfg.user_ou}` : ''}</p>
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => handleTest(cfg.id)} disabled={testing[cfg.id]}
@@ -127,7 +127,8 @@ export default function LDAPPage() {
                 <li>配置完成后，前往「用户管理」页面点击「同步LDAP用户」将LDAP用户拉取到平台</li>
                 <li>同步后的LDAP用户默认为普通用户角色，管理员可修改其角色</li>
                 <li>LDAP用户使用域账号密码在登录页选择「LDAP登录」进行认证</li>
-                <li>支持多个LDAP源，可设置默认LDAP服务器</li>
+                <li>可配置「用户OU」字段来限定只同步特定组织单元的用户（如 ou=Technology,dc=easystack,dc=cn）</li>
+                <li>单次同步最多支持 1000 个用户，支持多个LDAP源，可设置默认LDAP服务器</li>
               </ul>
             </div>
           </div>
@@ -160,6 +161,10 @@ export default function LDAPPage() {
                   <label className="block text-sm font-medium text-gray-600 mb-1">Base DN</label>
                   <input value={form.base_dn} onChange={e => setForm({...form, base_dn: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="dc=example,dc=com" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">用户 OU <span className="text-xs text-gray-400 font-normal">(可选，指定同步的组织单元)</span></label>
+                <input value={form.user_ou} onChange={e => setForm({...form, user_ou: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary-500" placeholder="如：ou=Technology,dc=easystack,dc=cn（留空则同步 BaseDN 下所有用户）" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">Bind DN</label>

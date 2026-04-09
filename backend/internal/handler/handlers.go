@@ -532,20 +532,21 @@ func (h *Handler) UpdateLDAPConfig(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name         string `json:"name"`
-		Host         string `json:"host"`
-		Port         int    `json:"port"`
-		UseTLS       *bool  `json:"use_tls"`
-		BindDN       string `json:"bind_dn"`
-		BindPassword string `json:"bind_password"`
-		BaseDN       string `json:"base_dn"`
-		UserFilter   string `json:"user_filter"`
-		GroupFilter  string `json:"group_filter"`
-		AttrUsername string `json:"attr_username"`
-		AttrEmail    string `json:"attr_email"`
-		AttrDisplay  string `json:"attr_display"`
-		IsEnabled    *bool  `json:"is_enabled"`
-		IsDefault    *bool  `json:"is_default"`
+		Name         string  `json:"name"`
+		Host         string  `json:"host"`
+		Port         int     `json:"port"`
+		UseTLS       *bool   `json:"use_tls"`
+		BindDN       string  `json:"bind_dn"`
+		BindPassword string  `json:"bind_password"`
+		BaseDN       string  `json:"base_dn"`
+		UserOU       *string `json:"user_ou"` // pointer so we can distinguish empty string from not-sent
+		UserFilter   string  `json:"user_filter"`
+		GroupFilter  string  `json:"group_filter"`
+		AttrUsername string  `json:"attr_username"`
+		AttrEmail    string  `json:"attr_email"`
+		AttrDisplay  string  `json:"attr_display"`
+		IsEnabled    *bool   `json:"is_enabled"`
+		IsDefault    *bool   `json:"is_default"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
@@ -571,6 +572,9 @@ func (h *Handler) UpdateLDAPConfig(c *gin.Context) {
 	}
 	if req.BaseDN != "" {
 		existing.BaseDN = req.BaseDN
+	}
+	if req.UserOU != nil {
+		existing.UserOU = *req.UserOU // allow clearing (empty string) or setting
 	}
 	if req.UserFilter != "" {
 		existing.UserFilter = req.UserFilter
@@ -724,16 +728,22 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 			attrDisplay = "cn"
 		}
 
-		// Search for users
+		// Determine the search base: use UserOU if specified, otherwise use BaseDN
+		searchBase := ldapCfg.BaseDN
+		if ldapCfg.UserOU != "" {
+			searchBase = ldapCfg.UserOU
+		}
+
+		// Search for users with paging (1000 per page) to handle large directories
 		searchReq := ldap.NewSearchRequest(
-			ldapCfg.BaseDN,
-			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 30, false,
+			searchBase,
+			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
 			searchFilter,
 			[]string{attrUsername, attrEmail, attrDisplay},
-			nil,
+			[]ldap.Control{ldap.NewControlPaging(1000)},
 		)
 
-		result, err := conn.Search(searchReq)
+		result, err := conn.SearchWithPaging(searchReq, 1000)
 		conn.Close()
 
 		if err != nil {
@@ -797,7 +807,7 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 			}
 		}
 
-		logger.Log.Infof("LDAP sync from %s: found %d entries", ldapCfg.Name, len(result.Entries))
+		logger.Log.Infof("LDAP sync from %s (search base: %s): found %d entries", ldapCfg.Name, searchBase, len(result.Entries))
 	}
 
 	// Count total LDAP users in the platform
