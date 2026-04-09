@@ -480,14 +480,29 @@ export default function UsersPage() {
         const newCount = data.new_users || 0;
         const updatedCount = data.updated_users || 0;
         const totalCount = data.total_ldap_users || 0;
+        const failedCount = data.failed_users || 0;
+        const skippedConflict = data.skipped_local_conflict || 0;
         const errors = data.errors || [];
+        const diagnostics = data.diagnostics || [];
+
+        // Build detailed toast message
+        let msg = `LDAP同步完成：新增 ${newCount} 人，更新 ${updatedCount} 人（共 ${totalCount} 个LDAP用户）`;
+        if (failedCount > 0) msg += `\n创建失败: ${failedCount} 人`;
+        if (skippedConflict > 0) msg += `\n用户名冲突跳过: ${skippedConflict} 人`;
+
         if (errors.length > 0) {
-          toast.error(`LDAP同步部分失败：${errors[0]}`);
+          toast.error(`LDAP同步有错误：${errors[0]}`, { duration: 6000 });
         } else if (newCount > 0 || updatedCount > 0) {
-          toast.success(`LDAP同步完成：新增 ${newCount} 人，更新 ${updatedCount} 人（共 ${totalCount} 个LDAP用户）`);
+          toast.success(msg, { duration: 4000 });
         } else {
-          toast.success(`LDAP同步完成：无新增用户（共 ${totalCount} 个LDAP用户）`);
+          toast.success(`LDAP同步完成：无新增用户（共 ${totalCount} 个LDAP用户）`, { duration: 3000 });
         }
+
+        // Log diagnostics for debugging
+        if (diagnostics.length > 0) {
+          console.log('[LDAP Sync Diagnostics]', diagnostics);
+        }
+
         loadUsers(page, search);
         loadStats();
       } else {

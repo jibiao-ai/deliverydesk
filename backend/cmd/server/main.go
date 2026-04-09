@@ -147,6 +147,7 @@ func main() {
 				admin.PUT("/ldap-configs/:id", h.UpdateLDAPConfig)
 				admin.DELETE("/ldap-configs/:id", h.DeleteLDAPConfig)
 				admin.POST("/ldap-configs/:id/test", h.TestLDAPConfig)
+				admin.GET("/ldap-configs/:id/diagnose", h.DiagnoseLDAP)
 
 				admin.GET("/operation-logs", h.ListOperationLogs)
 			}
