@@ -133,6 +133,7 @@ func main() {
 			admin.Use(middleware.AdminMiddleware())
 			{
 				admin.GET("/users", h.ListUsers)
+				admin.GET("/users/stats", h.GetUserStats)
 				admin.POST("/users", h.CreateUser)
 				admin.PUT("/users/:id", h.UpdateUser)
 				admin.DELETE("/users/:id", h.DeleteUser)

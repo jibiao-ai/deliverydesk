@@ -643,6 +643,28 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	})
 }
 
+// GetUserStats returns aggregate user statistics without pagination limits.
+// This avoids the problem where the frontend requested page_size=9999 to get
+// all users for stats, but the backend capped it at 100 (then defaulted to 10).
+func (h *Handler) GetUserStats(c *gin.Context) {
+	var total int64
+	var adminCount int64
+	var userCount int64
+	var ldapCount int64
+
+	repository.DB.Model(&model.User{}).Count(&total)
+	repository.DB.Model(&model.User{}).Where("role = ?", "admin").Count(&adminCount)
+	repository.DB.Model(&model.User{}).Where("role = ?", "user").Count(&userCount)
+	repository.DB.Model(&model.User{}).Where("auth_type = ?", "ldap").Count(&ldapCount)
+
+	response.Success(c, gin.H{
+		"total": total,
+		"admin": adminCount,
+		"user":  userCount,
+		"ldap":  ldapCount,
+	})
+}
+
 func (h *Handler) CreateUser(c *gin.Context) {
 	var req struct {
 		Username    string `json:"username"`
@@ -729,18 +751,67 @@ func (h *Handler) ListLDAPConfigs(c *gin.Context) {
 }
 
 func (h *Handler) CreateLDAPConfig(c *gin.Context) {
-	var req model.LDAPConfig
+	// Use a custom struct because model.LDAPConfig has BindPassword as json:"-"
+	// which prevents it from being deserialized from the request body.
+	var req struct {
+		Name         string `json:"name"`
+		Host         string `json:"host"`
+		Port         int    `json:"port"`
+		UseTLS       bool   `json:"use_tls"`
+		BindDN       string `json:"bind_dn"`
+		BindPassword string `json:"bind_password"`
+		BaseDN       string `json:"base_dn"`
+		UserOU       string `json:"user_ou"`
+		UserFilter   string `json:"user_filter"`
+		GroupFilter  string `json:"group_filter"`
+		AttrUsername string `json:"attr_username"`
+		AttrEmail    string `json:"attr_email"`
+		AttrDisplay  string `json:"attr_display"`
+		IsEnabled    bool   `json:"is_enabled"`
+		IsDefault    bool   `json:"is_default"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
 		return
 	}
-	if err := repository.DB.Create(&req).Error; err != nil {
+	config := model.LDAPConfig{
+		Name:         req.Name,
+		Host:         req.Host,
+		Port:         req.Port,
+		UseTLS:       req.UseTLS,
+		BindDN:       req.BindDN,
+		BindPassword: req.BindPassword,
+		BaseDN:       req.BaseDN,
+		UserOU:       req.UserOU,
+		UserFilter:   req.UserFilter,
+		GroupFilter:  req.GroupFilter,
+		AttrUsername: req.AttrUsername,
+		AttrEmail:    req.AttrEmail,
+		AttrDisplay:  req.AttrDisplay,
+		IsEnabled:    req.IsEnabled,
+		IsDefault:    req.IsDefault,
+	}
+	if config.Port == 0 {
+		config.Port = 389
+	}
+	if config.AttrUsername == "" {
+		config.AttrUsername = "uid"
+	}
+	if config.AttrEmail == "" {
+		config.AttrEmail = "mail"
+	}
+	if config.AttrDisplay == "" {
+		config.AttrDisplay = "cn"
+	}
+	logger.Log.Infof("Creating LDAP config: name=%s, host=%s, bind_dn=%s, bind_password_len=%d",
+		config.Name, config.Host, config.BindDN, len(config.BindPassword))
+	if err := repository.DB.Create(&config).Error; err != nil {
 		response.InternalError(c, err.Error())
 		return
 	}
-	recordOperationLog(c, "ldap", "create", req.ID, req.Name,
-		fmt.Sprintf("新建LDAP配置: %s (%s:%d)", req.Name, req.Host, req.Port))
-	response.Success(c, req)
+	recordOperationLog(c, "ldap", "create", config.ID, config.Name,
+		fmt.Sprintf("新建LDAP配置: %s (%s:%d)", config.Name, config.Host, config.Port))
+	response.Success(c, config)
 }
 
 func (h *Handler) UpdateLDAPConfig(c *gin.Context) {
@@ -750,6 +821,7 @@ func (h *Handler) UpdateLDAPConfig(c *gin.Context) {
 		response.BadRequest(c, "LDAP config not found")
 		return
 	}
+	// Use explicit struct to capture bind_password since model has json:"-" tag
 	var req struct {
 		Name         string  `json:"name"`
 		Host         string  `json:"host"`
@@ -771,6 +843,8 @@ func (h *Handler) UpdateLDAPConfig(c *gin.Context) {
 		response.BadRequest(c, "invalid request")
 		return
 	}
+	logger.Log.Infof("UpdateLDAPConfig: id=%d, bind_password_provided=%v (len=%d)",
+		id, req.BindPassword != "", len(req.BindPassword))
 	if req.Name != "" {
 		existing.Name = req.Name
 	}
@@ -949,96 +1023,123 @@ func (h *Handler) SyncLDAPUsers(c *gin.Context) {
 			attrDisplay = "cn"
 		}
 
-		// Determine the search base: use UserOU if specified, otherwise use BaseDN
-		searchBase := ldapCfg.BaseDN
+		// Determine search bases: support multiple OUs separated by | character
+		// e.g. "ou=Tech,dc=example,dc=com|ou=Sales,dc=example,dc=com"
+		var searchBases []string
 		if ldapCfg.UserOU != "" {
-			searchBase = ldapCfg.UserOU
+			ouParts := strings.Split(ldapCfg.UserOU, "|")
+			for _, ou := range ouParts {
+				ou = strings.TrimSpace(ou)
+				if ou != "" {
+					searchBases = append(searchBases, ou)
+				}
+			}
 		}
-
-		// Search for users with paging to handle large directories (> 100 entries).
-		// NOTE: Do NOT include paging control in the search request controls,
-		// SearchWithPaging adds its own paging control internally.
-		searchReq := ldap.NewSearchRequest(
-			searchBase,
-			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
-			searchFilter,
-			[]string{attrUsername, attrEmail, attrDisplay},
-			nil, // no manual controls — SearchWithPaging manages paging
-		)
-
-		result, err := conn.SearchWithPaging(searchReq, 500)
-		conn.Close()
-
-		if err != nil {
-			errMsg := fmt.Sprintf("搜索 %s 失败: %v", ldapCfg.Name, err)
-			logger.Log.Warnf("LDAP sync: %s", errMsg)
-			syncErrors = append(syncErrors, errMsg)
-			continue
+		if len(searchBases) == 0 {
+			searchBases = []string{ldapCfg.BaseDN}
 		}
-
-		logger.Log.Infof("LDAP search returned %d entries from %s (search base: %s, filter: %s)",
-			len(result.Entries), ldapCfg.Name, searchBase, searchFilter)
 
 		domain := extractDomainFromBaseDN(ldapCfg.BaseDN)
 
-		// Process each LDAP entry
+		// Track unique usernames to avoid duplicates across OUs
+		seenUsernames := make(map[string]bool)
+		totalEntries := 0
 		skippedEntries := 0
-		for _, entry := range result.Entries {
-			username := entry.GetAttributeValue(attrUsername)
-			if username == "" {
-				skippedEntries++
+
+		for _, searchBase := range searchBases {
+			logger.Log.Infof("LDAP sync: searching OU '%s' from %s", searchBase, ldapCfg.Name)
+
+			// Search for users with paging to handle large directories.
+			// Use page size of 1000 to reduce round-trips.
+			// NOTE: Do NOT include paging control in the search request controls,
+			// SearchWithPaging adds its own paging control internally.
+			searchReq := ldap.NewSearchRequest(
+				searchBase,
+				ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+				searchFilter,
+				[]string{attrUsername, attrEmail, attrDisplay},
+				nil, // no manual controls — SearchWithPaging manages paging
+			)
+
+			result, err := conn.SearchWithPaging(searchReq, 1000)
+			if err != nil {
+				errMsg := fmt.Sprintf("搜索 %s (OU: %s) 失败: %v", ldapCfg.Name, searchBase, err)
+				logger.Log.Warnf("LDAP sync: %s", errMsg)
+				syncErrors = append(syncErrors, errMsg)
 				continue
 			}
-			email := entry.GetAttributeValue(attrEmail)
-			if email == "" {
-				email = username + "@" + domain
-			}
-			displayName := entry.GetAttributeValue(attrDisplay)
-			if displayName == "" {
-				displayName = username
-			}
 
-			// Check if user already exists in DB
-			var existing model.User
-			dbResult := repository.DB.Where("username = ? AND auth_type = ?", username, "ldap").First(&existing)
-			if dbResult.Error != nil {
-				// Create new LDAP user
-				newUser := model.User{
-					Username:    username,
-					Password:    "",
-					Email:       email,
-					DisplayName: displayName,
-					Role:        "user",
-					AuthType:    "ldap",
-				}
-				if err := repository.DB.Create(&newUser).Error; err != nil {
-					logger.Log.Warnf("Failed to create LDAP user %s: %v", username, err)
+			logger.Log.Infof("LDAP search returned %d entries from %s (search base: %s, filter: %s)",
+				len(result.Entries), ldapCfg.Name, searchBase, searchFilter)
+			totalEntries += len(result.Entries)
+
+			// Process each LDAP entry
+			for _, entry := range result.Entries {
+				username := entry.GetAttributeValue(attrUsername)
+				if username == "" {
+					skippedEntries++
 					continue
 				}
-				newUsers++
-				logger.Log.Infof("Synced new LDAP user: %s (%s) from %s", username, displayName, ldapCfg.Name)
-			} else {
-				// Update existing user's email/display name from LDAP
-				needsUpdate := false
-				if existing.Email != email {
-					existing.Email = email
-					needsUpdate = true
+
+				// Skip duplicate usernames across multiple OUs
+				if seenUsernames[username] {
+					continue
 				}
-				if existing.DisplayName != displayName {
-					existing.DisplayName = displayName
-					needsUpdate = true
+				seenUsernames[username] = true
+
+				email := entry.GetAttributeValue(attrEmail)
+				if email == "" {
+					email = username + "@" + domain
 				}
-				if needsUpdate {
-					repository.DB.Model(&existing).Updates(map[string]interface{}{
-						"email":        existing.Email,
-						"display_name": existing.DisplayName,
-					})
-					updatedUsers++
+				displayName := entry.GetAttributeValue(attrDisplay)
+				if displayName == "" {
+					displayName = username
+				}
+
+				// Check if user already exists in DB
+				var existing model.User
+				dbResult := repository.DB.Where("username = ? AND auth_type = ?", username, "ldap").First(&existing)
+				if dbResult.Error != nil {
+					// Create new LDAP user
+					newUser := model.User{
+						Username:    username,
+						Password:    "",
+						Email:       email,
+						DisplayName: displayName,
+						Role:        "user",
+						AuthType:    "ldap",
+					}
+					if err := repository.DB.Create(&newUser).Error; err != nil {
+						logger.Log.Warnf("Failed to create LDAP user %s: %v", username, err)
+						continue
+					}
+					newUsers++
+					logger.Log.Infof("Synced new LDAP user: %s (%s) from %s [OU: %s]", username, displayName, ldapCfg.Name, searchBase)
+				} else {
+					// Update existing user's email/display name from LDAP
+					needsUpdate := false
+					if existing.Email != email {
+						existing.Email = email
+						needsUpdate = true
+					}
+					if existing.DisplayName != displayName {
+						existing.DisplayName = displayName
+						needsUpdate = true
+					}
+					if needsUpdate {
+						repository.DB.Model(&existing).Updates(map[string]interface{}{
+							"email":        existing.Email,
+							"display_name": existing.DisplayName,
+						})
+						updatedUsers++
+					}
 				}
 			}
 		}
+		conn.Close()
 
-		logger.Log.Infof("LDAP sync from %s (search base: %s): found %d entries, skipped %d (empty username)", ldapCfg.Name, searchBase, len(result.Entries), skippedEntries)
+		logger.Log.Infof("LDAP sync from %s (OUs: %v): found %d entries total, skipped %d (empty username), unique users: %d",
+			ldapCfg.Name, searchBases, totalEntries, skippedEntries, len(seenUsernames))
 	}
 
 	// Count total LDAP users in the platform

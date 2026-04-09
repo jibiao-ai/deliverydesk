@@ -5,7 +5,7 @@ import {
   Mail, UserCircle, KeyRound, Eye, EyeOff, Download,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
-import { getUsers, createUser, updateUser, deleteUser, syncLDAPUsers, getLDAPConfigs } from '../services/api';
+import { getUsers, getUserStats, createUser, updateUser, deleteUser, syncLDAPUsers, getLDAPConfigs } from '../services/api';
 import toast from 'react-hot-toast';
 
 // ── Role badge display ──────────────────────────────────────────────────────
@@ -404,15 +404,15 @@ export default function UsersPage() {
 
   const loadStats = useCallback(async () => {
     try {
-      // Load all users for stats (no pagination)
-      const res = await getUsers({ page: 1, page_size: 9999 });
+      // Use dedicated stats endpoint - avoids pagination limit issues
+      const res = await getUserStats();
       if (res.code === 0) {
-        const allUsers = (res.data?.items) || [];
+        const data = res.data || {};
         setStats({
-          total: res.data?.total || allUsers.length,
-          admin: allUsers.filter((u) => u.role === 'admin').length,
-          user: allUsers.filter((u) => u.role === 'user').length,
-          ldap: allUsers.filter((u) => u.auth_type === 'ldap').length,
+          total: data.total || 0,
+          admin: data.admin || 0,
+          user: data.user || 0,
+          ldap: data.ldap || 0,
         });
       }
     } catch (err) {
