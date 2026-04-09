@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -170,6 +172,8 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 		Temperature  float64 `json:"temperature"`
 		MaxTokens    int     `json:"max_tokens"`
 		IsActive     bool    `json:"is_active"`
+		IsPublished  bool    `json:"is_published"`
+		IronRules    bool    `json:"iron_rules"`
 		SkillIDs     []uint  `json:"skill_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -184,6 +188,8 @@ func (h *Handler) CreateAgent(c *gin.Context) {
 		Temperature:  req.Temperature,
 		MaxTokens:    req.MaxTokens,
 		IsActive:     req.IsActive,
+		IsPublished:  req.IsPublished,
+		IronRules:    req.IronRules,
 		CreatedBy:    c.GetUint("user_id"),
 	}
 	if err := h.chatService.CreateAgent(&agent); err != nil {
@@ -213,6 +219,8 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		Temperature  *float64 `json:"temperature"`
 		MaxTokens    *int     `json:"max_tokens"`
 		IsActive     *bool    `json:"is_active"`
+		IsPublished  *bool    `json:"is_published"`
+		IronRules    *bool    `json:"iron_rules"`
 		SkillIDs     []uint   `json:"skill_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -244,6 +252,12 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 	}
 	if req.IsActive != nil {
 		agent.IsActive = *req.IsActive
+	}
+	if req.IsPublished != nil {
+		agent.IsPublished = *req.IsPublished
+	}
+	if req.IronRules != nil {
+		agent.IronRules = *req.IronRules
 	}
 	if err := h.chatService.UpdateAgent(agent); err != nil {
 		response.InternalError(c, err.Error())
@@ -380,6 +394,167 @@ func (h *Handler) ListSkills(c *gin.Context) {
 	response.Success(c, skills)
 }
 
+func (h *Handler) GetSkill(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	sk, err := h.chatService.GetSkill(uint(id))
+	if err != nil {
+		response.BadRequest(c, "skill not found")
+		return
+	}
+	response.Success(c, sk)
+}
+
+func (h *Handler) CreateSkill(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Type        string `json:"type"`
+		Category    string `json:"category"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request")
+		return
+	}
+	sk := model.Skill{
+		Name:        req.Name,
+		Description: req.Description,
+		Type:        req.Type,
+		Category:    req.Category,
+		IsActive:    true,
+	}
+	if err := h.chatService.CreateSkill(&sk); err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	recordOperationLog(c, "skill", "create", sk.ID, sk.Name,
+		fmt.Sprintf("创建技能: %s (类型: %s)", sk.Name, sk.Type))
+	response.Success(c, sk)
+}
+
+func (h *Handler) UpdateSkill(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	sk, err := h.chatService.GetSkill(uint(id))
+	if err != nil {
+		response.BadRequest(c, "skill not found")
+		return
+	}
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Type        string `json:"type"`
+		IsActive    *bool  `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request")
+		return
+	}
+	if req.Name != "" {
+		sk.Name = req.Name
+	}
+	if req.Description != "" {
+		sk.Description = req.Description
+	}
+	if req.Type != "" {
+		sk.Type = req.Type
+	}
+	if req.IsActive != nil {
+		sk.IsActive = *req.IsActive
+	}
+	if err := h.chatService.UpdateSkill(sk); err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	recordOperationLog(c, "skill", "update", sk.ID, sk.Name,
+		fmt.Sprintf("更新技能: %s", sk.Name))
+	response.Success(c, sk)
+}
+
+func (h *Handler) DeleteSkill(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	sk, _ := h.chatService.GetSkill(uint(id))
+	if err := h.chatService.DeleteSkill(uint(id)); err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	name := ""
+	if sk != nil {
+		name = sk.Name
+	}
+	recordOperationLog(c, "skill", "delete", uint(id), name,
+		fmt.Sprintf("删除技能: %s", name))
+	response.Success(c, nil)
+}
+
+func (h *Handler) UploadSkillDocument(c *gin.Context) {
+	skillID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	sk, err := h.chatService.GetSkill(uint(skillID))
+	if err != nil {
+		response.BadRequest(c, "skill not found")
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "file is required")
+		return
+	}
+	defer file.Close()
+
+	// Save file to upload directory
+	uploadDir := "/home/user/webapp/backend/uploads/skills"
+	os.MkdirAll(uploadDir, 0755)
+	fileName := header.Filename
+	filePath := fmt.Sprintf("%s/%d_%s", uploadDir, skillID, fileName)
+	dst, err := os.Create(filePath)
+	if err != nil {
+		response.InternalError(c, "failed to save file")
+		return
+	}
+	_, err = io.Copy(dst, file)
+	dst.Close()
+	if err != nil {
+		response.InternalError(c, "failed to write file")
+		return
+	}
+
+	// Determine file type
+	ext := strings.ToLower(filepath.Ext(fileName))
+	fileType := strings.TrimPrefix(ext, ".")
+
+	doc := model.SkillDocument{
+		SkillID:  uint(skillID),
+		FileName: fileName,
+		FilePath: filePath,
+		FileType: fileType,
+		FileSize: header.Size,
+		Status:   "pending",
+	}
+	if err := h.chatService.AddSkillDocument(&doc); err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	// Index document in background
+	go func() {
+		if err := h.chatService.IndexSkillDocument(&doc); err != nil {
+			logger.Log.Errorf("Failed to index document %s: %v", fileName, err)
+		}
+	}()
+
+	recordOperationLog(c, "skill", "upload_doc", sk.ID, sk.Name,
+		fmt.Sprintf("上传文档: %s (技能: %s)", fileName, sk.Name))
+	response.Success(c, doc)
+}
+
+func (h *Handler) ReindexSkill(c *gin.Context) {
+	skillID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err := h.chatService.ReindexSkill(uint(skillID)); err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"message": "reindex completed"})
+}
+
 func (h *Handler) GetAgentSkills(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	skills, err := h.chatService.GetSkillsByAgent(uint(id))
@@ -388,6 +563,49 @@ func (h *Handler) GetAgentSkills(c *gin.Context) {
 		return
 	}
 	response.Success(c, skills)
+}
+
+// ==================== Published Agents (External API) ====================
+
+func (h *Handler) ListPublishedAgents(c *gin.Context) {
+	var agents []model.Agent
+	repository.DB.Where("is_active = ? AND is_published = ?", true, true).
+		Preload("AgentSkills").Preload("AgentSkills.Skill").Find(&agents)
+	response.Success(c, agents)
+}
+
+func (h *Handler) PublishedAgentChat(c *gin.Context) {
+	agentID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	var agent model.Agent
+	if err := repository.DB.Where("id = ? AND is_published = ? AND is_active = ?", agentID, true, true).
+		Preload("AgentSkills").Preload("AgentSkills.Skill").
+		First(&agent).Error; err != nil {
+		response.BadRequest(c, "agent not found or not published")
+		return
+	}
+
+	var req struct {
+		Message string `json:"message" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "message is required")
+		return
+	}
+
+	// Use the same AI response logic
+	var provider model.AIProvider
+	if err := repository.DB.Where("is_default = ? AND is_enabled = ? AND api_key != ''", true, true).First(&provider).Error; err != nil {
+		if err := repository.DB.Where("is_enabled = ? AND api_key != ''", true).First(&provider).Error; err != nil {
+			response.InternalError(c, "AI service not configured")
+			return
+		}
+	}
+
+	aiContent := h.chatService.SendMessageToAgent(agent, provider, req.Message)
+	response.Success(c, gin.H{
+		"agent":   agent.Name,
+		"message": aiContent,
+	})
 }
 
 // ==================== Users (Admin) ====================

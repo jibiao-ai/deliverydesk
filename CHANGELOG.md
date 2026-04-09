@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [3.1.0] - 2026-04-09
+
+### Added
+- **Feature 1 - 交付技能 (Delivery Skill)**: 技能商店新增「交付技能的skills」技能，基于上传的交付文档构建 RAG 知识库
+  - 支持上传 .docx / .xlsx / .txt / .md 文档，自动解析并索引为文本块
+  - 基于 TF-IDF 检索 + LLM 评分的 RAG 管线（Retrieve → Score → Filter → Synthesize）
+  - 技能商店完整 CRUD 管理界面，支持查看文档列表和索引状态
+  - 架构参考 CloudWeGo Eino 框架的 Workflow 模式（load → chunk → score → filter → answer）
+
+- **Feature 2 - 交付专家 Agent (Delivery Expert)**: 发布「交付专家」智能体
+  - 关联交付技能、K8S管理技能、OpenStack管理技能
+  - 已发布为外部对话接口（Published Agent API）
+  - 支持 `POST /api/published-agents/:id/chat` 无需登录即可对话
+  - 智能体管理页支持发布/取消发布、查看 API 接口信息
+
+- **Feature 3 - 铁律规则 (Iron Rules)**: Agent 开发铁律模式
+  1. 所有指标/标签/数值必须来自技能知识库的具体结果，禁止编造数据
+  2. 无技能数据时不推断根因或编造趋势
+  3. 阈值必须来自具体技能数据，禁止自定义阈值
+  4. 回答必须引用具体技能和环境信息
+  5. 数据为空时直接回复「无有效数据，无法判断」
+  6. 每个回答给出 1-10 置信度评分，低于 7 分标注 [低置信度警告]
+  7. 遵守 token 限制，失败时最多重试 5 次
+
+- **Feature 4 - 社区技能 (Community Skills)**: 拉取社区技能
+  - **k8s-operator**: K8S 集群管理技能（集群管理/工作负载/网络/存储/安全/监控/故障排查）
+  - **openstack-operator**: OpenStack 云平台管理技能（计算/网络/存储/镜像/认证/编排/EasyStack特有能力）
+
+### Changed
+- Skill 模型新增 `category`, `doc_count`, `chunk_count` 字段和 `SkillDocument` 关联
+- Agent 模型新增 `is_published`, `iron_rules` 字段
+- 技能商店页面从占位符重构为完整管理界面（文档上传、索引状态、重建索引）
+- 智能体页面从占位符重构为完整管理界面（CRUD、技能关联、发布管理、API 查看）
+- 仪表盘新增技能统计卡片
+- AI 对话增加 RAG 管线集成，铁律模式下 AI 请求失败最多重试 5 次
+
+---
+
 ## [2.1.1] - 2026-04-09
 
 ### Added
@@ -96,6 +134,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+[3.1.0]: https://github.com/jibiao-ai/deliverydesk/compare/v2.1.1...v3.1.0
 [2.1.1]: https://github.com/jibiao-ai/deliverydesk/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/jibiao-ai/deliverydesk/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/jibiao-ai/deliverydesk/compare/v1.5.0...v2.0.0

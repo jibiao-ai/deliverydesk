@@ -22,7 +22,7 @@ export default function DashboardPage() {
     { label: '公司系统链接', value: stats?.website_links ?? '--', icon: Globe, iconBg: 'bg-primary-100', iconColor: 'text-primary-600', trend: '已收录' },
     { label: 'AI 模型数', value: stats?.ai_models ?? '--', icon: Cpu, iconBg: 'bg-purple-100', iconColor: 'text-purple-600', trend: '已配置' },
     { label: '活跃 Agent 数', value: stats?.agents ?? '--', icon: Bot, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', trend: '运行中' },
-    { label: '对话数', value: stats?.conversations ?? '--', icon: MessageSquare, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', trend: '累计' },
+    { label: '技能 / 对话', value: `${stats?.skills ?? '--'} / ${stats?.conversations ?? '--'}`, icon: Zap, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', trend: '累计' },
   ];
 
   const quickActions = [
