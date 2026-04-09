@@ -282,6 +282,7 @@ func seedWebsiteLinks(db *gorm.DB) {
 	type linkData struct {
 		Name string
 		URL  string
+		Icon string
 	}
 	type categoryData struct {
 		Name  string
@@ -291,83 +292,65 @@ func seedWebsiteLinks(db *gorm.DB) {
 
 	categories := []categoryData{
 		{
-			Name: "常用工具&系统",
-			Icon: "Wrench",
+			Name: "日常系统",
+			Icon: "Monitor",
 			Links: []linkData{
-				{Name: "商业存储对接包", URL: "http://octopus.easystack.io/"},
-				{Name: "拓扑制作系统", URL: "http://lic.easystack.cn/topoweb/login"},
-				{Name: "Redmine系统", URL: "https://redmine.easystack.cn/login"},
-				{Name: "Jira系统", URL: "https://easystack.atlassian.net/jira/for-you"},
-				{Name: "Confluence系统", URL: "https://easystack.atlassian.net/wiki"},
-				{Name: "VPN工具", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1099467131/01-VPN"},
-				{Name: "企业邮箱", URL: "https://mail.qiye.163.com/static/login/"},
-				{Name: "企业网盘", URL: "https://pan.easystack.io/"},
+				{Name: "商业存储对接包", URL: "http://octopus.easystack.io/", Icon: "database"},
+				{Name: "拓扑制作系统", URL: "http://lic.easystack.cn/topoweb/login", Icon: "network"},
+				{Name: "Redmine系统", URL: "https://redmine.easystack.cn/login", Icon: "redmine"},
+				{Name: "Jira系统", URL: "https://easystack.atlassian.net/jira/for-you", Icon: "jira"},
+				{Name: "Confluence系统", URL: "https://easystack.atlassian.net/wiki", Icon: "confluence"},
+				{Name: "VPN工具", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1099467131/01-VPN", Icon: "vpn"},
+				{Name: "企业邮箱", URL: "https://mail.qiye.163.com/static/login/", Icon: "email"},
+				{Name: "企业网盘", URL: "https://pan.easystack.io/", Icon: "cloud-storage"},
 			},
 		},
 		{
-			Name: "网络配置包制作",
-			Icon: "Network",
+			Name: "产品资料",
+			Icon: "Package",
 			Links: []linkData{
-				{Name: "neutron-az、多生产(业务)网配包制作", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1659437057/09-"},
-				{Name: "云杉网络对接包", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1764688072/10-"},
+				{Name: "V6.0.1/V6.1.1标准安装介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/1695711233", Icon: "download"},
+				{Name: "V6.0.1/V6.0.2/V6.1.1产品升级介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/1128104392", Icon: "upgrade"},
+				{Name: "V6.2.1标准安装介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/2205548547/V621", Icon: "download"},
+				{Name: "V6.2.1产品升级介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/2226094087/V621", Icon: "upgrade"},
 			},
 		},
 		{
 			Name: "常用网站",
 			Icon: "Globe",
 			Links: []linkData{
-				{Name: "Confluence系统使用介绍", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1099499945/04-Confluence"},
-				{Name: "交付黄页", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1102644405/05-"},
-				{Name: "合适费控报销", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1659373029/07-"},
+				{Name: "Confluence使用介绍", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1099499945/04-Confluence", Icon: "confluence"},
+				{Name: "交付黄页", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1102644405/05-", Icon: "book"},
+				{Name: "合适费控报销", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1659373029/07-", Icon: "receipt"},
 			},
 		},
 		{
-			Name: "云产品资料",
-			Icon: "Cloud",
+			Name: "交付标准",
+			Icon: "ClipboardCheck",
 			Links: []linkData{
-				{Name: "V6.0.1/V6.1.1标准安装介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/1695711233"},
-				{Name: "V6.0.1/V6.0.2/V6.1.1产品升级介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/1128104392"},
-				{Name: "V6.2.1标准安装介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/2205548547/V621"},
-				{Name: "V6.2.1产品升级介质", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/2226094087/V621"},
+				{Name: "V6.2.1安装部署手册", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/2114355900/V621", Icon: "manual"},
+				{Name: "V6.0.1/V6.1.1安装部署手册", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/1042744182", Icon: "manual"},
+				{Name: "实施阶段文档模版", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1847656703/00-", Icon: "template"},
+				{Name: "云平台勘误", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/folder/2801336339", Icon: "alert"},
+				{Name: "万博迁移软件相关", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1908670626/00-", Icon: "migrate"},
+				{Name: "neutron-az、多生产(业务)网配包制作", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1659437057/09-", Icon: "network"},
+				{Name: "云杉网络对接包", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1764688072/10-", Icon: "network"},
+				{Name: "标准镜像制作相关", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/85951587", Icon: "image"},
+				{Name: "标准镜像维护列表", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/85951522/03-", Icon: "image"},
+				{Name: "邮储专项交付", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1660649520/02-", Icon: "bank"},
 			},
 		},
 		{
-			Name: "安装部署手册/勘误",
-			Icon: "BookOpen",
+			Name: "运维规范",
+			Icon: "ShieldCheck",
 			Links: []linkData{
-				{Name: "V6.2.1安装部署手册", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/2114355900/V621"},
-				{Name: "V6.0.1/V6.1.1安装部署手册", URL: "https://easystack.atlassian.net/wiki/spaces/PM/pages/1042744182"},
-				{Name: "实施阶段文档模版", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1847656703/00-"},
-				{Name: "云平台勘误", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/folder/2801336339"},
-				{Name: "万博迁移软件相关", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1908670626/00-"},
-			},
-		},
-		{
-			Name: "运维",
-			Icon: "Settings",
-			Links: []linkData{
-				{Name: "驻场运维规范", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/2486763531/09-"},
-				{Name: "技能培训", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/2486927470/03-"},
-				{Name: "SDN相关服务问题", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/1682866530/SDN"},
-				{Name: "V6.2.1标准变更/勘误", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/2245297715/ECS+V621"},
-				{Name: "V6.1.1标准变更/勘误", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/1682669599/ECS+V611"},
-				{Name: "V6标准变更/勘误", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/1110181031/ECS+V6"},
-				{Name: "V6运维手册库", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/873759399/ECS+V6"},
-			},
-		},
-		{
-			Name: "专项交付",
-			Icon: "Target",
-			Links: []linkData{
-				{Name: "邮储专项交付", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/1660649520/02-"},
-			},
-		},
-		{
-			Name: "镜像相关",
-			Icon: "HardDrive",
-			Links: []linkData{
-				{Name: "标准镜像制作相关", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/85951587"},
-				{Name: "标准镜像维护列表", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/85951522/03-"},
+				{Name: "驻场运维规范", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/2486763531/09-", Icon: "standard"},
+				{Name: "技能培训", URL: "https://easystack.atlassian.net/wiki/spaces/delivery/pages/2486927470/03-", Icon: "training"},
+				{Name: "SDN相关服务问题", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/1682866530/SDN", Icon: "network"},
+				{Name: "V6.2.1标准变更/勘误", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/2245297715/ECS+V621", Icon: "change"},
+				{Name: "V6.1.1标准变更/勘误", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/1682669599/ECS+V611", Icon: "change"},
+				{Name: "V6标准变更/勘误", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/1110181031/ECS+V6", Icon: "change"},
+				{Name: "V6运维手册库", URL: "https://easystack.atlassian.net/wiki/spaces/ESK/pages/873759399/ECS+V6", Icon: "book"},
 			},
 		},
 	}
@@ -385,10 +368,11 @@ func seedWebsiteLinks(db *gorm.DB) {
 				CategoryID: category.ID,
 				Name:       link.Name,
 				URL:        link.URL,
+				Icon:       link.Icon,
 				SortOrder:  j,
 			}
 			db.Create(&websiteLink)
 		}
 	}
-	logger.Log.Info("Website links seeded from Excel data")
+	logger.Log.Info("Website links seeded (5 categories)")
 }

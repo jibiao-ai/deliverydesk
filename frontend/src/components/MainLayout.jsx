@@ -26,7 +26,7 @@ const pageComponents = {
 
 const PAGE_META = {
   dashboard:        { title: '仪表盘',     subtitle: '云交付服务台概览' },
-  websites:         { title: '常用网站',   subtitle: '交付团队常用工具和系统快速导航' },
+  websites:         { title: '公司系统',   subtitle: '公司内部系统与交付资源快速导航' },
   chat:             { title: '即时对话',   subtitle: '与 AI 智能体实时交互' },
   agents:           { title: '智能体',     subtitle: '管理和配置 AI 智能体' },
   skills:           { title: '技能商店',   subtitle: '查看和管理平台技能' },

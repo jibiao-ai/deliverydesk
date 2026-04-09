@@ -19,14 +19,14 @@ export default function DashboardPage() {
   };
 
   const statCards = [
-    { label: '常用网站链接', value: stats?.website_links ?? '--', icon: Globe, iconBg: 'bg-primary-100', iconColor: 'text-primary-600', trend: '已收录' },
+    { label: '公司系统链接', value: stats?.website_links ?? '--', icon: Globe, iconBg: 'bg-primary-100', iconColor: 'text-primary-600', trend: '已收录' },
     { label: 'AI 模型数', value: stats?.ai_models ?? '--', icon: Cpu, iconBg: 'bg-purple-100', iconColor: 'text-purple-600', trend: '已配置' },
     { label: '活跃 Agent 数', value: stats?.agents ?? '--', icon: Bot, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', trend: '运行中' },
     { label: '对话数', value: stats?.conversations ?? '--', icon: MessageSquare, iconBg: 'bg-orange-100', iconColor: 'text-orange-600', trend: '累计' },
   ];
 
   const quickActions = [
-    { label: '常用网站', desc: '快速访问交付常用工具和系统', icon: Globe, iconBg: 'bg-primary-50', iconColor: 'text-primary-600', page: 'websites' },
+    { label: '公司系统', desc: '快速访问公司内部系统和工具', icon: Globe, iconBg: 'bg-primary-50', iconColor: 'text-primary-600', page: 'websites' },
     { label: '智能对话', desc: '与 AI 智能体开始新会话', icon: MessageSquare, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', page: 'chat' },
     { label: '配置模型', desc: '添加或更新 AI 模型参数', icon: Cpu, iconBg: 'bg-purple-50', iconColor: 'text-purple-600', page: 'ai-models' },
     { label: '查看技能', desc: '浏览平台可用技能列表', icon: Zap, iconBg: 'bg-amber-50', iconColor: 'text-amber-600', page: 'skills' },
