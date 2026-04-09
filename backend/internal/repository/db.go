@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jibiao-ai/deliverydesk/internal/config"
@@ -12,6 +13,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
@@ -38,13 +40,15 @@ func InitDB(cfg config.DatabaseConfig) error {
 		logger.Log.Infof("Using SQLite database: %s", dbPath)
 
 	default: // mysql
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&collation=utf8mb4_general_ci&parseTime=True&loc=Local",
 			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 
 		logger.Log.Infof("Connecting to MySQL: %s@tcp(%s:%d)/%s", cfg.User, cfg.Host, cfg.Port, cfg.DBName)
 
 		for i := 0; i < 60; i++ {
-			db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+			db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+				Logger: gormlogger.Default.LogMode(gormlogger.Info),
+			})
 			if err == nil {
 				// Verify connection actually works
 				sqlDB, pingErr := db.DB()
@@ -76,23 +80,74 @@ func InitDB(cfg config.DatabaseConfig) error {
 		logger.Log.Info("Using MySQL database")
 	}
 
-	// Auto migrate
-	err = db.AutoMigrate(
-		&model.User{},
-		&model.LDAPConfig{},
-		&model.Agent{},
-		&model.Skill{},
-		&model.AgentSkill{},
-		&model.Conversation{},
-		&model.Message{},
-		&model.TaskLog{},
-		&model.WebsiteCategory{},
-		&model.WebsiteLink{},
-		&model.AIProvider{},
-		&model.OperationLog{},
-	)
-	if err != nil {
-		return fmt.Errorf("auto migration failed: %w", err)
+	// Fix database/table collation to avoid "key too long" error (Error 1071)
+	// MySQL 8.0 with utf8mb4_unicode_ci can cause index key length > 3072 bytes
+	// when GORM creates composite unique indexes with DeletedAt for soft-delete
+	logger.Log.Info("Checking database collation...")
+	if dbDriver != "sqlite" {
+		fixCollationSQL := []string{
+			fmt.Sprintf("ALTER DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci", cfg.DBName),
+		}
+		for _, sql := range fixCollationSQL {
+			if execErr := db.Exec(sql).Error; execErr != nil {
+				logger.Log.Warnf("Collation fix SQL warning (non-fatal): %v", execErr)
+			}
+		}
+		// Convert existing tables if they exist
+		var tables []string
+		db.Raw("SHOW TABLES").Scan(&tables)
+		for _, table := range tables {
+			alterSQL := fmt.Sprintf("ALTER TABLE `%s` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci", table)
+			if execErr := db.Exec(alterSQL).Error; execErr != nil {
+				logger.Log.Warnf("Table collation fix warning for %s (non-fatal): %v", table, execErr)
+			}
+		}
+		logger.Log.Info("Database collation check completed")
+	}
+
+	// Auto migrate - migrate tables one by one for better error diagnosis
+	logger.Log.Info("Starting database table migration...")
+	migrationModels := map[string]interface{}{
+		"User":            &model.User{},
+		"LDAPConfig":      &model.LDAPConfig{},
+		"Agent":           &model.Agent{},
+		"Skill":           &model.Skill{},
+		"AgentSkill":      &model.AgentSkill{},
+		"Conversation":    &model.Conversation{},
+		"Message":         &model.Message{},
+		"TaskLog":         &model.TaskLog{},
+		"WebsiteCategory": &model.WebsiteCategory{},
+		"WebsiteLink":     &model.WebsiteLink{},
+		"AIProvider":      &model.AIProvider{},
+		"OperationLog":    &model.OperationLog{},
+	}
+	migrationOrder := []string{
+		"User", "LDAPConfig", "Agent", "Skill", "AgentSkill",
+		"Conversation", "Message", "TaskLog",
+		"WebsiteCategory", "WebsiteLink", "AIProvider", "OperationLog",
+	}
+	for _, name := range migrationOrder {
+		m := migrationModels[name]
+		logger.Log.Infof("Migrating table: %s ...", name)
+		if migrateErr := db.AutoMigrate(m); migrateErr != nil {
+			logger.Log.Warnf("First migration attempt for %s failed: %v", name, migrateErr)
+			// If Error 1071 (key too long), try dropping the table and re-creating
+			if strings.Contains(migrateErr.Error(), "1071") || strings.Contains(migrateErr.Error(), "key") {
+				logger.Log.Warnf("Attempting to drop and recreate table %s to fix key length issue...", name)
+				if dropErr := db.Migrator().DropTable(m); dropErr != nil {
+					logger.Log.Warnf("Drop table %s warning: %v", name, dropErr)
+				}
+				if retryErr := db.AutoMigrate(m); retryErr != nil {
+					logger.Log.Errorf("Failed to migrate table %s after drop+recreate: %v", name, retryErr)
+					return fmt.Errorf("auto migration failed on table %s: %w", name, retryErr)
+				}
+				logger.Log.Infof("Table %s recreated successfully after drop", name)
+			} else {
+				return fmt.Errorf("auto migration failed on table %s: %w", name, migrateErr)
+			}
+		} else {
+			logger.Log.Infof("Table %s migrated successfully", name)
+		}
 	}
 
 	DB = db
