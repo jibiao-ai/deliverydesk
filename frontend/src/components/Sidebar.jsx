@@ -5,7 +5,8 @@ import {
 import useStore from '../store/useStore';
 import { useNavigate } from 'react-router-dom';
 
-const menuGroups = [
+// Menu visible to ALL users (including normal users)
+const userMenuGroups = [
   {
     label: '交付工作台',
     items: [
@@ -15,6 +16,10 @@ const menuGroups = [
       { id: 'agents', label: '智能体', icon: Bot },
     ],
   },
+];
+
+// Menu visible to ADMIN users only
+const adminMenuGroups = [
   {
     label: '配置管理',
     items: [
@@ -22,16 +27,15 @@ const menuGroups = [
       { id: 'skills', label: '技能商店', icon: Zap },
     ],
   },
+  {
+    label: '系统管理',
+    items: [
+      { id: 'ldap', label: 'LDAP管理', icon: Server },
+      { id: 'users', label: '用户管理', icon: Users },
+      { id: 'operation-logs', label: '操作日志', icon: FileText },
+    ],
+  },
 ];
-
-const adminGroup = {
-  label: '系统管理',
-  items: [
-    { id: 'ldap', label: 'LDAP管理', icon: Server },
-    { id: 'users', label: '用户管理', icon: Users },
-    { id: 'operation-logs', label: '操作日志', icon: FileText },
-  ],
-};
 
 export default function Sidebar() {
   const { activePage, setActivePage, user, logout, sidebarCollapsed, toggleSidebar } = useStore();
@@ -42,7 +46,7 @@ export default function Sidebar() {
     navigate('/login');
   };
 
-  const allGroups = user?.role === 'admin' ? [...menuGroups, adminGroup] : menuGroups;
+  const allGroups = user?.role === 'admin' ? [...userMenuGroups, ...adminMenuGroups] : userMenuGroups;
 
   return (
     <div

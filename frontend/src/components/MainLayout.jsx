@@ -41,13 +41,30 @@ const THEMES = [
   { id: 'dark',  label: '暗色主题', bg: '#0f0e17', border: '#374151' },
 ];
 
+// Pages that require admin role
+const ADMIN_PAGES = new Set(['ai-models', 'skills', 'ldap', 'users', 'operation-logs']);
+
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);
+  const setActivePage = useStore((s) => s.setActivePage);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const user = useStore((s) => s.user);
-  const PageComponent = pageComponents[activePage] || DashboardPage;
-  const meta = PAGE_META[activePage] || { title: activePage, subtitle: '' };
+
+  // Redirect non-admin users away from admin pages
+  const effectivePage = (user?.role !== 'admin' && ADMIN_PAGES.has(activePage))
+    ? 'dashboard'
+    : activePage;
+
+  // Auto-redirect if needed
+  React.useEffect(() => {
+    if (effectivePage !== activePage) {
+      setActivePage(effectivePage);
+    }
+  }, [effectivePage, activePage, setActivePage]);
+
+  const PageComponent = pageComponents[effectivePage] || DashboardPage;
+  const meta = PAGE_META[effectivePage] || { title: effectivePage, subtitle: '' };
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
