@@ -633,6 +633,114 @@ func (h *Handler) UploadSkillDocument(c *gin.Context) {
 	response.Success(c, doc)
 }
 
+func (h *Handler) UploadSkillDocuments(c *gin.Context) {
+	skillID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	sk, err := h.chatService.GetSkill(uint(skillID))
+	if err != nil {
+		response.BadRequest(c, "skill not found")
+		return
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		response.BadRequest(c, "failed to parse multipart form")
+		return
+	}
+	files := form.File["files"]
+	if len(files) == 0 {
+		response.BadRequest(c, "at least one file is required")
+		return
+	}
+
+	uploadDir := "/home/user/webapp/backend/uploads/skills"
+	os.MkdirAll(uploadDir, 0755)
+
+	allowedExts := map[string]bool{
+		".docx": true, ".xlsx": true, ".txt": true, ".md": true, ".pdf": true, ".csv": true,
+	}
+
+	var docs []model.SkillDocument
+	successCount := 0
+	failedCount := 0
+	var failedFiles []string
+
+	for _, header := range files {
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		if !allowedExts[ext] {
+			failedCount++
+			failedFiles = append(failedFiles, fmt.Sprintf("%s (unsupported type)", header.Filename))
+			continue
+		}
+
+		file, err := header.Open()
+		if err != nil {
+			failedCount++
+			failedFiles = append(failedFiles, fmt.Sprintf("%s (open error)", header.Filename))
+			continue
+		}
+
+		filePath := fmt.Sprintf("%s/%d_%s", uploadDir, skillID, header.Filename)
+		dst, err := os.Create(filePath)
+		if err != nil {
+			file.Close()
+			failedCount++
+			failedFiles = append(failedFiles, fmt.Sprintf("%s (save error)", header.Filename))
+			continue
+		}
+		_, err = io.Copy(dst, file)
+		dst.Close()
+		file.Close()
+		if err != nil {
+			failedCount++
+			failedFiles = append(failedFiles, fmt.Sprintf("%s (write error)", header.Filename))
+			continue
+		}
+
+		fileType := strings.TrimPrefix(ext, ".")
+		doc := model.SkillDocument{
+			SkillID:  uint(skillID),
+			FileName: header.Filename,
+			FilePath: filePath,
+			FileType: fileType,
+			FileSize: header.Size,
+			Status:   "pending",
+		}
+		if err := h.chatService.AddSkillDocument(&doc); err != nil {
+			failedCount++
+			failedFiles = append(failedFiles, fmt.Sprintf("%s (db error)", header.Filename))
+			continue
+		}
+
+		docs = append(docs, doc)
+		successCount++
+
+		// Index document in background
+		docCopy := doc
+		go func() {
+			if err := h.chatService.IndexSkillDocument(&docCopy); err != nil {
+				logger.Log.Errorf("Failed to index document %s: %v", docCopy.FileName, err)
+			}
+		}()
+	}
+
+	fileNames := make([]string, len(docs))
+	for i, d := range docs {
+		fileNames[i] = d.FileName
+	}
+	recordOperationLog(c, "skill", "upload_docs", sk.ID, sk.Name,
+		fmt.Sprintf("批量上传 %d 个文档到技能: %s (成功: %d, 失败: %d)", len(files), sk.Name, successCount, failedCount))
+
+	result := gin.H{
+		"success_count": successCount,
+		"failed_count":  failedCount,
+		"documents":     docs,
+	}
+	if len(failedFiles) > 0 {
+		result["failed_files"] = failedFiles
+	}
+	response.Success(c, result)
+}
+
 func (h *Handler) ReindexSkill(c *gin.Context) {
 	skillID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err := h.chatService.ReindexSkill(uint(skillID)); err != nil {
