@@ -264,6 +264,43 @@ func (s *ChatService) ReindexSkill(skillID uint) error {
 	return nil
 }
 
+// WarmUpSkillStore loads all skill documents from the database into the in-memory
+// ChunkStore. This must be called at server startup so the RAG pipeline has data.
+func (s *ChatService) WarmUpSkillStore() {
+	var skills []model.Skill
+	repository.DB.Where("is_active = ?", true).Find(&skills)
+
+	totalChunks := 0
+	totalDocs := 0
+	for _, sk := range skills {
+		var docs []model.SkillDocument
+		repository.DB.Where("skill_id = ? AND status = ?", sk.ID, "ready").Find(&docs)
+		if len(docs) == 0 {
+			continue
+		}
+
+		for _, doc := range docs {
+			if doc.Content != "" {
+				n := skill.GetStore().IndexDocument(sk.ID, doc.ID, doc.FileName, doc.Content)
+				totalChunks += n
+				totalDocs++
+			} else if doc.FilePath != "" {
+				n, err := skill.IndexDocumentFile(sk.ID, doc.ID, doc.FileName, doc.FilePath)
+				if err != nil {
+					logger.Log.Warnf("WarmUp: failed to index doc %s (skill %d): %v", doc.FileName, sk.ID, err)
+					continue
+				}
+				totalChunks += n
+				totalDocs++
+			}
+		}
+		chunkCount := skill.GetStore().GetChunkCount(sk.ID)
+		repository.DB.Model(&model.Skill{}).Where("id = ?", sk.ID).Update("chunk_count", chunkCount)
+		logger.Log.Infof("WarmUp: skill '%s' (ID %d) loaded %d chunks from %d docs", sk.Name, sk.ID, chunkCount, len(docs))
+	}
+	logger.Log.Infof("WarmUp complete: %d documents, %d chunks across %d skills", totalDocs, totalChunks, len(skills))
+}
+
 // ==================== Conversations ====================
 
 func (s *ChatService) GetConversations(userID uint) ([]model.Conversation, error) {
@@ -358,7 +395,7 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 	}
 
 	// Check if agent has delivery skills with indexed documents - use RAG
-	if agent.IronRules || hasDeliverySkills(agent) {
+	if agent.IronRules || hasIndexedSkills(agent) {
 		ragResult := s.runSkillRAG(agent, aiConfig, userContent)
 		if ragResult != "" {
 			return ragResult
@@ -369,9 +406,12 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 	return s.standardAIResponse(agent, provider, modelName, userContent, convID)
 }
 
-func hasDeliverySkills(agent model.Agent) bool {
+// hasIndexedSkills checks if the agent has ANY skill type with indexed document chunks.
+// Previously this only checked "delivery" type skills, causing knowledge/community skills
+// to be completely ignored by the RAG pipeline.
+func hasIndexedSkills(agent model.Agent) bool {
 	for _, as := range agent.AgentSkills {
-		if as.Skill.Type == "delivery" && skill.GetStore().GetChunkCount(as.Skill.ID) > 0 {
+		if as.Skill.IsActive && skill.GetStore().GetChunkCount(as.Skill.ID) > 0 {
 			return true
 		}
 	}
@@ -381,21 +421,36 @@ func hasDeliverySkills(agent model.Agent) bool {
 func (s *ChatService) runSkillRAG(agent model.Agent, aiConfig skill.AIConfig, question string) string {
 	var allResults []skill.RAGResult
 
+	skillCount := 0
+	totalChunks := 0
 	for _, as := range agent.AgentSkills {
 		sk := as.Skill
 		if !sk.IsActive {
+			logger.Log.Debugf("RAG: skipping inactive skill '%s' (ID %d)", sk.Name, sk.ID)
 			continue
 		}
 		chunkCount := skill.GetStore().GetChunkCount(sk.ID)
 		if chunkCount == 0 {
+			logger.Log.Warnf("RAG: skill '%s' (ID %d) has 0 chunks in memory, skipping. Type=%s", sk.Name, sk.ID, sk.Type)
 			continue
 		}
 
+		logger.Log.Infof("RAG: searching skill '%s' (ID %d, type=%s, chunks=%d) for question: %s",
+			sk.Name, sk.ID, sk.Type, chunkCount, question)
+		skillCount++
+		totalChunks += chunkCount
+
 		result := skill.RunRAG(aiConfig, sk.ID, sk.Name, question, agent.IronRules)
 		if !result.Empty {
+			logger.Log.Infof("RAG: skill '%s' returned result with confidence %d", sk.Name, result.Confidence)
 			allResults = append(allResults, result)
+		} else {
+			logger.Log.Infof("RAG: skill '%s' returned empty (no relevant data found)", sk.Name)
 		}
 	}
+
+	logger.Log.Infof("RAG summary: agent '%s' (ID %d) searched %d skills (%d total chunks), got %d results",
+		agent.Name, agent.ID, skillCount, totalChunks, len(allResults))
 
 	if len(allResults) == 0 {
 		if agent.IronRules {
@@ -417,6 +472,38 @@ func (s *ChatService) runSkillRAG(agent model.Agent, aiConfig skill.AIConfig, qu
 		sb.WriteString("\n\n")
 	}
 	return sb.String()
+}
+
+// getKnowledgeContext retrieves relevant chunks from all active skills and returns
+// them as context text to inject into the system prompt. This ensures the AI
+// prioritizes knowledge base content even when the full RAG synthesis is skipped.
+func (s *ChatService) getKnowledgeContext(agent model.Agent, question string) string {
+	var contextParts []string
+	for _, as := range agent.AgentSkills {
+		sk := as.Skill
+		if !sk.IsActive {
+			continue
+		}
+		chunks := skill.GetStore().Retrieve(sk.ID, question, 5)
+		if len(chunks) == 0 {
+			continue
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("【来自技能知识库「%s」的参考资料】\n", sk.Name))
+		for i, c := range chunks {
+			content := c.Content
+			runes := []rune(content)
+			if len(runes) > 400 {
+				content = string(runes[:400]) + "..."
+			}
+			sb.WriteString(fmt.Sprintf("[%d] %s\n", i+1, content))
+		}
+		contextParts = append(contextParts, sb.String())
+	}
+	if len(contextParts) == 0 {
+		return ""
+	}
+	return strings.Join(contextParts, "\n\n")
 }
 
 // StreamCallback is called for each token chunk during streaming
@@ -466,7 +553,7 @@ func (s *ChatService) SendMessageStream(ctx context.Context, convID, userID uint
 	}
 
 	// RAG check - if RAG produces a result, stream it all at once
-	if conv.Agent.IronRules || hasDeliverySkills(conv.Agent) {
+	if conv.Agent.IronRules || hasIndexedSkills(conv.Agent) {
 		ragResult := s.runSkillRAG(conv.Agent, aiConfig, content)
 		if ragResult != "" {
 			onToken(ragResult)
@@ -498,10 +585,20 @@ func (s *ChatService) SendMessageStream(ctx context.Context, convID, userID uint
 // streamAIResponse calls the OpenAI-compatible API with stream=true and
 // invokes onToken for each delta. Returns the full accumulated content.
 func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, provider model.AIProvider, modelName, userContent string, convID uint, onToken StreamCallback) (string, error) {
-	// Build messages
+	// Build messages with knowledge context
 	messages := []map[string]string{}
-	if agent.SystemPrompt != "" {
-		messages = append(messages, map[string]string{"role": "system", "content": agent.SystemPrompt})
+
+	systemPrompt := agent.SystemPrompt
+	knowledgeCtx := s.getKnowledgeContext(agent, userContent)
+	if knowledgeCtx != "" {
+		if systemPrompt == "" {
+			systemPrompt = "你是一个智能助手。"
+		}
+		systemPrompt += "\n\n【知识库参考资料 - 请优先基于以下内容回答问题，如果参考资料与问题相关请引用】\n" + knowledgeCtx
+		logger.Log.Infof("StreamAI: injected knowledge context into system prompt for agent '%s'", agent.Name)
+	}
+	if systemPrompt != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": systemPrompt})
 	}
 	var recentMsgs []model.Message
 	repository.DB.Where("conversation_id = ?", convID).Order("created_at DESC").Limit(10).Find(&recentMsgs)
@@ -616,8 +713,19 @@ func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, p
 func (s *ChatService) standardAIResponse(agent model.Agent, provider model.AIProvider, modelName, userContent string, convID uint) string {
 	// Build messages for the API call
 	messages := []map[string]string{}
-	if agent.SystemPrompt != "" {
-		messages = append(messages, map[string]string{"role": "system", "content": agent.SystemPrompt})
+
+	// Build system prompt with knowledge context if available
+	systemPrompt := agent.SystemPrompt
+	knowledgeCtx := s.getKnowledgeContext(agent, userContent)
+	if knowledgeCtx != "" {
+		if systemPrompt == "" {
+			systemPrompt = "你是一个智能助手。"
+		}
+		systemPrompt += "\n\n【知识库参考资料 - 请优先基于以下内容回答问题，如果参考资料与问题相关请引用】\n" + knowledgeCtx
+		logger.Log.Infof("StandardAI: injected knowledge context into system prompt for agent '%s'", agent.Name)
+	}
+	if systemPrompt != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": systemPrompt})
 	}
 
 	// Get recent messages for context
@@ -712,18 +820,26 @@ func (s *ChatService) SendMessageToAgent(agent model.Agent, provider model.AIPro
 		aiConfig.Model = agent.Model
 	}
 
-	// Try RAG first if agent has delivery skills
-	if agent.IronRules || hasDeliverySkills(agent) {
+	// Try RAG first if agent has indexed skills
+	if agent.IronRules || hasIndexedSkills(agent) {
 		ragResult := s.runSkillRAG(agent, aiConfig, message)
 		if ragResult != "" {
 			return ragResult
 		}
 	}
 
-	// Standard AI response
+	// Standard AI response with knowledge context
 	messages := []map[string]string{}
-	if agent.SystemPrompt != "" {
-		messages = append(messages, map[string]string{"role": "system", "content": agent.SystemPrompt})
+	systemPrompt := agent.SystemPrompt
+	knowledgeCtx := s.getKnowledgeContext(agent, message)
+	if knowledgeCtx != "" {
+		if systemPrompt == "" {
+			systemPrompt = "你是一个智能助手。"
+		}
+		systemPrompt += "\n\n【知识库参考资料 - 请优先基于以下内容回答问题，如果参考资料与问题相关请引用】\n" + knowledgeCtx
+	}
+	if systemPrompt != "" {
+		messages = append(messages, map[string]string{"role": "system", "content": systemPrompt})
 	}
 	messages = append(messages, map[string]string{"role": "user", "content": message})
 

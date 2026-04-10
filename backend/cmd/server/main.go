@@ -57,6 +57,11 @@ func main() {
 
 	// Initialize services
 	chatService := service.NewChatService()
+
+	// Warm up skill knowledge store (load indexed documents into memory for RAG)
+	logger.Log.Info("Warming up skill knowledge store...")
+	chatService.WarmUpSkillStore()
+
 	h := handler.NewHandler(chatService)
 
 	// Setup Gin router
