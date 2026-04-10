@@ -13,13 +13,18 @@ const userMenuGroups = [
       { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
       { id: 'websites', label: '公司系统', icon: Globe },
       { id: 'chat', label: '即时对话', icon: MessageSquare },
-      { id: 'agents', label: '智能体', icon: Bot },
     ],
   },
 ];
 
 // Menu visible to ADMIN users only
 const adminMenuGroups = [
+  {
+    label: '智能应用',
+    items: [
+      { id: 'agents', label: '智能体', icon: Bot },
+    ],
+  },
   {
     label: '配置管理',
     items: [

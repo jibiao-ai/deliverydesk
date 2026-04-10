@@ -42,7 +42,7 @@ const THEMES = [
 ];
 
 // Pages that require admin role
-const ADMIN_PAGES = new Set(['ai-models', 'skills', 'ldap', 'users', 'operation-logs']);
+const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs']);
 
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);
