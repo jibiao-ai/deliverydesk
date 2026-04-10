@@ -268,7 +268,9 @@ func (s *ChatService) ReindexSkill(skillID uint) error {
 
 func (s *ChatService) GetConversations(userID uint) ([]model.Conversation, error) {
 	var convs []model.Conversation
-	err := repository.DB.Where("user_id = ?", userID).Order("updated_at DESC").Find(&convs).Error
+	err := repository.DB.Where("user_id = ?", userID).
+		Preload("Agent").
+		Order("updated_at DESC").Find(&convs).Error
 	return convs, err
 }
 

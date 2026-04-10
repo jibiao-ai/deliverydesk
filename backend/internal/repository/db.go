@@ -300,6 +300,9 @@ func seedDefaultData(db *gorm.DB) {
 		logger.Log.Info("Default agents created (including 交付专家)")
 	}
 
+	// Seed 运维专家 agent (idempotent — only if it doesn't exist yet)
+	seedOpsExpertAgent(db)
+
 	// Seed website links from Excel data
 	var catCount int64
 	db.Model(&model.WebsiteCategory{}).Count(&catCount)
@@ -429,6 +432,12 @@ func seedCommunitySkills(db *gorm.DB) {
 			Category:    "openstack-operator",
 			ToolDefs:    `[{"name":"os_service_status","description":"检查OpenStack服务状态"},{"name":"os_compute_diagnosis","description":"诊断计算服务问题"},{"name":"os_network_diagnosis","description":"诊断网络问题"},{"name":"os_compatibility_check","description":"检查兼容性"}]`,
 		},
+		{
+			Name:        "sre-operator",
+			Description: "SRE 站点可靠性工程技能 - 提供 SLO/SLI 定义、故障管理、容量规划、变更管理、自动化运维、监控告警、事件响应等 SRE 实践指导",
+			Category:    "sre-operator",
+			ToolDefs:    `[{"name":"sre_slo_calculator","description":"计算SLO和错误预算"},{"name":"sre_incident_response","description":"引导事件响应流程"},{"name":"sre_capacity_planning","description":"容量规划和预测"},{"name":"sre_change_risk","description":"变更风险评估"},{"name":"sre_toil_analysis","description":"Toil分析和自动化消除"},{"name":"sre_postmortem_guide","description":"事后复盘引导"}]`,
+		},
 	}
 	for _, def := range communityDefs {
 		var existing model.Skill
@@ -472,3 +481,85 @@ func deliveryExpertSystemPrompt() string {
 - 技能来源: 标注数据来自哪个技能
 - 低置信度时: 添加 [低置信度警告] 标签`
 }
+
+func seedOpsExpertAgent(db *gorm.DB) {
+	var existing model.Agent
+	if err := db.Where("name = ?", "运维专家").First(&existing).Error; err == nil {
+		return // already exists
+	}
+
+	agent := model.Agent{
+		Name:        "运维专家",
+		Description: "运维专家智能体 - 融合 Kubernetes、OpenStack 和 SRE 站点可靠性工程三大技能，提供全栈运维能力：集群管理、云平台运维、故障排查、SLO管理、事件响应、容量规划等专业服务。",
+		SystemPrompt: opsExpertSystemPrompt(),
+		Model:       "",
+		Temperature: 0.3,
+		MaxTokens:   8192,
+		IsActive:    true,
+		IsPublished: false,
+		IronRules:   false,
+		CreatedBy:   1,
+	}
+	if err := db.Create(&agent).Error; err != nil {
+		logger.Log.Warnf("Failed to seed 运维专家 agent: %v", err)
+		return
+	}
+
+	// Link to community skills: k8s-operator, openstack-operator, sre-operator
+	categories := []string{"k8s-operator", "openstack-operator", "sre-operator"}
+	for _, cat := range categories {
+		var sk model.Skill
+		if err := db.Where("category = ?", cat).First(&sk).Error; err == nil {
+			db.Create(&model.AgentSkill{AgentID: agent.ID, SkillID: sk.ID})
+		}
+	}
+	logger.Log.Info("运维专家 agent seeded with k8s/openstack/sre skills")
+}
+
+func opsExpertSystemPrompt() string {
+	return `你是「运维专家」智能体，一个全栈运维领域的资深专家。你融合了 Kubernetes 集群管理、OpenStack 云平台运维和 SRE 站点可靠性工程三大核心技能。
+
+## 核心能力
+
+### Kubernetes 运维
+- 集群部署、升级、扩缩容、高可用配置
+- 工作负载管理: Deployment、StatefulSet、DaemonSet、Job/CronJob
+- 网络管理: Service、Ingress、NetworkPolicy 配置和故障排查
+- 存储管理: PV、PVC、StorageClass 配置和扩容
+- 安全管理: RBAC、ServiceAccount、Secret、SecurityContext
+- 监控: Prometheus/Grafana 配置和告警规则
+- 故障排查: Pod 异常诊断（CrashLoopBackOff、OOMKilled、网络不通等）
+
+### OpenStack 云平台运维
+- 计算服务 (Nova): 虚拟机管理、热迁移/冷迁移、调度策略
+- 网络服务 (Neutron): 虚拟网络、路由、浮动IP、安全组
+- 存储服务 (Cinder/Swift): 块存储、对象存储、快照管理
+- 认证服务 (Keystone): 用户管理、LDAP对接
+- EasyStack 特有: ECS平台部署、ECF兼容性、EHV虚拟化
+
+### SRE 站点可靠性工程
+- SLO/SLI 管理: 定义和监控服务级别目标、错误预算策略
+- 事件管理: 事件响应流程、事后复盘(Postmortem)、根因分析
+- 容量规划: 资源利用率分析、容量预测、扩缩容策略
+- 变更管理: 发布策略(金丝雀/蓝绿/滚动)、风险评估、回滚方案
+- 自动化运维: Toil 消除、IaC、ChatOps
+- 监控告警: 监控体系设计、告警规则优化、可观测性建设
+- 混沌工程: 故障注入、弹性测试、GameDay 演练
+
+## 工具链熟练
+- 容器编排: Kubernetes、Docker、Helm
+- 云平台: OpenStack、EasyStack ECS
+- 监控: Prometheus、Grafana、AlertManager、Zabbix
+- 日志: ELK/EFK、Loki
+- 追踪: Jaeger、OpenTelemetry
+- IaC: Terraform、Ansible、Pulumi
+- CI/CD: Jenkins、GitLab CI、ArgoCD
+
+## 操作规范
+- 所有操作前确认当前环境状态
+- 变更操作提供回滚方案
+- 生产环境操作遵循审批流程
+- 提供具体命令和配置示例
+- 记录操作日志用于审计`
+}
+
