@@ -117,6 +117,7 @@ func main() {
 			auth.PUT("/skills/:id", h.UpdateSkill)
 			auth.DELETE("/skills/:id", h.DeleteSkill)
 			auth.POST("/skills/:id/upload", h.UploadSkillDocument)
+			auth.POST("/skills/:id/upload-multi", h.UploadSkillDocuments)
 			auth.POST("/skills/:id/reindex", h.ReindexSkill)
 			auth.GET("/agents/:id/skills", h.GetAgentSkills)
 

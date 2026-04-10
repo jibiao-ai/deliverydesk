@@ -148,6 +148,17 @@ export const uploadSkillDocument = (skillId, file) => {
     timeout: 300000,
   });
 };
+export const uploadSkillDocuments = (skillId, files, onProgress) => {
+  const formData = new FormData();
+  for (let i = 0; i < files.length; i++) {
+    formData.append('files', files[i]);
+  }
+  return api.post(`/skills/${skillId}/upload-multi`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 600000,
+    onUploadProgress: onProgress,
+  });
+};
 export const reindexSkill = (id) => api.post(`/skills/${id}/reindex`);
 export const getAgentSkills = (agentId) => api.get(`/agents/${agentId}/skills`);
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Plus, Trash2, Edit3, Upload, FileText, RefreshCw, Loader2, Database, Globe2, Search, ChevronDown, ChevronUp, X } from 'lucide-react';
-import { getSkills, createSkill, updateSkill, deleteSkill, uploadSkillDocument, reindexSkill } from '../services/api';
+import { getSkills, createSkill, updateSkill, deleteSkill, uploadSkillDocument, uploadSkillDocuments, reindexSkill } from '../services/api';
 import toast from 'react-hot-toast';
 
 const TYPE_LABELS = {
@@ -24,6 +24,7 @@ export default function SkillsPage() {
   const [editingSkill, setEditingSkill] = useState(null);
   const [expandedSkill, setExpandedSkill] = useState(null);
   const [uploading, setUploading] = useState({});
+  const [uploadProgress, setUploadProgress] = useState({});
   const [reindexing, setReindexing] = useState({});
   const [form, setForm] = useState({ name: '', description: '', type: 'delivery', category: '' });
 
@@ -75,20 +76,50 @@ export default function SkillsPage() {
   };
 
   const handleUpload = async (skillId, e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (!['docx', 'xlsx', 'txt', 'md'].includes(ext)) {
-      toast.error('支持的文件格式: .docx, .xlsx, .txt, .md');
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const allowedExts = ['docx', 'xlsx', 'txt', 'md', 'pdf', 'csv'];
+    const invalidFiles = files.filter(f => {
+      const ext = f.name.split('.').pop().toLowerCase();
+      return !allowedExts.includes(ext);
+    });
+    if (invalidFiles.length > 0) {
+      toast.error(`不支持的文件: ${invalidFiles.map(f => f.name).join(', ')}\n支持格式: ${allowedExts.map(e => '.' + e).join(', ')}`);
+      e.target.value = '';
       return;
     }
     setUploading(prev => ({ ...prev, [skillId]: true }));
+    setUploadProgress(prev => ({ ...prev, [skillId]: 0 }));
     try {
-      const res = await uploadSkillDocument(skillId, file);
-      if (res.code === 0) { toast.success(`文档「${file.name}」上传成功，正在索引...`); loadSkills(); }
-      else toast.error(res.message || '上传失败');
-    } catch (e) { toast.error('上传失败'); }
-    finally { setUploading(prev => ({ ...prev, [skillId]: false })); e.target.value = ''; }
+      if (files.length === 1) {
+        const res = await uploadSkillDocument(skillId, files[0]);
+        if (res.code === 0) { toast.success(`文档「${files[0].name}」上传成功，正在索引...`); loadSkills(); }
+        else toast.error(res.message || '上传失败');
+      } else {
+        const res = await uploadSkillDocuments(skillId, files, (progressEvent) => {
+          const pct = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
+          setUploadProgress(prev => ({ ...prev, [skillId]: pct }));
+        });
+        if (res.code === 0) {
+          const data = res.data || {};
+          const successCount = data.success_count || files.length;
+          const failedCount = data.failed_count || 0;
+          if (failedCount > 0) {
+            toast.success(`${successCount} 个文档上传成功，${failedCount} 个失败`);
+          } else {
+            toast.success(`${successCount} 个文档全部上传成功，正在索引...`);
+          }
+          loadSkills();
+        } else {
+          toast.error(res.message || '上传失败');
+        }
+      }
+    } catch (err) { toast.error('上传失败: ' + (err.message || '未知错误')); }
+    finally {
+      setUploading(prev => ({ ...prev, [skillId]: false }));
+      setUploadProgress(prev => ({ ...prev, [skillId]: 0 }));
+      e.target.value = '';
+    }
   };
 
   const handleReindex = async (skillId) => {
@@ -178,9 +209,19 @@ export default function SkillsPage() {
                       <label className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs cursor-pointer ${
                         uploading[sk.id] ? 'bg-gray-100 text-gray-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                       }`}>
-                        {uploading[sk.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                        上传文档
-                        <input type="file" accept=".docx,.xlsx,.txt,.md" className="hidden"
+                        {uploading[sk.id] ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            {uploadProgress[sk.id] > 0 ? `${uploadProgress[sk.id]}%` : '上传中...'}
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-3 h-3" />
+                            上传文档
+                          </>
+                        )}
+                        <input type="file" accept=".docx,.xlsx,.txt,.md,.pdf,.csv" className="hidden"
+                          multiple
                           disabled={uploading[sk.id]}
                           onChange={(e) => handleUpload(sk.id, e)} />
                       </label>
@@ -221,7 +262,7 @@ export default function SkillsPage() {
                           })}
                         </div>
                       ) : (
-                        <p className="text-xs text-gray-400">暂无文档，请上传 .docx / .xlsx / .txt / .md 文件</p>
+                        <p className="text-xs text-gray-400">暂无文档，请上传 .docx / .xlsx / .txt / .md / .pdf / .csv 文件（支持多选）</p>
                       )}
                     </div>
                   )}
