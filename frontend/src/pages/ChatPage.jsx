@@ -179,7 +179,7 @@ export default function ChatPage() {
     const agentObj = agents.find((a) => a.id === conv.agent_id);
     const newTab = {
       convId: conv.id,
-      agentName: agentObj?.name || conv.title,
+      agentName: agentObj?.name || conv.agent?.name || conv.title,
       title: conv.title,
       msgs,
       input: '',
@@ -431,6 +431,9 @@ export default function ChatPage() {
                       <p className={`text-sm truncate ${isActive ? 'font-semibold text-primary-700' : 'text-gray-700'}`}>
                         {conv.title}
                       </p>
+                      {conv.agent?.name && (
+                        <p className="text-[10px] text-gray-400 truncate">{conv.agent.name}</p>
+                      )}
                     </div>
                     {isOpenInTab && (
                       <div className="w-1.5 h-1.5 rounded-full bg-primary-400 flex-shrink-0" />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bot, Plus, Trash2, Edit3, Loader2, Zap, Eye, EyeOff, Shield, X, Check, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
-import { getAgents, createAgent, updateAgent, deleteAgent, getSkills } from '../services/api';
+import { getAgents, createAgent, updateAgent, deleteAgent, getSkills, getAIProviders } from '../services/api';
 import toast from 'react-hot-toast';
 
 // ── Elegant Delete Confirmation Modal ─────────────────────────────────────────
@@ -63,12 +63,15 @@ export default function AgentsPage() {
     is_published: false, iron_rules: false, skill_ids: [],
   });
 
+  const [aiProviders, setAIProviders] = useState([]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [agentRes, skillRes] = await Promise.all([getAgents(), getSkills()]);
+      const [agentRes, skillRes, providerRes] = await Promise.all([getAgents(), getSkills(), getAIProviders()]);
       if (agentRes.code === 0) setAgents(agentRes.data || []);
       if (skillRes.code === 0) setSkills(skillRes.data || []);
+      if (providerRes.code === 0) setAIProviders(providerRes.data || []);
     } catch (e) { toast.error('加载失败'); }
     finally { setLoading(false); }
   }, []);
@@ -289,8 +292,18 @@ export default function AgentsPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">模型 (留空用默认)</label>
-                  <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="gpt-4o" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                  <select
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
+                  >
+                    <option value="">使用默认模型</option>
+                    {aiProviders.filter(p => p.is_enabled).map(p => (
+                      <option key={p.id} value={p.model}>
+                        {p.label} ({p.model})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">温度</label>
