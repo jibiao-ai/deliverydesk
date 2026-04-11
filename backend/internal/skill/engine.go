@@ -123,11 +123,33 @@ func (s *ChunkStore) Retrieve(skillID uint, query string, topK int) []Chunk {
 		return nil
 	}
 
+	logger.Log.Infof("Retrieve: query='%s' tokens=%v, searching %d chunks for skill %d", query, queryTerms, len(chunks), skillID)
+
+	// Debug: log a sample chunk's tokens to verify content quality
+	if len(chunks) > 0 {
+		sampleContent := chunks[0].Content
+		runes := []rune(sampleContent)
+		if len(runes) > 100 {
+			sampleContent = string(runes[:100]) + "..."
+		}
+		sampleTokens := tokenize(chunks[0].Content)
+		tokenPreview := sampleTokens
+		if len(tokenPreview) > 20 {
+			tokenPreview = tokenPreview[:20]
+		}
+		logger.Log.Infof("Retrieve: chunk[0] sample content='%s', tokens(first 20)=%v, total_tokens=%d",
+			sampleContent, tokenPreview, len(sampleTokens))
+	}
+
 	// Calculate TF-IDF score for each chunk
 	scored := make([]Chunk, len(chunks))
 	copy(scored, chunks)
+	positiveCount := 0
 	for i := range scored {
 		scored[i].TFIDFScore = s.tfidfScore(scored[i].Content, queryTerms)
+		if scored[i].TFIDFScore > 0 {
+			positiveCount++
+		}
 	}
 
 	// Sort by score descending
@@ -145,6 +167,27 @@ func (s *ChunkStore) Retrieve(skillID uint, query string, topK int) []Chunk {
 			result = append(result, scored[i])
 		}
 	}
+
+	// Log scoring results for debugging
+	if len(scored) > 0 {
+		logger.Log.Infof("Retrieve: top_score=%.6f, positive_chunks=%d/%d, result_count=%d (topK=%d)",
+			scored[0].TFIDFScore, positiveCount, len(scored), len(result), topK)
+	}
+
+	// If zero results despite having chunks, log diagnostic info
+	if len(result) == 0 && len(chunks) > 0 {
+		// Check if ANY query term exists in IDF vocabulary
+		matchedTerms := 0
+		for _, qt := range queryTerms {
+			if _, exists := s.idf[qt]; exists {
+				matchedTerms++
+			}
+		}
+		logger.Log.Warnf("Retrieve: 0 results! query_terms=%d, matched_in_IDF=%d, total_IDF_terms=%d. "+
+			"This usually means chunk content doesn't contain query-relevant text (possibly garbled xlsx parsing).",
+			len(queryTerms), matchedTerms, len(s.idf))
+	}
+
 	return result
 }
 
@@ -153,6 +196,17 @@ func (s *ChunkStore) GetChunkCount(skillID uint) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.chunks[skillID])
+}
+
+// GetAllSkillStats returns chunk counts for all skills in the store
+func (s *ChunkStore) GetAllSkillStats() map[uint]int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	stats := make(map[uint]int, len(s.chunks))
+	for skillID, chunks := range s.chunks {
+		stats[skillID] = len(chunks)
+	}
+	return stats
 }
 
 func (s *ChunkStore) rebuildIDF() {
@@ -200,9 +254,26 @@ func (s *ChunkStore) tfidfScore(text string, queryTerms []string) float64 {
 
 // ===================== Text Processing =====================
 
-// SplitIntoChunks splits text into chunks of at most chunkSize characters,
-// breaking on paragraph boundaries where possible.
+// SplitIntoChunks splits text into chunks of at most chunkSize runes,
+// breaking on paragraph or line boundaries where possible.
+// For tabular data (xlsx/csv), it detects tab-separated rows and groups
+// them with header context for better search quality.
 func SplitIntoChunks(text string, chunkSize int) []string {
+	// Detect if this is tabular data (has tab-separated lines)
+	lines := strings.Split(text, "\n")
+	tabLineCount := 0
+	for _, line := range lines {
+		if strings.Contains(line, "\t") {
+			tabLineCount++
+		}
+	}
+	isTabular := tabLineCount > 3 && float64(tabLineCount)/float64(len(lines)) > 0.3
+
+	if isTabular {
+		return splitTabularIntoChunks(text, chunkSize)
+	}
+
+	// Standard paragraph-based splitting
 	var chunks []string
 	var buf strings.Builder
 
@@ -242,6 +313,76 @@ func SplitIntoChunks(text string, chunkSize int) []string {
 			}
 			buf.WriteString(para)
 		}
+	}
+	flush()
+	return chunks
+}
+
+// splitTabularIntoChunks handles tab-separated tabular data (xlsx, csv).
+// It detects header rows and prepends them to each chunk so every chunk
+// has context about what each column means. This significantly improves
+// TF-IDF matching for queries about specific column values.
+func splitTabularIntoChunks(text string, chunkSize int) []string {
+	var chunks []string
+	var buf strings.Builder
+	var currentHeader string
+
+	lines := strings.Split(text, "\n")
+
+	flush := func() {
+		s := strings.TrimSpace(buf.String())
+		if s != "" {
+			chunks = append(chunks, s)
+		}
+		buf.Reset()
+	}
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Detect sheet header lines like "--- Sheet: xxx ---"
+		if strings.HasPrefix(line, "--- Sheet:") {
+			if buf.Len() > 0 {
+				flush()
+			}
+			currentHeader = ""
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			continue
+		}
+
+		// Detect column header rows (first tab-containing row after a sheet marker or start)
+		if currentHeader == "" && strings.Contains(line, "\t") {
+			// Heuristic: header rows typically contain more CJK/alpha chars than numbers
+			cjkCount := 0
+			for _, r := range line {
+				if isCJK(r) || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+					cjkCount++
+				}
+			}
+			if cjkCount > 2 {
+				currentHeader = line
+			}
+		}
+
+		// Check if adding this line would exceed chunk size
+		newLen := buf.Len() + len(line) + 1
+		if newLen > chunkSize && buf.Len() > 0 {
+			flush()
+			// Prepend header to new chunk for context
+			if currentHeader != "" {
+				buf.WriteString(currentHeader)
+				buf.WriteByte('\n')
+			}
+		}
+
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(line)
 	}
 	flush()
 	return chunks
@@ -308,7 +449,26 @@ func RunRAG(config AIConfig, skillID uint, skillName, question string, ironRules
 
 	// Step 1: Retrieve top candidates via TF-IDF
 	candidates := store.Retrieve(skillID, question, 20)
+	logger.Log.Infof("RAG Step1 [skill=%s, id=%d]: TF-IDF retrieved %d candidates from %d chunks for question: %s",
+		skillName, skillID, len(candidates), store.GetChunkCount(skillID), question)
+
 	if len(candidates) == 0 {
+		// Log sample chunk content for debugging
+		store.mu.RLock()
+		chunks := store.chunks[skillID]
+		if len(chunks) > 0 {
+			sample := chunks[0].Content
+			runes := []rune(sample)
+			if len(runes) > 100 {
+				sample = string(runes[:100]) + "..."
+			}
+			logger.Log.Warnf("RAG Step1: 0 candidates but %d chunks exist. Sample chunk[0]: '%s'", len(chunks), sample)
+			// Debug: show what query tokens look like
+			queryTokens := tokenize(question)
+			logger.Log.Warnf("RAG Step1: query tokens: %v", queryTokens)
+		}
+		store.mu.RUnlock()
+
 		return RAGResult{
 			Answer:     "无有效数据，无法判断。该技能知识库中没有与您的问题相关的文档内容。",
 			SkillName:  skillName,
@@ -318,11 +478,61 @@ func RunRAG(config AIConfig, skillID uint, skillName, question string, ironRules
 		}
 	}
 
+	// Log top candidate scores for debugging
+	for i, c := range candidates {
+		if i >= 3 {
+			break
+		}
+		preview := c.Content
+		runes := []rune(preview)
+		if len(runes) > 80 {
+			preview = string(runes[:80]) + "..."
+		}
+		logger.Log.Infof("RAG Step1: candidate[%d] score=%.4f doc=%s: %s", i, c.TFIDFScore, c.DocName, preview)
+	}
+
 	// Step 2: Score each candidate with LLM (parallel, max 5 concurrent)
 	scored := scoreChunks(config, candidates, question, 5)
 
-	// Step 3: Filter top-K with score >= 3
-	filtered := filterTopK(scored, 5, 3)
+	// Log LLM scoring results
+	scoredAbove0 := 0
+	maxScore := 0
+	for _, sc := range scored {
+		if sc.Score > 0 {
+			scoredAbove0++
+		}
+		if sc.Score > maxScore {
+			maxScore = sc.Score
+		}
+	}
+	logger.Log.Infof("RAG Step2 [skill=%s]: LLM scored %d candidates, %d with score>0, max_score=%d",
+		skillName, len(scored), scoredAbove0, maxScore)
+
+	// Step 3: Filter top-K with score >= 2 (lowered from 3 to be more inclusive)
+	filtered := filterTopK(scored, 5, 2)
+	logger.Log.Infof("RAG Step3 [skill=%s]: filtered to %d chunks (minScore=2)", skillName, len(filtered))
+
+	if len(filtered) == 0 {
+		// If LLM scoring failed (all scores 0), fall back to using TF-IDF top candidates directly
+		if scoredAbove0 == 0 && len(candidates) > 0 {
+			logger.Log.Warnf("RAG Step3: all LLM scores are 0 (likely API failure), falling back to TF-IDF top candidates")
+			// Use top TF-IDF candidates directly without LLM scoring
+			directChunks := candidates
+			if len(directChunks) > 5 {
+				directChunks = directChunks[:5]
+			}
+			// Create synthetic scored chunks with TF-IDF score mapped to 1-10
+			for _, c := range directChunks {
+				filtered = append(filtered, ScoredChunk{
+					Chunk:   c,
+					Score:   5, // default moderate relevance
+					Excerpt: "",
+				})
+			}
+			logger.Log.Infof("RAG Step3: using %d TF-IDF candidates as fallback", len(filtered))
+		}
+	}
+
 	if len(filtered) == 0 {
 		return RAGResult{
 			Answer:     "无有效数据，无法判断。知识库中的文档内容与您的问题关联度较低。",
@@ -335,6 +545,8 @@ func RunRAG(config AIConfig, skillID uint, skillName, question string, ironRules
 
 	// Step 4: Synthesize answer from top chunks
 	answer, confidence := synthesize(config, filtered, question, skillName, ironRules)
+	logger.Log.Infof("RAG Step4 [skill=%s]: synthesized answer with confidence=%d, length=%d",
+		skillName, confidence, len(answer))
 
 	return RAGResult{
 		Answer:     answer,
@@ -387,6 +599,7 @@ func scoreOneChunk(config AIConfig, chunk Chunk, question string) ScoredChunk {
 
 	respContent := callAI(config, prompt, 0.1, 200)
 	if respContent == "" {
+		logger.Log.Warnf("RAG scoreOneChunk: LLM returned empty for chunk %s (doc=%s)", chunk.ID, chunk.DocName)
 		return ScoredChunk{Chunk: chunk, Score: 0}
 	}
 
@@ -402,8 +615,10 @@ func scoreOneChunk(config AIConfig, chunk Chunk, question string) ScoredChunk {
 		Excerpt string `json:"excerpt"`
 	}
 	if err := json.Unmarshal([]byte(respContent), &sr); err != nil {
+		logger.Log.Warnf("RAG scoreOneChunk: failed to parse LLM response for chunk %s: %v, raw: %s", chunk.ID, err, respContent[:min(len(respContent), 100)])
 		return ScoredChunk{Chunk: chunk, Score: 0}
 	}
+	logger.Log.Debugf("RAG scoreOneChunk: chunk %s scored %d", chunk.ID, sr.Score)
 	return ScoredChunk{Chunk: chunk, Score: sr.Score, Excerpt: sr.Excerpt}
 }
 
@@ -497,7 +712,7 @@ func callAI(config AIConfig, prompt string, temperature float64, maxTokens int) 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Log.Errorf("RAG: request failed: %v", err)

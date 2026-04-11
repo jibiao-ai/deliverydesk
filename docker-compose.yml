@@ -75,6 +75,8 @@ services:
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       AI_MODEL: ${AI_MODEL:-gpt-4}
       JWT_SECRET: ${JWT_SECRET:-deliverydesk-secret-key-2024}
+    volumes:
+      - backend_uploads:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -112,3 +114,4 @@ networks:
 volumes:
   mysql_data:
   rabbitmq_data:
+  backend_uploads:

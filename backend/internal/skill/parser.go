@@ -3,6 +3,8 @@ package skill
 
 import (
 	"archive/zip"
+	"bufio"
+	"encoding/csv"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -14,7 +16,7 @@ import (
 )
 
 // ParseDocument extracts text content from a document file.
-// Supported formats: .docx, .xlsx, .txt, .md
+// Supported formats: .docx, .xlsx, .txt, .md, .csv
 func ParseDocument(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
@@ -24,6 +26,8 @@ func ParseDocument(filePath string) (string, error) {
 		return parseXlsx(filePath)
 	case ".txt", ".md":
 		return parseTextFile(filePath)
+	case ".csv":
+		return parseCsv(filePath)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
@@ -107,25 +111,49 @@ func parseXlsx(filePath string) (string, error) {
 
 	// First read shared strings
 	sharedStrings := parseSharedStrings(r)
+	logger.Log.Infof("parseXlsx: %s loaded %d shared strings", filepath.Base(filePath), len(sharedStrings))
 
 	// Then read each sheet
 	var sb strings.Builder
+	sheetCount := 0
 	for _, f := range r.File {
 		if strings.HasPrefix(f.Name, "xl/worksheets/sheet") && strings.HasSuffix(f.Name, ".xml") {
 			rc, err := f.Open()
 			if err != nil {
+				logger.Log.Warnf("parseXlsx: failed to open sheet %s: %v", f.Name, err)
 				continue
 			}
 			text := extractSheetText(rc, sharedStrings)
 			rc.Close()
 			if text != "" {
+				sheetCount++
 				sb.WriteString(fmt.Sprintf("--- Sheet: %s ---\n", filepath.Base(f.Name)))
 				sb.WriteString(text)
 				sb.WriteString("\n\n")
 			}
 		}
 	}
-	return sb.String(), nil
+	result := sb.String()
+	logger.Log.Infof("parseXlsx: %s parsed %d sheets, total content length=%d bytes",
+		filepath.Base(filePath), sheetCount, len(result))
+
+	// Validate: if we got shared strings but the output looks like pure numbers,
+	// it means shared string resolution failed — log a warning
+	if len(sharedStrings) > 0 && len(result) > 0 {
+		cjkCount := 0
+		for _, r := range result {
+			if isCJK(r) || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				cjkCount++
+			}
+		}
+		ratio := float64(cjkCount) / float64(len([]rune(result)))
+		if ratio < 0.1 {
+			logger.Log.Warnf("parseXlsx: %s has very low text content ratio (%.1f%%), shared strings may not have resolved correctly",
+				filepath.Base(filePath), ratio*100)
+		}
+	}
+
+	return result, nil
 }
 
 func parseSharedStrings(r *zip.ReadCloser) []string {
@@ -181,8 +209,11 @@ func extractSheetText(r io.Reader, sharedStrings []string) string {
 	decoder := xml.NewDecoder(r)
 	var sb strings.Builder
 	var inValue bool
+	var inInlineStr bool
+	var inInlineT bool
 	var cellType string
 	var rowStarted bool
+	var inlineText strings.Builder
 
 	for {
 		tok, err := decoder.Token()
@@ -206,13 +237,39 @@ func extractSheetText(r io.Reader, sharedStrings []string) string {
 				}
 			case "v":
 				inValue = true
+			case "is":
+				// Inline string element — some xlsx files use <is><t>text</t></is>
+				// instead of shared strings
+				inInlineStr = true
+				inlineText.Reset()
+			case "t":
+				if inInlineStr {
+					inInlineT = true
+				}
 			}
 		case xml.EndElement:
-			if t.Name.Local == "v" {
+			switch t.Name.Local {
+			case "v":
 				inValue = false
+			case "t":
+				inInlineT = false
+			case "is":
+				// End of inline string — write the collected text
+				if inInlineStr {
+					val := inlineText.String()
+					if val != "" {
+						if sb.Len() > 0 && !strings.HasSuffix(sb.String(), "\n") {
+							sb.WriteString("\t")
+						}
+						sb.WriteString(val)
+					}
+					inInlineStr = false
+				}
 			}
 		case xml.CharData:
-			if inValue {
+			if inInlineT {
+				inlineText.Write(t)
+			} else if inValue {
 				val := string(t)
 				if cellType == "s" {
 					// shared string reference
@@ -220,6 +277,12 @@ func extractSheetText(r io.Reader, sharedStrings []string) string {
 					fmt.Sscanf(val, "%d", &idx)
 					if idx >= 0 && idx < len(sharedStrings) {
 						val = sharedStrings[idx]
+					} else {
+						// Shared string index out of range — skip this cell
+						// to avoid inserting meaningless numeric indices
+						logger.Log.Debugf("extractSheetText: shared string index %d out of range (have %d strings), skipping cell",
+							idx, len(sharedStrings))
+						continue
 					}
 				}
 				if sb.Len() > 0 && !strings.HasSuffix(sb.String(), "\n") {
@@ -241,6 +304,71 @@ func parseTextFile(filePath string) (string, error) {
 		return "", fmt.Errorf("read file: %w", err)
 	}
 	return string(data), nil
+}
+
+// parseCsv extracts text from a .csv file, converting rows into readable text
+func parseCsv(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("open csv: %w", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(bufio.NewReader(file))
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+	// Allow variable number of fields per record
+	reader.FieldsPerRecord = -1
+
+	var sb strings.Builder
+	var headers []string
+	rowNum := 0
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			logger.Log.Warnf("parseCsv: error reading row %d: %v", rowNum, err)
+			continue
+		}
+
+		if rowNum == 0 {
+			// First row is headers
+			headers = record
+			sb.WriteString(strings.Join(record, "\t"))
+			sb.WriteString("\n")
+		} else {
+			// Data rows: if we have headers, format as "header: value" pairs
+			// This improves semantic search quality
+			if len(headers) > 0 {
+				var parts []string
+				for i, val := range record {
+					val = strings.TrimSpace(val)
+					if val == "" {
+						continue
+					}
+					if i < len(headers) {
+						parts = append(parts, fmt.Sprintf("%s: %s", headers[i], val))
+					} else {
+						parts = append(parts, val)
+					}
+				}
+				if len(parts) > 0 {
+					sb.WriteString(strings.Join(parts, ", "))
+					sb.WriteString("\n")
+				}
+			} else {
+				sb.WriteString(strings.Join(record, "\t"))
+				sb.WriteString("\n")
+			}
+		}
+		rowNum++
+	}
+
+	logger.Log.Infof("parseCsv: %s parsed %d rows", filepath.Base(filePath), rowNum)
+	return sb.String(), nil
 }
 
 // IndexDocumentFile parses and indexes a document file for a skill

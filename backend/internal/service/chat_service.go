@@ -193,8 +193,8 @@ func (s *ChatService) IndexSkillDocument(doc *model.SkillDocument) error {
 	// Update status
 	repository.DB.Model(doc).Update("status", "processing")
 
-	// Parse and index the document
-	chunks, err := skill.IndexDocumentFile(doc.SkillID, doc.ID, doc.FileName, doc.FilePath)
+	// Parse the document to get text content
+	content, err := skill.ParseDocument(doc.FilePath)
 	if err != nil {
 		repository.DB.Model(doc).Updates(map[string]interface{}{
 			"status": "error",
@@ -202,10 +202,21 @@ func (s *ChatService) IndexSkillDocument(doc *model.SkillDocument) error {
 		return err
 	}
 
-	// Update document and skill stats
+	// Index the parsed content into in-memory store
+	chunks := skill.GetStore().IndexDocument(doc.SkillID, doc.ID, doc.FileName, content)
+	if chunks == 0 {
+		repository.DB.Model(doc).Updates(map[string]interface{}{
+			"status": "error",
+		})
+		return fmt.Errorf("document %s produced 0 chunks after parsing", doc.FileName)
+	}
+
+	// Save content to DB so WarmUp can reload it after server restart
+	// This is critical: without persisted content, the knowledge store will be empty after restart
 	repository.DB.Model(doc).Updates(map[string]interface{}{
-		"status": "ready",
-		"chunks": chunks,
+		"status":  "ready",
+		"chunks":  chunks,
+		"content": content,
 	})
 
 	// Update skill chunk count
@@ -217,6 +228,8 @@ func (s *ChatService) IndexSkillDocument(doc *model.SkillDocument) error {
 		"chunk_count": totalChunks,
 	})
 
+	logger.Log.Infof("IndexSkillDocument: '%s' for skill %d: %d chunks, content saved to DB (%d bytes)",
+		doc.FileName, doc.SkillID, chunks, len(content))
 	return nil
 }
 
@@ -244,7 +257,9 @@ func (s *ChatService) IndexSkillDocumentFromContent(doc *model.SkillDocument, co
 	return nil
 }
 
-// ReindexSkill reloads all documents for a skill from the database
+// ReindexSkill reloads all documents for a skill from the database.
+// If a document has no stored content but has a file_path, it will re-parse
+// the file and save the content to DB for future warm-up.
 func (s *ChatService) ReindexSkill(skillID uint) error {
 	skill.GetStore().ClearSkill(skillID)
 
@@ -255,7 +270,19 @@ func (s *ChatService) ReindexSkill(skillID uint) error {
 		if doc.Content != "" {
 			skill.GetStore().IndexDocument(skillID, doc.ID, doc.FileName, doc.Content)
 		} else if doc.FilePath != "" {
-			skill.IndexDocumentFile(skillID, doc.ID, doc.FileName, doc.FilePath)
+			content, err := skill.ParseDocument(doc.FilePath)
+			if err != nil {
+				logger.Log.Warnf("ReindexSkill: failed to parse %s: %v", doc.FileName, err)
+				continue
+			}
+			chunks := skill.GetStore().IndexDocument(skillID, doc.ID, doc.FileName, content)
+			// Save content to DB for future warm-up
+			repository.DB.Model(&doc).Updates(map[string]interface{}{
+				"content": content,
+				"chunks":  chunks,
+			})
+			logger.Log.Infof("ReindexSkill: re-parsed and saved content for %s (%d chunks, %d bytes)",
+				doc.FileName, chunks, len(content))
 		}
 	}
 
@@ -272,33 +299,92 @@ func (s *ChatService) WarmUpSkillStore() {
 
 	totalChunks := 0
 	totalDocs := 0
+	skippedDocs := 0
+	reparsedDocs := 0
 	for _, sk := range skills {
 		var docs []model.SkillDocument
 		repository.DB.Where("skill_id = ? AND status = ?", sk.ID, "ready").Find(&docs)
 		if len(docs) == 0 {
+			logger.Log.Infof("WarmUp: skill '%s' (ID %d, type=%s) has 0 ready documents, skipping", sk.Name, sk.ID, sk.Type)
 			continue
 		}
 
 		for _, doc := range docs {
 			if doc.Content != "" {
+				// Validate content quality before indexing
+				if isContentLowQuality(doc.Content) {
+					logger.Log.Warnf("WarmUp: doc '%s' (skill %d) has low-quality content (possibly garbled xlsx). Attempting re-parse from file...",
+						doc.FileName, sk.ID)
+					if doc.FilePath != "" {
+						content, err := skill.ParseDocument(doc.FilePath)
+						if err == nil && !isContentLowQuality(content) {
+							n := skill.GetStore().IndexDocument(sk.ID, doc.ID, doc.FileName, content)
+							totalChunks += n
+							totalDocs++
+							reparsedDocs++
+							// Update DB with better content
+							repository.DB.Model(&doc).Updates(map[string]interface{}{
+								"content": content,
+								"chunks":  n,
+							})
+							logger.Log.Infof("WarmUp: re-parsed doc '%s' from file, quality improved (%d bytes, %d chunks)", doc.FileName, len(content), n)
+							continue
+						}
+					}
+					// Fall through to index low-quality content anyway (better than nothing)
+					logger.Log.Warnf("WarmUp: re-parse failed for doc '%s', using existing low-quality content", doc.FileName)
+				}
 				n := skill.GetStore().IndexDocument(sk.ID, doc.ID, doc.FileName, doc.Content)
 				totalChunks += n
 				totalDocs++
+				logger.Log.Debugf("WarmUp: loaded doc '%s' from DB content (%d bytes, %d chunks)", doc.FileName, len(doc.Content), n)
 			} else if doc.FilePath != "" {
-				n, err := skill.IndexDocumentFile(sk.ID, doc.ID, doc.FileName, doc.FilePath)
+				// Try to parse from file if content not stored in DB
+				content, err := skill.ParseDocument(doc.FilePath)
 				if err != nil {
-					logger.Log.Warnf("WarmUp: failed to index doc %s (skill %d): %v", doc.FileName, sk.ID, err)
+					logger.Log.Warnf("WarmUp: doc '%s' (skill %d) has empty content and file parse failed: %v", doc.FileName, sk.ID, err)
+					skippedDocs++
 					continue
 				}
+				n := skill.GetStore().IndexDocument(sk.ID, doc.ID, doc.FileName, content)
 				totalChunks += n
 				totalDocs++
+				// Save content to DB so next restart doesn't need the file
+				repository.DB.Model(&doc).Updates(map[string]interface{}{
+					"content": content,
+					"chunks":  n,
+				})
+				logger.Log.Infof("WarmUp: re-parsed doc '%s' from file, saved content to DB (%d bytes, %d chunks)", doc.FileName, len(content), n)
+			} else {
+				logger.Log.Warnf("WarmUp: doc '%s' (skill %d) has no content and no file_path, cannot load", doc.FileName, sk.ID)
+				skippedDocs++
 			}
 		}
 		chunkCount := skill.GetStore().GetChunkCount(sk.ID)
 		repository.DB.Model(&model.Skill{}).Where("id = ?", sk.ID).Update("chunk_count", chunkCount)
-		logger.Log.Infof("WarmUp: skill '%s' (ID %d) loaded %d chunks from %d docs", sk.Name, sk.ID, chunkCount, len(docs))
+		logger.Log.Infof("WarmUp: skill '%s' (ID %d, type=%s) loaded %d chunks from %d docs", sk.Name, sk.ID, sk.Type, chunkCount, len(docs))
 	}
-	logger.Log.Infof("WarmUp complete: %d documents, %d chunks across %d skills", totalDocs, totalChunks, len(skills))
+	logger.Log.Infof("WarmUp complete: %d documents loaded, %d chunks total, %d skipped, %d re-parsed, across %d active skills",
+		totalDocs, totalChunks, skippedDocs, reparsedDocs, len(skills))
+}
+
+// isContentLowQuality checks if content appears to be garbled or low-quality
+// (e.g., xlsx content where shared strings weren't resolved, producing only numbers)
+func isContentLowQuality(content string) bool {
+	if len(content) == 0 {
+		return true
+	}
+	runes := []rune(content)
+	textChars := 0
+	for _, r := range runes {
+		if (r >= 0x4E00 && r <= 0x9FFF) || // CJK
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			textChars++
+		}
+	}
+	// If less than 5% of content is actual text characters, it's likely garbled
+	ratio := float64(textChars) / float64(len(runes))
+	return ratio < 0.05 && len(runes) > 50
 }
 
 // ==================== Conversations ====================
