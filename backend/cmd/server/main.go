@@ -156,6 +156,10 @@ func main() {
 				admin.GET("/ldap-configs/:id/diagnose", h.DiagnoseLDAP)
 
 				admin.GET("/operation-logs", h.ListOperationLogs)
+
+				// Diagnostic endpoint for skill/RAG debugging
+				admin.GET("/diagnose/skills", h.DiagnoseSkills)
+				admin.POST("/diagnose/skills/reindex-all", h.ReindexAllSkills)
 			}
 		}
 	}

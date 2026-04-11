@@ -19,6 +19,7 @@ import (
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/internal/service"
+	"github.com/jibiao-ai/deliverydesk/internal/skill"
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
 	"github.com/jibiao-ai/deliverydesk/pkg/response"
 )
@@ -588,7 +589,7 @@ func (h *Handler) UploadSkillDocument(c *gin.Context) {
 	defer file.Close()
 
 	// Save file to upload directory
-	uploadDir := "/home/user/webapp/backend/uploads/skills"
+	uploadDir := "uploads/skills"
 	os.MkdirAll(uploadDir, 0755)
 	fileName := header.Filename
 	filePath := fmt.Sprintf("%s/%d_%s", uploadDir, skillID, fileName)
@@ -652,7 +653,7 @@ func (h *Handler) UploadSkillDocuments(c *gin.Context) {
 		return
 	}
 
-	uploadDir := "/home/user/webapp/backend/uploads/skills"
+	uploadDir := "uploads/skills"
 	os.MkdirAll(uploadDir, 0755)
 
 	allowedExts := map[string]bool{
@@ -1942,4 +1943,207 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// DiagnoseSkills returns diagnostic information about agent skills, knowledge store status,
+// and document indexing. Use this to debug why RAG might not be working.
+func (h *Handler) DiagnoseSkills(c *gin.Context) {
+	// 1. Get in-memory chunk store stats
+	storeStats := skill.GetStore().GetAllSkillStats()
+
+	// 2. Get all skills from DB with documents
+	var skills []model.Skill
+	repository.DB.Preload("Documents").Find(&skills)
+
+	skillDiag := make([]gin.H, 0, len(skills))
+	for _, sk := range skills {
+		memoryChunks := storeStats[sk.ID]
+		docs := make([]gin.H, 0, len(sk.Documents))
+		for _, doc := range sk.Documents {
+			hasContent := doc.Content != ""
+			contentLen := len(doc.Content)
+			// Analyze content quality
+			contentQuality := "unknown"
+			contentPreview := ""
+			if hasContent {
+				// Count text vs non-text characters
+				textChars := 0
+				runes := []rune(doc.Content)
+				for _, r := range runes {
+					if (r >= 0x4E00 && r <= 0x9FFF) || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+						textChars++
+					}
+				}
+				ratio := float64(textChars) / float64(len(runes))
+				if ratio >= 0.15 {
+					contentQuality = "good"
+				} else if ratio >= 0.05 {
+					contentQuality = "low"
+				} else {
+					contentQuality = "garbled"
+				}
+				// Show preview
+				preview := doc.Content
+				if len(runes) > 200 {
+					preview = string(runes[:200]) + "..."
+				}
+				contentPreview = preview
+			}
+			docs = append(docs, gin.H{
+				"id":              doc.ID,
+				"file_name":       doc.FileName,
+				"file_path":       doc.FilePath,
+				"status":          doc.Status,
+				"chunks":          doc.Chunks,
+				"has_content":     hasContent,
+				"content_len":     contentLen,
+				"content_quality": contentQuality,
+				"content_preview": contentPreview,
+				"file_type":       doc.FileType,
+			})
+		}
+		skillDiag = append(skillDiag, gin.H{
+			"id":               sk.ID,
+			"name":             sk.Name,
+			"type":             sk.Type,
+			"category":         sk.Category,
+			"is_active":        sk.IsActive,
+			"db_doc_count":     sk.DocCount,
+			"db_chunk_count":   sk.ChunkCount,
+			"memory_chunks":    memoryChunks,
+			"memory_vs_db":     fmt.Sprintf("memory=%d, db=%d", memoryChunks, sk.ChunkCount),
+			"documents":        docs,
+		})
+	}
+
+	// 3. Get all agents with skill bindings
+	var agents []model.Agent
+	repository.DB.Preload("AgentSkills").Preload("AgentSkills.Skill").Find(&agents)
+
+	agentDiag := make([]gin.H, 0, len(agents))
+	for _, agent := range agents {
+		skills := make([]gin.H, 0, len(agent.AgentSkills))
+		for _, as := range agent.AgentSkills {
+			memChunks := storeStats[as.Skill.ID]
+			skills = append(skills, gin.H{
+				"skill_id":       as.Skill.ID,
+				"skill_name":     as.Skill.Name,
+				"skill_type":     as.Skill.Type,
+				"skill_active":   as.Skill.IsActive,
+				"memory_chunks":  memChunks,
+				"rag_available":  memChunks > 0 && as.Skill.IsActive,
+			})
+		}
+		agentDiag = append(agentDiag, gin.H{
+			"id":          agent.ID,
+			"name":        agent.Name,
+			"iron_rules":  agent.IronRules,
+			"is_active":   agent.IsActive,
+			"model":       agent.Model,
+			"skill_count": len(agent.AgentSkills),
+			"skills":      skills,
+		})
+	}
+
+	response.Success(c, gin.H{
+		"memory_store_stats":  storeStats,
+		"total_skills_in_mem": len(storeStats),
+		"skills":              skillDiag,
+		"agents":              agentDiag,
+		"help": gin.H{
+			"memory_chunks=0":   "技能文档未加载到内存，需检查: 1) status是否为ready 2) content或file_path是否存在 3) 服务器启动时WarmUp日志",
+			"has_content=false":  "文档content字段为空，如果file_path也不存在或文件已删除，则无法加载",
+			"content_quality":    "good=正常, low=文字比例偏低, garbled=疑似乱码(xlsx共享字符串解析失败)",
+			"rag_available":      "true表示该技能可用于RAG检索，false表示不可用",
+			"reindex_all":        "POST /api/diagnose/skills/reindex-all 强制重新解析所有文档",
+		},
+	})
+}
+
+// ReindexAllSkills forces re-parsing and re-indexing of all skill documents from their files.
+// This is useful when document parsing has been improved (e.g., xlsx parser fixed) and
+// all existing documents need to be re-processed.
+func (h *Handler) ReindexAllSkills(c *gin.Context) {
+	var docs []model.SkillDocument
+	repository.DB.Find(&docs)
+
+	reindexed := 0
+	failed := 0
+	skipped := 0
+	var results []gin.H
+
+	for _, doc := range docs {
+		// Try to re-parse from file first
+		if doc.FilePath != "" {
+			content, err := skill.ParseDocument(doc.FilePath)
+			if err == nil && strings.TrimSpace(content) != "" {
+				chunks := skill.GetStore().IndexDocument(doc.SkillID, doc.ID, doc.FileName, content)
+				repository.DB.Model(&doc).Updates(map[string]interface{}{
+					"content": content,
+					"chunks":  chunks,
+					"status":  "ready",
+				})
+				reindexed++
+				results = append(results, gin.H{
+					"doc_id":    doc.ID,
+					"file_name": doc.FileName,
+					"skill_id":  doc.SkillID,
+					"status":    "reindexed",
+					"chunks":    chunks,
+					"content_len": len(content),
+				})
+				continue
+			}
+		}
+
+		// Fall back to existing content
+		if doc.Content != "" {
+			chunks := skill.GetStore().IndexDocument(doc.SkillID, doc.ID, doc.FileName, doc.Content)
+			repository.DB.Model(&doc).Update("chunks", chunks)
+			reindexed++
+			results = append(results, gin.H{
+				"doc_id":    doc.ID,
+				"file_name": doc.FileName,
+				"skill_id":  doc.SkillID,
+				"status":    "reindexed_from_content",
+				"chunks":    chunks,
+			})
+		} else {
+			if doc.FilePath != "" {
+				failed++
+				results = append(results, gin.H{
+					"doc_id":    doc.ID,
+					"file_name": doc.FileName,
+					"skill_id":  doc.SkillID,
+					"status":    "failed",
+					"reason":    "file parse failed and no stored content",
+				})
+			} else {
+				skipped++
+				results = append(results, gin.H{
+					"doc_id":    doc.ID,
+					"file_name": doc.FileName,
+					"skill_id":  doc.SkillID,
+					"status":    "skipped",
+					"reason":    "no file_path and no content",
+				})
+			}
+		}
+	}
+
+	// Update skill chunk counts
+	var skills []model.Skill
+	repository.DB.Find(&skills)
+	for _, sk := range skills {
+		chunkCount := skill.GetStore().GetChunkCount(sk.ID)
+		repository.DB.Model(&sk).Update("chunk_count", chunkCount)
+	}
+
+	response.Success(c, gin.H{
+		"total_docs": len(docs),
+		"reindexed":  reindexed,
+		"failed":     failed,
+		"skipped":    skipped,
+		"results":    results,
+	})
 }
