@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-ldap/ldap/v3"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
@@ -94,24 +96,112 @@ func loginLDAP(req LoginRequest) (*LoginResponse, error) {
 	if err := repository.DB.Where("is_enabled = ? AND is_default = ?", true, true).First(&ldapCfg).Error; err != nil {
 		// Try any enabled LDAP config
 		if err := repository.DB.Where("is_enabled = ?", true).First(&ldapCfg).Error; err != nil {
-			return nil, errors.New("LDAP is not configured. Please contact administrator.")
+			return nil, errors.New("LDAP 未配置，请联系管理员")
 		}
 	}
 
-	// For this implementation, we simulate LDAP authentication
-	// In production, you would use an LDAP library like go-ldap
-	// to bind and authenticate against the LDAP server
+	// SECURITY: reject empty password — many LDAP servers allow anonymous bind
+	// with an empty password, which would bypass authentication entirely.
+	if req.Password == "" {
+		return nil, errors.New("用户名或密码错误")
+	}
 
 	// Check if user exists locally with ldap auth_type (must be synced by admin first)
 	var user model.User
 	result := repository.DB.Where("username = ? AND auth_type = ?", req.Username, "ldap").First(&user)
 	if result.Error != nil {
-		// LDAP user not found in platform - they must be synced first
 		return nil, errors.New("该LDAP用户尚未同步到平台，请联系管理员在用户管理中同步LDAP用户")
 	}
 
-	// In production, verify the password against the LDAP server here
-	// For now, we trust that the user is authenticated by LDAP
+	// ── Real LDAP Bind authentication ────────────────────────────────
+	// Step 1: Connect to the LDAP server
+	addr := fmt.Sprintf("%s:%d", ldapCfg.Host, ldapCfg.Port)
+	var conn *ldap.Conn
+	var err error
+	if ldapCfg.UseTLS {
+		conn, err = ldap.DialTLS("tcp", addr, &tls.Config{
+			InsecureSkipVerify: true, // enterprise internal LDAP often uses self-signed certs
+		})
+	} else {
+		conn, err = ldap.Dial("tcp", addr)
+	}
+	if err != nil {
+		logger.Log.Errorf("LDAP login: failed to connect to %s: %v", addr, err)
+		return nil, errors.New("LDAP 服务器连接失败，请稍后重试")
+	}
+	defer conn.Close()
+
+	// Step 2: Bind with service account to search for the user's DN
+	// Retrieve bind password (it is excluded from JSON serialization)
+	var fullCfg model.LDAPConfig
+	repository.DB.First(&fullCfg, ldapCfg.ID)
+
+	if fullCfg.BindDN != "" && fullCfg.BindPassword != "" {
+		if err := conn.Bind(fullCfg.BindDN, fullCfg.BindPassword); err != nil {
+			logger.Log.Errorf("LDAP login: service account bind failed: %v", err)
+			return nil, errors.New("LDAP 服务账号认证失败，请联系管理员检查LDAP配置")
+		}
+	}
+
+	// Step 3: Search for the user's DN by username attribute
+	attrUsername := ldapCfg.AttrUsername
+	if attrUsername == "" {
+		attrUsername = "uid"
+	}
+
+	// Determine search bases: support multiple OUs separated by | character
+	// (consistent with the SyncLDAPUsers logic in handlers.go)
+	var searchBases []string
+	if ldapCfg.UserOU != "" {
+		for _, ou := range strings.Split(ldapCfg.UserOU, "|") {
+			ou = strings.TrimSpace(ou)
+			if ou != "" {
+				searchBases = append(searchBases, ou)
+			}
+		}
+	}
+	if len(searchBases) == 0 {
+		searchBases = []string{ldapCfg.BaseDN}
+	}
+
+	searchFilter := fmt.Sprintf("(%s=%s)", ldap.EscapeFilter(attrUsername), ldap.EscapeFilter(req.Username))
+
+	var userDN string
+	for _, searchBase := range searchBases {
+		searchReq := ldap.NewSearchRequest(
+			searchBase,
+			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 1, 10, false,
+			searchFilter,
+			[]string{"dn"},
+			nil,
+		)
+
+		sr, searchErr := conn.Search(searchReq)
+		if searchErr != nil {
+			logger.Log.Warnf("LDAP login: search for user '%s' in base '%s' failed: %v", req.Username, searchBase, searchErr)
+			continue
+		}
+		if len(sr.Entries) > 0 {
+			userDN = sr.Entries[0].DN
+			break
+		}
+	}
+
+	if userDN == "" {
+		logger.Log.Warnf("LDAP login: user '%s' not found in any search base (filter: %s, bases: %v)", req.Username, searchFilter, searchBases)
+		return nil, errors.New("用户名或密码错误")
+	}
+
+	logger.Log.Infof("LDAP login: found user '%s' with DN: %s", req.Username, userDN)
+
+	// Step 4: Authenticate — bind with the user's DN and their password
+	if err := conn.Bind(userDN, req.Password); err != nil {
+		logger.Log.Warnf("LDAP login: bind failed for user '%s' (DN: %s): %v", req.Username, userDN, err)
+		return nil, errors.New("用户名或密码错误")
+	}
+
+	// ── Authentication successful ────────────────────────────────────
+	logger.Log.Infof("LDAP user '%s' authenticated successfully via LDAP server %s", req.Username, addr)
 
 	token, err := generateToken(user)
 	if err != nil {
