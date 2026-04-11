@@ -160,6 +160,7 @@ export const uploadSkillDocuments = (skillId, files, onProgress) => {
   });
 };
 export const reindexSkill = (id) => api.post(`/skills/${id}/reindex`);
+export const deleteSkillDocument = (skillId, docId) => api.delete(`/skills/${skillId}/documents/${docId}`);
 export const getAgentSkills = (agentId) => api.get(`/agents/${agentId}/skills`);
 
 // Published Agents (External)

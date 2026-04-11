@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Plus, Trash2, Edit3, Upload, FileText, RefreshCw, Loader2, Database, Globe2, Search, ChevronDown, ChevronUp, X } from 'lucide-react';
-import { getSkills, createSkill, updateSkill, deleteSkill, uploadSkillDocument, uploadSkillDocuments, reindexSkill } from '../services/api';
+import { getSkills, createSkill, updateSkill, deleteSkill, uploadSkillDocument, uploadSkillDocuments, reindexSkill, deleteSkillDocument } from '../services/api';
 import toast from 'react-hot-toast';
 
 const TYPE_LABELS = {
@@ -26,6 +26,7 @@ export default function SkillsPage() {
   const [uploading, setUploading] = useState({});
   const [uploadProgress, setUploadProgress] = useState({});
   const [reindexing, setReindexing] = useState({});
+  const [deletingDoc, setDeletingDoc] = useState({});
   const [form, setForm] = useState({ name: '', description: '', type: 'delivery', category: '' });
 
   const loadSkills = useCallback(async () => {
@@ -120,6 +121,17 @@ export default function SkillsPage() {
       setUploadProgress(prev => ({ ...prev, [skillId]: 0 }));
       e.target.value = '';
     }
+  };
+
+  const handleDeleteDoc = async (skillId, doc) => {
+    if (!confirm(`确定删除文档「${doc.file_name}」？删除后将同时移除对应的知识库索引。`)) return;
+    setDeletingDoc(prev => ({ ...prev, [doc.id]: true }));
+    try {
+      const res = await deleteSkillDocument(skillId, doc.id);
+      if (res.code === 0) { toast.success(`文档「${doc.file_name}」已删除`); loadSkills(); }
+      else toast.error(res.message || '删除失败');
+    } catch (e) { toast.error('删除失败'); }
+    finally { setDeletingDoc(prev => ({ ...prev, [doc.id]: false })); }
   };
 
   const handleReindex = async (skillId) => {
@@ -257,6 +269,13 @@ export default function SkillsPage() {
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] ${statusInfo.color}`}>{statusInfo.label}</span>
                                 <span className="text-xs text-gray-400">{doc.chunks || 0} 块</span>
                                 <span className="text-xs text-gray-300">{(doc.file_size / 1024).toFixed(1)} KB</span>
+                                <button
+                                  onClick={() => handleDeleteDoc(sk.id, doc)}
+                                  disabled={deletingDoc[doc.id]}
+                                  className="p-1 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
+                                  title="删除文档">
+                                  {deletingDoc[doc.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                </button>
                               </div>
                             );
                           })}

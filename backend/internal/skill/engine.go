@@ -108,6 +108,34 @@ func (s *ChunkStore) ClearSkill(skillID uint) {
 	s.rebuildIDF()
 }
 
+// RemoveDocument removes all chunks for a specific document from a skill
+func (s *ChunkStore) RemoveDocument(skillID, docID uint) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	chunks := s.chunks[skillID]
+	if len(chunks) == 0 {
+		return 0
+	}
+	remaining := make([]Chunk, 0, len(chunks))
+	removed := 0
+	for _, c := range chunks {
+		if c.DocID == docID {
+			removed++
+		} else {
+			remaining = append(remaining, c)
+		}
+	}
+	if len(remaining) == 0 {
+		delete(s.chunks, skillID)
+	} else {
+		s.chunks[skillID] = remaining
+	}
+	if removed > 0 {
+		s.rebuildIDF()
+	}
+	return removed
+}
+
 // Retrieve finds the most relevant chunks using TF-IDF scoring
 func (s *ChunkStore) Retrieve(skillID uint, query string, topK int) []Chunk {
 	s.mu.RLock()
