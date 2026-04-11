@@ -751,6 +751,18 @@ func (h *Handler) ReindexSkill(c *gin.Context) {
 	response.Success(c, gin.H{"message": "reindex completed"})
 }
 
+func (h *Handler) DeleteSkillDocument(c *gin.Context) {
+	skillID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	docID, _ := strconv.ParseUint(c.Param("docId"), 10, 32)
+	if err := h.chatService.DeleteSkillDocument(uint(docID)); err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	recordOperationLog(c, "skill", "delete_doc", uint(skillID), fmt.Sprintf("doc#%d", docID),
+		fmt.Sprintf("删除技能(#%d)的文档(#%d)", skillID, docID))
+	response.Success(c, gin.H{"message": "文档已删除"})
+}
+
 func (h *Handler) GetAgentSkills(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	skills, err := h.chatService.GetSkillsByAgent(uint(id))

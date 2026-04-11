@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -187,6 +188,50 @@ func (s *ChatService) AddSkillDocument(doc *model.SkillDocument) error {
 		return err
 	}
 	return nil
+}
+
+// DeleteSkillDocument removes a document from the database, the filesystem,
+// and the in-memory chunk store. It also updates the parent skill's counters.
+func (s *ChatService) DeleteSkillDocument(docID uint) error {
+	var doc model.SkillDocument
+	if err := repository.DB.First(&doc, docID).Error; err != nil {
+		return fmt.Errorf("document not found")
+	}
+
+	// Remove indexed chunks from in-memory store
+	removed := skill.GetStore().RemoveDocument(doc.SkillID, doc.ID)
+	logger.Log.Infof("DeleteSkillDocument: removed %d chunks for doc %d (%s) from skill %d",
+		removed, doc.ID, doc.FileName, doc.SkillID)
+
+	// Delete the physical file (ignore errors — file may already be gone)
+	if doc.FilePath != "" {
+		os.Remove(doc.FilePath)
+	}
+
+	// Delete from database
+	if err := repository.DB.Delete(&model.SkillDocument{}, docID).Error; err != nil {
+		return err
+	}
+
+	// Update skill doc_count and chunk_count
+	s.updateSkillCounts(doc.SkillID)
+
+	return nil
+}
+
+// updateSkillCounts recalculates the doc_count and chunk_count for a skill.
+func (s *ChatService) updateSkillCounts(skillID uint) {
+	var docCount int64
+	repository.DB.Model(&model.SkillDocument{}).Where("skill_id = ?", skillID).Count(&docCount)
+
+	var totalChunks int64
+	repository.DB.Model(&model.SkillDocument{}).Where("skill_id = ?", skillID).
+		Select("COALESCE(SUM(chunks), 0)").Scan(&totalChunks)
+
+	repository.DB.Model(&model.Skill{}).Where("id = ?", skillID).Updates(map[string]interface{}{
+		"doc_count":   docCount,
+		"chunk_count": totalChunks,
+	})
 }
 
 func (s *ChatService) IndexSkillDocument(doc *model.SkillDocument) error {

@@ -124,6 +124,7 @@ func main() {
 			auth.POST("/skills/:id/upload", h.UploadSkillDocument)
 			auth.POST("/skills/:id/upload-multi", h.UploadSkillDocuments)
 			auth.POST("/skills/:id/reindex", h.ReindexSkill)
+			auth.DELETE("/skills/:id/documents/:docId", h.DeleteSkillDocument)
 			auth.GET("/agents/:id/skills", h.GetAgentSkills)
 
 			// AI Providers
