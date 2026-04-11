@@ -65,20 +65,21 @@ type Agent struct {
 
 // Skill represents a capability/tool the agent can use
 type Skill struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-	Name        string         `gorm:"size:128;not null" json:"name"`
-	Description string         `gorm:"type:text" json:"description"`
-	Type        string         `gorm:"size:32" json:"type"`       // delivery, ops, knowledge, community
-	Category    string         `gorm:"size:64" json:"category"`   // delivery-skill, k8s-operator, openstack-operator
-	Config      string         `gorm:"type:text" json:"config"`   // JSON config
-	ToolDefs    string         `gorm:"type:text" json:"tool_defs"`
-	IsActive    bool           `gorm:"default:true" json:"is_active"`
-	DocCount    int            `gorm:"default:0" json:"doc_count"`    // number of knowledge documents
-	ChunkCount  int            `gorm:"default:0" json:"chunk_count"`  // number of text chunks indexed
-	Documents   []SkillDocument `gorm:"foreignKey:SkillID" json:"documents,omitempty"`
+	ID           uint           `gorm:"primarykey" json:"id"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	Name         string         `gorm:"size:128;not null" json:"name"`
+	Description  string         `gorm:"type:text" json:"description"`
+	Type         string         `gorm:"size:32" json:"type"`       // delivery, ops, knowledge, community
+	Category     string         `gorm:"size:64" json:"category"`   // delivery-skill, k8s-operator, openstack-operator
+	Config       string         `gorm:"type:text" json:"config"`   // JSON config
+	SystemPrompt string         `gorm:"type:longtext" json:"system_prompt"` // embedded knowledge/system prompt
+	ToolDefs     string         `gorm:"type:text" json:"tool_defs"`
+	IsActive     bool           `gorm:"default:true" json:"is_active"`
+	DocCount     int            `gorm:"default:0" json:"doc_count"`    // number of knowledge documents
+	ChunkCount   int            `gorm:"default:0" json:"chunk_count"`  // number of text chunks indexed
+	Documents    []SkillDocument `gorm:"foreignKey:SkillID" json:"documents,omitempty"`
 }
 
 // SkillDocument stores uploaded documents for a skill's knowledge base
