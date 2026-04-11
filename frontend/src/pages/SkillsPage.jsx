@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Zap, Plus, Trash2, Edit3, Upload, FileText, RefreshCw, Loader2, Database, Globe2, Search, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Zap, Plus, Trash2, Edit3, Upload, FileText, RefreshCw, Loader2, Database, Globe2, Search, ChevronDown, ChevronUp, X, Brain, BookOpen } from 'lucide-react';
 import { getSkills, createSkill, updateSkill, deleteSkill, uploadSkillDocument, uploadSkillDocuments, reindexSkill, deleteSkillDocument } from '../services/api';
 import toast from 'react-hot-toast';
 
 const TYPE_LABELS = {
-  delivery: { label: '交付技能', color: 'bg-blue-100 text-blue-700' },
-  community: { label: '社区技能', color: 'bg-green-100 text-green-700' },
-  knowledge: { label: '知识技能', color: 'bg-purple-100 text-purple-700' },
-  ops: { label: '运维技能', color: 'bg-orange-100 text-orange-700' },
+  delivery: { label: '交付技能', color: 'bg-blue-100 text-blue-700', icon: 'zap' },
+  community: { label: '社区技能', color: 'bg-green-100 text-green-700', icon: 'globe' },
+  knowledge: { label: '知识技能', color: 'bg-purple-100 text-purple-700', icon: 'brain' },
+  ops: { label: '运维技能', color: 'bg-orange-100 text-orange-700', icon: 'wrench' },
 };
 
 const STATUS_LABELS = {
@@ -148,7 +148,7 @@ export default function SkillsPage() {
     <div className="h-full overflow-y-auto">
       <div className="p-4 sm:p-6 space-y-4">
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs text-gray-500">总技能数</p>
             <p className="text-2xl font-bold text-gray-800">{skills.length}</p>
@@ -162,8 +162,12 @@ export default function SkillsPage() {
             <p className="text-2xl font-bold text-green-600">{skills.filter(s => s.type === 'community').length}</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs text-gray-500">知识技能</p>
+            <p className="text-2xl font-bold text-purple-600">{skills.filter(s => s.type === 'knowledge').length}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs text-gray-500">总文档块</p>
-            <p className="text-2xl font-bold text-purple-600">{skills.reduce((acc, s) => acc + (s.chunk_count || 0), 0)}</p>
+            <p className="text-2xl font-bold text-orange-600">{skills.reduce((acc, s) => acc + (s.chunk_count || 0), 0)}</p>
           </div>
         </div>
 
@@ -192,11 +196,12 @@ export default function SkillsPage() {
                 <div key={sk.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                   <div className="p-4 flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      sk.type === 'delivery' ? 'bg-blue-50' : sk.type === 'community' ? 'bg-green-50' : 'bg-purple-50'
+                      sk.type === 'delivery' ? 'bg-blue-50' : sk.type === 'community' ? 'bg-green-50' : sk.type === 'knowledge' ? 'bg-purple-50' : 'bg-orange-50'
                     }`}>
                       {sk.type === 'community' ? <Globe2 className="w-5 h-5 text-green-600" /> :
                        sk.type === 'delivery' ? <Zap className="w-5 h-5 text-blue-600" /> :
-                       <Database className="w-5 h-5 text-purple-600" />}
+                       sk.type === 'knowledge' ? <Brain className="w-5 h-5 text-purple-600" /> :
+                       <Database className="w-5 h-5 text-orange-600" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -256,7 +261,19 @@ export default function SkillsPage() {
                     </div>
                   </div>
                   {isExpanded && (
-                    <div className="border-t border-gray-100 bg-gray-50 p-4">
+                    <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-4">
+                      {/* Show embedded system prompt for knowledge skills */}
+                      {sk.system_prompt && (
+                        <div>
+                          <h4 className="text-xs font-medium text-gray-600 mb-2 flex items-center gap-1">
+                            <BookOpen className="w-3 h-3" /> 内置知识文档
+                          </h4>
+                          <div className="bg-white rounded-lg border border-gray-100 p-3 max-h-64 overflow-y-auto">
+                            <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans leading-relaxed">{sk.system_prompt.length > 2000 ? sk.system_prompt.substring(0, 2000) + '\n\n... (共 ' + sk.system_prompt.length + ' 字符)' : sk.system_prompt}</pre>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-1">内置 {sk.system_prompt.length} 字符的知识文档</p>
+                        </div>
+                      )}
                       <h4 className="text-xs font-medium text-gray-600 mb-2">知识库文档</h4>
                       {sk.documents && sk.documents.length > 0 ? (
                         <div className="space-y-2">

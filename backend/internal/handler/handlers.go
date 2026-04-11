@@ -494,21 +494,23 @@ func (h *Handler) GetSkill(c *gin.Context) {
 
 func (h *Handler) CreateSkill(c *gin.Context) {
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Type        string `json:"type"`
-		Category    string `json:"category"`
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		Type         string `json:"type"`
+		Category     string `json:"category"`
+		SystemPrompt string `json:"system_prompt"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
 		return
 	}
 	sk := model.Skill{
-		Name:        req.Name,
-		Description: req.Description,
-		Type:        req.Type,
-		Category:    req.Category,
-		IsActive:    true,
+		Name:         req.Name,
+		Description:  req.Description,
+		Type:         req.Type,
+		Category:     req.Category,
+		SystemPrompt: req.SystemPrompt,
+		IsActive:     true,
 	}
 	if err := h.chatService.CreateSkill(&sk); err != nil {
 		response.InternalError(c, err.Error())
@@ -527,10 +529,11 @@ func (h *Handler) UpdateSkill(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Type        string `json:"type"`
-		IsActive    *bool  `json:"is_active"`
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		Type         string `json:"type"`
+		IsActive     *bool  `json:"is_active"`
+		SystemPrompt string `json:"system_prompt"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "invalid request")
@@ -547,6 +550,9 @@ func (h *Handler) UpdateSkill(c *gin.Context) {
 	}
 	if req.IsActive != nil {
 		sk.IsActive = *req.IsActive
+	}
+	if req.SystemPrompt != "" {
+		sk.SystemPrompt = req.SystemPrompt
 	}
 	if err := h.chatService.UpdateSkill(sk); err != nil {
 		response.InternalError(c, err.Error())
