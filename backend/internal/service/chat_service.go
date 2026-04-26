@@ -503,6 +503,28 @@ func (s *ChatService) SendMessage(convID, userID uint, content string) (*model.M
 	return &userMsg, &assistantMsg, nil
 }
 
+// isDeepSeekModel checks if the model name is a DeepSeek V4 model
+func isDeepSeekModel(modelName string) bool {
+	m := strings.ToLower(modelName)
+	return strings.HasPrefix(m, "deepseek-v4-") ||
+		m == "deepseek-chat" || m == "deepseek-reasoner"
+}
+
+// isDeepSeekProvider checks if the provider is DeepSeek based on name or base URL
+func isDeepSeekProvider(provider model.AIProvider) bool {
+	return strings.ToLower(provider.Name) == "deepseek" ||
+		strings.Contains(strings.ToLower(provider.BaseURL), "deepseek.com")
+}
+
+// buildDeepSeekEndpoint ensures the correct endpoint for DeepSeek V4 API
+// DeepSeek V4 uses https://api.deepseek.com/chat/completions (no /v1 prefix)
+func buildDeepSeekEndpoint(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
+	// Remove trailing /v1 if present (legacy format)
+	base = strings.TrimSuffix(base, "/v1")
+	return base + "/chat/completions"
+}
+
 func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convID uint) string {
 	// Get AI provider config
 	var provider model.AIProvider
@@ -871,16 +893,37 @@ func (s *ChatService) standardAIResponse(agent model.Agent, provider model.AIPro
 	messages = append(messages, map[string]string{"role": "user", "content": userContent})
 
 	payload := map[string]interface{}{
-		"model":      modelName,
-		"messages":   messages,
-		"max_tokens": agent.MaxTokens,
+		"model":    modelName,
+		"messages": messages,
 	}
+
+	// DeepSeek V4 specific: add thinking parameter and handle max_tokens
+	if isDeepSeekModel(modelName) || isDeepSeekProvider(provider) {
+		// DeepSeek V4 defaults to thinking mode enabled; disable it for normal chat
+		// to get faster responses unless using the "pro" model
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		if agent.MaxTokens > 0 {
+			payload["max_tokens"] = agent.MaxTokens
+		}
+	} else {
+		if agent.MaxTokens > 0 {
+			payload["max_tokens"] = agent.MaxTokens
+		}
+	}
+
 	if agent.Temperature > 0 {
 		payload["temperature"] = agent.Temperature
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
-	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+
+	// Build the correct endpoint
+	var endpoint string
+	if isDeepSeekModel(modelName) || isDeepSeekProvider(provider) {
+		endpoint = buildDeepSeekEndpoint(provider.BaseURL)
+	} else {
+		endpoint = fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+	}
 
 	// Retry up to 5 times on failure (Iron Rule #7)
 	maxRetries := 1
@@ -1005,10 +1048,12 @@ func (s *ChatService) SendMessageToAgent(agent model.Agent, provider model.AIPro
 		return fmt.Sprintf("AI 服务返回错误 (HTTP %d)", resp.StatusCode)
 	}
 
+	// Parse response - handle both standard and DeepSeek V4 reasoning_content
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -1016,7 +1061,15 @@ func (s *ChatService) SendMessageToAgent(agent model.Agent, provider model.AIPro
 		return "AI 响应解析失败"
 	}
 	if len(result.Choices) > 0 {
-		return result.Choices[0].Message.Content
+		content := result.Choices[0].Message.Content
+		// If the model returned reasoning content (thinking mode), append it as context
+		if reasoning := result.Choices[0].Message.ReasoningContent; reasoning != "" && content == "" {
+			// If content is empty but reasoning exists, use reasoning as fallback
+			return reasoning
+		}
+		if content != "" {
+			return content
+		}
 	}
 	return "AI 未返回内容"
 }

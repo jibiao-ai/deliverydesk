@@ -1889,13 +1889,34 @@ func (h *Handler) TestAIProvider(c *gin.Context) {
 	if modelName == "" {
 		modelName = "gpt-3.5-turbo"
 	}
+
+	// Check if this is a DeepSeek provider
+	isDeepSeek := strings.ToLower(provider.Name) == "deepseek" ||
+		strings.Contains(strings.ToLower(provider.BaseURL), "deepseek.com")
+
 	payload := map[string]interface{}{
 		"model":      modelName,
 		"messages":   []map[string]string{{"role": "user", "content": "Hi"}},
 		"max_tokens": 10,
 	}
+
+	// DeepSeek V4: disable thinking mode for quick test, and build correct endpoint
+	if isDeepSeek {
+		payload["thinking"] = map[string]string{"type": "disabled"}
+	}
+
 	payloadBytes, _ := json.Marshal(payload)
-	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+
+	var endpoint string
+	if isDeepSeek {
+		// DeepSeek V4 uses https://api.deepseek.com/chat/completions (no /v1)
+		base := strings.TrimRight(provider.BaseURL, "/")
+		base = strings.TrimSuffix(base, "/v1")
+		endpoint = base + "/chat/completions"
+	} else {
+		endpoint = fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+	}
+
 	req, _ := http.NewRequest("POST", endpoint, bytes.NewReader(payloadBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+provider.APIKey)

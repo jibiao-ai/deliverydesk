@@ -683,7 +683,7 @@ export default function AIModelsPage() {
               <tbody className="divide-y divide-gray-100">
                 {[
                   { name: 'OpenAI', icon: '🤖', model: 'gpt-4o', desc: 'GPT-4o / GPT-4 / GPT-3.5 系列' },
-                  { name: 'DeepSeek', icon: '🔍', model: 'deepseek-chat', desc: '深度求索，高性价比国产大模型' },
+                  { name: 'DeepSeek', icon: '🔍', model: 'deepseek-v4-flash', desc: 'DeepSeek V4, 支持 deepseek-v4-flash / deepseek-v4-pro, 1M 上下文' },
                   { name: '通义千问', icon: '☁️', model: 'qwen-plus', desc: '阿里云 Qwen-Plus / Qwen-Max 系列' },
                   { name: '智谱 GLM', icon: '🧠', model: 'glm-4', desc: '智谱 AI GLM-4 / GLM-4-Flash 系列' },
                   { name: 'MiniMax', icon: '⚡', model: 'abab6.5s-chat', desc: 'MiniMax abab 系列' },
