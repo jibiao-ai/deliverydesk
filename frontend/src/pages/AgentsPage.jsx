@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bot, Plus, Trash2, Edit3, Loader2, Zap, Eye, EyeOff, Shield, X, Check, Copy, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Bot, Plus, Trash2, Edit3, Loader2, Zap, Eye, EyeOff, Shield, X, Check, Copy, ExternalLink, AlertTriangle, AlertCircle } from 'lucide-react';
 import { getAgents, createAgent, updateAgent, deleteAgent, getSkills, getAIProviders } from '../services/api';
 import toast from 'react-hot-toast';
+
+/* ── DeepSeek V4 well-known model options ── */
+const DEEPSEEK_MODELS = [
+  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash (V4 Flash, 1M ctx)' },
+  { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro (V4 Pro, 1M ctx)' },
+];
 
 // ── Elegant Delete Confirmation Modal ─────────────────────────────────────────
 function DeleteAgentConfirm({ agent, onCancel, onConfirm, deleting }) {
@@ -298,11 +304,22 @@ export default function AgentsPage() {
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
                   >
                     <option value="">使用默认模型</option>
-                    {aiProviders.filter(p => p.is_enabled).map(p => (
-                      <option key={p.id} value={p.model}>
-                        {p.label} ({p.model})
-                      </option>
-                    ))}
+                    <optgroup label="DeepSeek V4">
+                      {DEEPSEEK_MODELS.map(m => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="DeepSeek (即将弃用)">
+                      <option value="deepseek-chat">deepseek-chat (将于 2026/07/24 弃用)</option>
+                      <option value="deepseek-reasoner">deepseek-reasoner (将于 2026/07/24 弃用)</option>
+                    </optgroup>
+                    <optgroup label="已配置的模型厂商">
+                      {aiProviders.filter(p => p.is_enabled && p.name !== 'deepseek').map(p => (
+                        <option key={p.id} value={p.model}>
+                          {p.label} ({p.model})
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
                 <div>
@@ -312,12 +329,28 @@ export default function AgentsPage() {
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Max Tokens</label>
-                  <input type="number" step="512" min="256" value={form.max_tokens}
-                    onChange={(e) => setForm({ ...form, max_tokens: parseInt(e.target.value) || 4096 })}
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Max Tokens <span className="text-gray-400">(上限 1,000,000)</span></label>
+                  <input type="number" step="512" min="1" max="1000000" value={form.max_tokens}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 4096;
+                      setForm({ ...form, max_tokens: Math.min(Math.max(val, 1), 1000000) });
+                    }}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 </div>
               </div>
+              {/* DeepSeek deprecation warning */}
+              {(form.model === 'deepseek-chat' || form.model === 'deepseek-reasoner') && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-amber-700">
+                    <strong>{form.model}</strong> 将于 2026/07/24 弃用。建议迁移到{' '}
+                    <button onClick={() => setForm({ ...form, model: 'deepseek-v4-flash' })}
+                      className="font-mono text-amber-900 underline hover:text-amber-600">deepseek-v4-flash</button> 或{' '}
+                    <button onClick={() => setForm({ ...form, model: 'deepseek-v4-pro' })}
+                      className="font-mono text-amber-900 underline hover:text-amber-600">deepseek-v4-pro</button>
+                  </div>
+                </div>
+              )}
               {/* Toggles */}
               <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">

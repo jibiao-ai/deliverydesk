@@ -201,7 +201,7 @@ func seedDefaultData(db *gorm.DB) {
 	// Seed default AI providers (13 vendors)
 	defaultProviders := []model.AIProvider{
 		{Name: "openai", Label: "OpenAI", BaseURL: "https://api.openai.com/v1", Model: "gpt-4o", IsDefault: true, IsEnabled: true, Description: "GPT-4o / GPT-4 / GPT-3.5 系列", IconURL: "openai"},
-		{Name: "deepseek", Label: "DeepSeek", BaseURL: "https://api.deepseek.com/v1", Model: "deepseek-chat", IsDefault: false, IsEnabled: true, Description: "深度求索，高性价比国产大模型", IconURL: "deepseek"},
+		{Name: "deepseek", Label: "DeepSeek", BaseURL: "https://api.deepseek.com", Model: "deepseek-v4-flash", IsDefault: false, IsEnabled: true, Description: "DeepSeek V4，支持 deepseek-v4-flash / deepseek-v4-pro，1M 上下文", IconURL: "deepseek"},
 		{Name: "qwen", Label: "通义千问", BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", Model: "qwen-plus", IsDefault: false, IsEnabled: true, Description: "阿里云 Qwen-Plus / Qwen-Max 系列", IconURL: "qwen"},
 		{Name: "glm", Label: "智谱 GLM", BaseURL: "https://open.bigmodel.cn/api/paas/v4", Model: "glm-4", IsDefault: false, IsEnabled: true, Description: "智谱 AI GLM-4 / GLM-4-Flash 系列", IconURL: "glm"},
 		{Name: "minimax", Label: "MiniMax", BaseURL: "https://api.minimax.chat/v1", Model: "abab6.5s-chat", IsDefault: false, IsEnabled: true, Description: "MiniMax abab 系列", IconURL: "minimax"},
@@ -221,6 +221,35 @@ func seedDefaultData(db *gorm.DB) {
 		}
 	}
 	logger.Log.Info("Default AI providers seeded")
+
+	// Migrate existing DeepSeek provider to V4 API format
+	// The V4 API removed the /v1 prefix and uses new model names
+	var dsProvider model.AIProvider
+	if err := db.Where("name = ?", "deepseek").First(&dsProvider).Error; err == nil {
+		needsUpdate := false
+		// Fix base URL: remove /v1 suffix
+		if strings.HasSuffix(dsProvider.BaseURL, "/v1") {
+			dsProvider.BaseURL = strings.TrimSuffix(dsProvider.BaseURL, "/v1")
+			needsUpdate = true
+		}
+		// Migrate deprecated model names to V4
+		if dsProvider.Model == "deepseek-chat" {
+			dsProvider.Model = "deepseek-v4-flash"
+			needsUpdate = true
+		} else if dsProvider.Model == "deepseek-reasoner" {
+			dsProvider.Model = "deepseek-v4-flash"
+			needsUpdate = true
+		}
+		// Update description to reflect V4
+		if !strings.Contains(dsProvider.Description, "V4") {
+			dsProvider.Description = "DeepSeek V4，支持 deepseek-v4-flash / deepseek-v4-pro，1M 上下文"
+			needsUpdate = true
+		}
+		if needsUpdate {
+			db.Save(&dsProvider)
+			logger.Log.Info("DeepSeek provider migrated to V4 API format")
+		}
+	}
 
 	// Seed default skills (delivery skill + community skills)
 	var skillCount int64
@@ -246,6 +275,7 @@ func seedDefaultData(db *gorm.DB) {
 
 	// Seed knowledge skills (张雪峰考研, 乔布斯)
 	seedKnowledgeSkills(db)
+
 
 	// Seed default agents
 	var agentCount int64
