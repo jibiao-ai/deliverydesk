@@ -908,8 +908,8 @@ func opsExpertSystemPrompt() string {
 // seedSystemSettings seeds default system settings (idempotent)
 func seedSystemSettings(db *gorm.DB) {
 	defaults := []model.SystemSetting{
-		{Category: "jira", Key: "jira_server", Value: "", Label: "Jira 服务器地址", ValueType: "text", SortOrder: 1},
-		{Category: "jira", Key: "jira_username", Value: "", Label: "Jira 用户名", ValueType: "text", SortOrder: 2},
+		{Category: "jira", Key: "jira_server", Value: "https://easystack.atlassian.net", Label: "Jira 服务器地址", ValueType: "text", SortOrder: 1},
+		{Category: "jira", Key: "jira_username", Value: "esoncall@easystack.cn", Label: "Jira 用户名", ValueType: "text", SortOrder: 2},
 		{Category: "jira", Key: "jira_password", Value: "", Label: "Jira API Token", ValueType: "password", SortOrder: 3},
 		{Category: "totp", Key: "totp_server", Value: "http://lic.easystack.cn", Label: "TOTP 服务器地址", ValueType: "text", SortOrder: 1},
 		{Category: "totp", Key: "totp_auth_user", Value: "totp", Label: "TOTP 认证用户", ValueType: "text", SortOrder: 2},
@@ -925,6 +925,9 @@ func seedSystemSettings(db *gorm.DB) {
 		var existing model.SystemSetting
 		if err := db.Where("category = ? AND `key` = ?", s.Category, s.Key).First(&existing).Error; err != nil {
 			db.Create(&s)
+		} else if existing.Value == "" && s.Value != "" {
+			// Update empty settings with new defaults (e.g., Jira credentials)
+			db.Model(&existing).Update("value", s.Value)
 		}
 	}
 	logger.Log.Info("Default system settings seeded")

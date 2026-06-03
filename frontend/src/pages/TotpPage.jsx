@@ -326,7 +326,13 @@ function ApplyModal({ onClose, onSuccess }) {
         }
         if (Object.keys(updates).length > 0) {
           setForm({ ...form, ...updates });
-          toast.success('工单信息已自动填充');
+          if (res.data.error) {
+            toast.success(`已填充部分信息(${res.data.error})，请确认`);
+          } else {
+            toast.success('工单信息已自动填充');
+          }
+        } else if (res.data.error) {
+          toast.error(res.data.error);
         } else {
           toast.success('工单存在，但未找到客户/项目信息，请手动填写');
         }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +18,7 @@ import (
 
 // JiraService handles Jira integration: issue lookup, CSE resolution, and periodic sync
 type JiraService struct {
-	mu     sync.Mutex
+	mu      sync.Mutex
 	syncing bool
 }
 
@@ -43,18 +44,29 @@ func (s *JiraService) jiraClient() *http.Client {
 	}
 }
 
-// getJiraConfig reads Jira settings from SystemSetting table
+// getJiraConfig reads Jira settings from SystemSetting table, with environment variable fallbacks
 func (s *JiraService) getJiraConfig() (server, username, password string, err error) {
 	svc := &TotpService{}
 	server = svc.GetSetting("jira", "jira_server")
 	username = svc.GetSetting("jira", "jira_username")
 	password = svc.GetSetting("jira", "jira_password")
 
+	// Fallback to environment variables if DB settings are empty
 	if server == "" {
-		return "", "", "", fmt.Errorf("Jira服务器未配置，请在系统设置中配置Jira信息")
+		server = os.Getenv("JIRA_SERVER")
+	}
+	if username == "" {
+		username = os.Getenv("JIRA_USERNAME")
+	}
+	if password == "" {
+		password = os.Getenv("JIRA_PASSWORD")
+	}
+
+	if server == "" {
+		return "", "", "", fmt.Errorf("Jira服务器未配置，请在系统设置中配置Jira信息或设置JIRA_SERVER环境变量")
 	}
 	if username == "" || password == "" {
-		return "", "", "", fmt.Errorf("Jira认证信息未配置，请在系统设置中配置用户名和Token")
+		return "", "", "", fmt.Errorf("Jira认证信息未配置，请在系统设置中配置用户名和Token或设置JIRA_USERNAME/JIRA_PASSWORD环境变量")
 	}
 	server = strings.TrimRight(server, "/")
 	return server, username, password, nil
@@ -167,21 +179,26 @@ func (s *JiraService) CheckIssue(issueKey string) (map[string]string, error) {
 		return nil, fmt.Errorf("工单号不能为空")
 	}
 
-	// 1. First try local cache
+	// 1. First try local cache (only if data is complete)
 	var cached model.JiraIssueCache
 	if err := repository.DB.Where("issue = ?", issueKey).First(&cached).Error; err == nil {
-		result := map[string]string{
-			"issue":    cached.Issue,
-			"customer": cached.Customer,
-			"project":  cached.Project,
-			"version":  cached.TotpVersion,
-			"cse":      cached.CSE,
-			"summary":  cached.Summary,
+		// Only use cache if customer is populated (indicates successful CSE resolution)
+		if cached.Customer != "" {
+			result := map[string]string{
+				"issue":    cached.Issue,
+				"customer": cached.Customer,
+				"project":  cached.Project,
+				"version":  cached.TotpVersion,
+				"cse":      cached.CSE,
+				"summary":  cached.Summary,
+			}
+			return result, nil
 		}
-		return result, nil
+		// Cache entry exists but has empty customer - re-fetch from Jira
+		logger.Log.Infof("Cache hit for %s but customer is empty, re-fetching from Jira", issueKey)
 	}
 
-	// 2. Not in cache, query Jira API
+	// 2. Not in cache or cache incomplete, query Jira API
 	return s.fetchIssueFromJira(issueKey)
 }
 
@@ -213,43 +230,40 @@ func (s *JiraService) fetchIssueFromJira(issueKey string) (map[string]string, er
 		result["summary"] = summary
 	}
 
-	// Get CSE key from customfield_10007 (this is the standard field in EasyStack Jira)
-	cseKey := ""
-	if cse, ok := fields["customfield_10007"].(string); ok && cse != "" {
-		cseKey = cse
-	}
+	// Get CSE key from customfield_10007 (handles various field types)
+	cseKey := s.extractCSEKey(fields)
 
 	if cseKey != "" {
 		result["cse"] = cseKey
+		logger.Log.Infof("Issue %s → CSE: %s, fetching CSE details...", issueKey, cseKey)
+
 		// Query the CSE issue to get customer/project/version
 		cseData, err := s.jiraAPIGet(fmt.Sprintf("/rest/api/2/issue/%s", cseKey))
-		if err == nil {
-			if cseFields, ok := cseData["fields"].(map[string]interface{}); ok {
-				// customfield_11191 = customer name (array, take first)
-				if customerField, ok := cseFields["customfield_11191"].([]interface{}); ok && len(customerField) > 0 {
-					if customer, ok := customerField[0].(string); ok {
-						result["customer"] = customer
-					}
-				}
-				// customfield_11190 = project name
-				if project, ok := cseFields["customfield_11190"].(string); ok {
-					result["project"] = project
-				}
-				// customfield_11196 = version (object with "name" field)
-				if versionField, ok := cseFields["customfield_11196"].(map[string]interface{}); ok {
-					if versionName, ok := versionField["name"].(string); ok {
-						result["version"] = getTotpVersion(versionName)
-					}
-				}
-			}
-		} else {
+		if err != nil {
 			logger.Log.Warnf("Failed to fetch CSE issue %s: %v", cseKey, err)
+			result["error"] = fmt.Sprintf("获取CSE工单%s失败: %v", cseKey, err)
+		} else {
+			if cseFields, ok := cseData["fields"].(map[string]interface{}); ok {
+				// Extract customer from customfield_11191
+				result["customer"] = s.extractCustomer(cseFields)
+				// Extract project from customfield_11190
+				result["project"] = s.extractProject(cseFields)
+				// Extract version from customfield_11196
+				result["version"] = s.extractVersion(cseFields)
+
+				logger.Log.Infof("CSE %s → customer=%q, project=%q, version=%q",
+					cseKey, result["customer"], result["project"], result["version"])
+			} else {
+				logger.Log.Warnf("CSE %s: fields is not a map", cseKey)
+			}
 		}
+	} else {
+		logger.Log.Warnf("Issue %s: no CSE key found in customfield_10007", issueKey)
 	}
 
-	// If no CSE found, try alternative fields directly on the issue
+	// Fallback: if CSE extraction failed, try alternative approaches
 	if result["customer"] == "" {
-		// Try components
+		// Try components on the original issue
 		if components, ok := fields["components"].([]interface{}); ok && len(components) > 0 {
 			if comp, ok := components[0].(map[string]interface{}); ok {
 				if name, ok := comp["name"].(string); ok {
@@ -258,11 +272,23 @@ func (s *JiraService) fetchIssueFromJira(issueKey string) (map[string]string, er
 			}
 		}
 	}
+	// Smart fallback: parse customer and project from summary format
+	// Format: "客户名-项目名(CSE-xxx)- 描述"
+	if result["customer"] == "" && result["summary"] != "" {
+		customer, project := parseSummary(result["summary"])
+		if customer != "" {
+			result["customer"] = customer
+		}
+		if result["project"] == "" && project != "" {
+			result["project"] = project
+		}
+	}
 	if result["project"] == "" {
+		// Last resort: use full summary (not ideal, but better than empty)
 		result["project"] = result["summary"]
 	}
 	if result["version"] == "" {
-		// Try labels for version
+		// Try labels for version hint
 		if labels, ok := fields["labels"].([]interface{}); ok {
 			for _, label := range labels {
 				if labelStr, ok := label.(string); ok {
@@ -280,6 +306,159 @@ func (s *JiraService) fetchIssueFromJira(issueKey string) (map[string]string, er
 	s.saveToCache(issueKey, result)
 
 	return result, nil
+}
+
+// extractCSEKey extracts the CSE key from customfield_10007
+// Handles both string type and object type (some Jira configs return {"key": "CSE-xxx"})
+func (s *JiraService) extractCSEKey(fields map[string]interface{}) string {
+	cf10007 := fields["customfield_10007"]
+	if cf10007 == nil {
+		return ""
+	}
+
+	// Direct string: "CSE-4525"
+	if cse, ok := cf10007.(string); ok && cse != "" {
+		return strings.TrimSpace(cse)
+	}
+
+	// Object with key: {"key": "CSE-4525", ...}
+	if cseMap, ok := cf10007.(map[string]interface{}); ok {
+		if key, ok := cseMap["key"].(string); ok {
+			return strings.TrimSpace(key)
+		}
+		if val, ok := cseMap["value"].(string); ok {
+			return strings.TrimSpace(val)
+		}
+	}
+
+	// Could be a float64 (number) - unlikely but handle
+	if num, ok := cf10007.(float64); ok {
+		return fmt.Sprintf("CSE-%.0f", num)
+	}
+
+	logger.Log.Warnf("customfield_10007 unexpected type: %T, value: %v", cf10007, cf10007)
+	return ""
+}
+
+// extractCustomer extracts customer name from CSE issue's customfield_11191
+// Handles: array of strings ["客户名"], array of objects [{"value": "客户名"}], or single string
+func (s *JiraService) extractCustomer(cseFields map[string]interface{}) string {
+	cf11191 := cseFields["customfield_11191"]
+	if cf11191 == nil {
+		logger.Log.Warnf("customfield_11191 is nil in CSE issue")
+		return ""
+	}
+
+	// Array type (most common): ["中国邮政储蓄银行"]
+	if arr, ok := cf11191.([]interface{}); ok && len(arr) > 0 {
+		first := arr[0]
+		// Element is a string
+		if str, ok := first.(string); ok {
+			return str
+		}
+		// Element is an object: {"value": "客户名"} or {"name": "客户名"}
+		if obj, ok := first.(map[string]interface{}); ok {
+			if val, ok := obj["value"].(string); ok {
+				return val
+			}
+			if name, ok := obj["name"].(string); ok {
+				return name
+			}
+		}
+		logger.Log.Warnf("customfield_11191[0] unexpected type: %T", first)
+		return ""
+	}
+
+	// Direct string
+	if str, ok := cf11191.(string); ok {
+		return str
+	}
+
+	logger.Log.Warnf("customfield_11191 unexpected type: %T", cf11191)
+	return ""
+}
+
+// extractProject extracts project name from CSE issue's customfield_11190
+func (s *JiraService) extractProject(cseFields map[string]interface{}) string {
+	cf11190 := cseFields["customfield_11190"]
+	if cf11190 == nil {
+		return ""
+	}
+
+	// String type (most common)
+	if str, ok := cf11190.(string); ok {
+		return str
+	}
+
+	// Object with value/name
+	if obj, ok := cf11190.(map[string]interface{}); ok {
+		if val, ok := obj["value"].(string); ok {
+			return val
+		}
+		if name, ok := obj["name"].(string); ok {
+			return name
+		}
+	}
+
+	logger.Log.Warnf("customfield_11190 unexpected type: %T", cf11190)
+	return ""
+}
+
+// extractVersion extracts version from CSE issue's customfield_11196
+func (s *JiraService) extractVersion(cseFields map[string]interface{}) string {
+	cf11196 := cseFields["customfield_11196"]
+	if cf11196 == nil {
+		return ""
+	}
+
+	// Object with "name" field: {"name": "6.1.1", ...}
+	if obj, ok := cf11196.(map[string]interface{}); ok {
+		if name, ok := obj["name"].(string); ok {
+			return getTotpVersion(name)
+		}
+	}
+
+	// Direct string
+	if str, ok := cf11196.(string); ok {
+		return getTotpVersion(str)
+	}
+
+	logger.Log.Warnf("customfield_11196 unexpected type: %T", cf11196)
+	return ""
+}
+
+// parseSummary attempts to parse customer and project from summary format:
+// "客户名-项目名(CSE-xxx)- 描述" or "客户名-项目名-描述"
+func parseSummary(summary string) (customer, project string) {
+	clean := summary
+
+	// Remove (CSE-xxxx) or （CSE-xxxx）part
+	if idx := strings.Index(clean, "(CSE-"); idx > 0 {
+		clean = clean[:idx]
+	} else if idx := strings.Index(clean, "（CSE-"); idx > 0 {
+		clean = clean[:idx]
+	}
+
+	// Trim trailing spaces and dashes
+	clean = strings.TrimRight(clean, "- ")
+
+	// Split by first "-" to get customer and project
+	parts := strings.SplitN(clean, "-", 2)
+	if len(parts) == 2 {
+		customer = strings.TrimSpace(parts[0])
+		project = strings.TrimSpace(parts[1])
+		// If project still has trailing description after "-", try to clean it
+		// But be conservative - only trim if the trailing part is clearly a description
+		if idx := strings.LastIndex(project, "-"); idx > 0 {
+			after := strings.TrimSpace(project[idx+1:])
+			before := strings.TrimSpace(project[:idx])
+			// If the part after last "-" is very long (description), remove it
+			if len([]rune(after)) > 15 && len([]rune(before)) > 2 {
+				project = before
+			}
+		}
+	}
+	return
 }
 
 // saveToCache stores issue data in local JiraIssueCache table
@@ -320,7 +499,7 @@ func getTotpVersion(version string) string {
 }
 
 // SyncJiraIssues performs a bulk sync of Jira issues into local cache
-// Uses JQL to search for recent ECSDESK issues and cache their CSE info
+// Uses JQL to search for recent ECSDESK/ECSL2 issues and cache their CSE info
 func (s *JiraService) SyncJiraIssues() (int, error) {
 	s.mu.Lock()
 	if s.syncing {
@@ -340,9 +519,9 @@ func (s *JiraService) SyncJiraIssues() (int, error) {
 		return 0, err
 	}
 
-	// Search for recent ECSDESK issues (last 30 days) using JQL
-	// Try API v3 first (Atlassian Cloud), fallback to v2
-	jql := "project = ECSDESK AND created >= -30d ORDER BY created DESC"
+	// Search for recent ECSDESK/ECSL2 issues (last 30 days) using JQL
+	// Use API v3 (Atlassian Cloud has deprecated v2 search)
+	jql := "project in (ECSDESK, ECSL2) AND created >= -30d ORDER BY created DESC"
 	startAt := 0
 	maxResults := 50
 	totalSynced := 0
@@ -380,10 +559,9 @@ func (s *JiraService) SyncJiraIssues() (int, error) {
 			// If v3 failed, try v2
 			if apiVersion == "3" {
 				apiVersion = "2"
-				resp.Body.Close()
 				continue
 			}
-			logger.Log.Warnf("Jira sync search returned %d", resp.StatusCode)
+			logger.Log.Warnf("Jira sync search returned %d: %s", resp.StatusCode, string(body[:min(len(body), 200)]))
 			break
 		}
 
@@ -420,30 +598,34 @@ func (s *JiraService) SyncJiraIssues() (int, error) {
 				cacheData["summary"] = summary
 			}
 
-			// Get CSE from customfield_10007
-			if cse, ok := fields["customfield_10007"].(string); ok && cse != "" {
-				cacheData["cse"] = cse
+			// Get CSE from customfield_10007 (handles string and object types)
+			cseKey := s.extractCSEKey(fields)
+			if cseKey != "" {
+				cacheData["cse"] = cseKey
 			}
 
-			// Try to get CSE details (customer/project/version) - but don't fail if CSE lookup fails
+			// Try to get CSE details (customer/project/version)
 			if cacheData["cse"] != "" {
 				cseData, err := s.jiraAPIGet(fmt.Sprintf("/rest/api/2/issue/%s", cacheData["cse"]))
 				if err == nil {
 					if cseFields, ok := cseData["fields"].(map[string]interface{}); ok {
-						if customerField, ok := cseFields["customfield_11191"].([]interface{}); ok && len(customerField) > 0 {
-							if customer, ok := customerField[0].(string); ok {
-								cacheData["customer"] = customer
-							}
-						}
-						if project, ok := cseFields["customfield_11190"].(string); ok {
-							cacheData["project"] = project
-						}
-						if versionField, ok := cseFields["customfield_11196"].(map[string]interface{}); ok {
-							if versionName, ok := versionField["name"].(string); ok {
-								cacheData["version"] = getTotpVersion(versionName)
-							}
-						}
+						cacheData["customer"] = s.extractCustomer(cseFields)
+						cacheData["project"] = s.extractProject(cseFields)
+						cacheData["version"] = s.extractVersion(cseFields)
 					}
+				} else {
+					logger.Log.Warnf("Sync: failed to fetch CSE %s for %s: %v", cacheData["cse"], issueKey, err)
+				}
+			}
+
+			// Fallback: parse from summary if CSE extraction failed
+			if cacheData["customer"] == "" && cacheData["summary"] != "" {
+				customer, project := parseSummary(cacheData["summary"])
+				if customer != "" {
+					cacheData["customer"] = customer
+				}
+				if cacheData["project"] == "" && project != "" {
+					cacheData["project"] = project
 				}
 			}
 
