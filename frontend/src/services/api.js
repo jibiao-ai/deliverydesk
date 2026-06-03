@@ -197,4 +197,15 @@ export const getWebsiteCategories = () => api.get('/website-categories');
 // Operation Logs
 export const getOperationLogs = (params) => api.get('/operation-logs', { params });
 
+// TOTP Applications
+export const createTotpApplication = (data) => api.post('/totp/apply', data);
+export const getMyTotpApplications = (params) => api.get('/totp/my-applications', { params });
+export const getPendingTotpReviews = (params) => api.get('/totp/pending-reviews', { params });
+export const getAllTotpApplications = (params) => api.get('/totp/all', { params });
+export const auditTotpApplications = (data) => api.post('/totp/audit', data);
+
+// System Settings
+export const getSettings = (params) => api.get('/settings', { params });
+export const updateSettings = (data) => api.put('/settings', data);
+
 export default api;
