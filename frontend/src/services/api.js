@@ -203,6 +203,9 @@ export const getMyTotpApplications = (params) => api.get('/totp/my-applications'
 export const getPendingTotpReviews = (params) => api.get('/totp/pending-reviews', { params });
 export const getAllTotpApplications = (params) => api.get('/totp/all', { params });
 export const auditTotpApplications = (data) => api.post('/totp/audit', data);
+export const checkTotpIssue = (issue) => api.get('/totp/check-issue', { params: { issue } });
+export const syncJiraIssues = () => api.post('/totp/sync-jira');
+export const getJiraCache = (params) => api.get('/totp/jira-cache', { params });
 
 // System Settings
 export const getSettings = (params) => api.get('/settings', { params });

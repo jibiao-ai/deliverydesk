@@ -233,10 +233,27 @@ type SystemSetting struct {
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-	Category  string         `gorm:"size:64;index;not null" json:"category"` // jira, wechat, totp, etc.
+	Category  string         `gorm:"size:64;uniqueIndex:idx_cat_key;not null" json:"category"` // jira, wechat, totp, etc.
 	Key       string         `gorm:"size:128;uniqueIndex:idx_cat_key;not null" json:"key"`
 	Value     string         `gorm:"type:text" json:"value"`
 	Label     string         `gorm:"size:256" json:"label"`       // display label
 	ValueType string         `gorm:"size:32;default:text" json:"value_type"` // text, password, number, boolean
 	SortOrder int            `gorm:"default:0" json:"sort_order"`
+}
+
+// JiraIssueCache stores synced Jira issue data (ECSDESK + CSE) for fast local lookup
+type JiraIssueCache struct {
+	ID          uint           `gorm:"primarykey" json:"id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	Issue       string         `gorm:"size:64;uniqueIndex;not null" json:"issue"`  // e.g. ECSDESK-29199
+	CSE         string         `gorm:"size:64;index" json:"cse"`                   // CSE key e.g. CSE-1234
+	Customer    string         `gorm:"size:256" json:"customer"`                   // customer name
+	Project     string         `gorm:"size:256" json:"project"`                    // project name
+	Version     string         `gorm:"size:64" json:"version"`                     // platform version
+	Summary     string         `gorm:"size:512" json:"summary"`                    // issue summary
+	Status      string         `gorm:"size:64" json:"status"`                      // issue status
+	Assignee    string         `gorm:"size:128" json:"assignee"`                   // assignee
+	TotpVersion string         `gorm:"size:32" json:"totp_version"`                // V5/V6/V3V4
 }
