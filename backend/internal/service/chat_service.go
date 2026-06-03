@@ -761,17 +761,33 @@ func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, p
 	messages = append(messages, map[string]string{"role": "user", "content": userContent})
 
 	payload := map[string]interface{}{
-		"model":      modelName,
-		"messages":   messages,
-		"max_tokens": agent.MaxTokens,
-		"stream":     true,
+		"model":    modelName,
+		"messages": messages,
+		"stream":   true,
+	}
+
+	// DeepSeek V4 specific: add thinking parameter and handle endpoint
+	if isDeepSeekModel(modelName) || isDeepSeekProvider(provider) {
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		if agent.MaxTokens > 0 {
+			payload["max_tokens"] = agent.MaxTokens
+		}
+	} else {
+		if agent.MaxTokens > 0 {
+			payload["max_tokens"] = agent.MaxTokens
+		}
 	}
 	if agent.Temperature > 0 {
 		payload["temperature"] = agent.Temperature
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
-	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+	var endpoint string
+	if isDeepSeekModel(modelName) || isDeepSeekProvider(provider) {
+		endpoint = buildDeepSeekEndpoint(provider.BaseURL)
+	} else {
+		endpoint = fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+	}
 
 	maxRetries := 1
 	if agent.IronRules {
@@ -814,6 +830,7 @@ func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, p
 
 		// Parse SSE stream from upstream
 		var accumulated strings.Builder
+		var reasoningAccumulated strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			select {
@@ -835,7 +852,8 @@ func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, p
 			var chunk struct {
 				Choices []struct {
 					Delta struct {
-						Content string `json:"content"`
+						Content          string `json:"content"`
+						ReasoningContent string `json:"reasoning_content"`
 					} `json:"delta"`
 					FinishReason *string `json:"finish_reason"`
 				} `json:"choices"`
@@ -843,10 +861,16 @@ func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, p
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				continue
 			}
-			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-				token := chunk.Choices[0].Delta.Content
-				accumulated.WriteString(token)
-				onToken(token)
+			if len(chunk.Choices) > 0 {
+				// Handle reasoning_content (DeepSeek V4 thinking mode fallback)
+				if chunk.Choices[0].Delta.ReasoningContent != "" {
+					reasoningAccumulated.WriteString(chunk.Choices[0].Delta.ReasoningContent)
+				}
+				if chunk.Choices[0].Delta.Content != "" {
+					token := chunk.Choices[0].Delta.Content
+					accumulated.WriteString(token)
+					onToken(token)
+				}
 			}
 		}
 		resp.Body.Close()
@@ -854,6 +878,11 @@ func (s *ChatService) streamAIResponse(ctx context.Context, agent model.Agent, p
 		result := accumulated.String()
 		if result != "" {
 			return result, nil
+		}
+		// If content is empty but reasoning exists (DeepSeek V4 thinking mode), use reasoning as fallback
+		if reasoning := reasoningAccumulated.String(); reasoning != "" {
+			onToken(reasoning)
+			return reasoning, nil
 		}
 		lastErr = fmt.Errorf("AI returned empty stream")
 	}
@@ -963,7 +992,8 @@ func (s *ChatService) standardAIResponse(agent model.Agent, provider model.AIPro
 		var result struct {
 			Choices []struct {
 				Message struct {
-					Content string `json:"content"`
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
 				} `json:"message"`
 			} `json:"choices"`
 		}
@@ -972,7 +1002,14 @@ func (s *ChatService) standardAIResponse(agent model.Agent, provider model.AIPro
 			continue
 		}
 		if len(result.Choices) > 0 {
-			return result.Choices[0].Message.Content
+			content := result.Choices[0].Message.Content
+			if content != "" {
+				return content
+			}
+			// Fallback to reasoning_content if content is empty (DeepSeek V4 thinking mode)
+			if result.Choices[0].Message.ReasoningContent != "" {
+				return result.Choices[0].Message.ReasoningContent
+			}
 		}
 		lastErr = "AI 未返回内容"
 	}
@@ -1018,16 +1055,32 @@ func (s *ChatService) SendMessageToAgent(agent model.Agent, provider model.AIPro
 	messages = append(messages, map[string]string{"role": "user", "content": message})
 
 	payload := map[string]interface{}{
-		"model":      aiConfig.Model,
-		"messages":   messages,
-		"max_tokens": agent.MaxTokens,
+		"model":    aiConfig.Model,
+		"messages": messages,
+	}
+
+	// DeepSeek V4 specific: add thinking parameter and handle endpoint
+	if isDeepSeekModel(aiConfig.Model) || isDeepSeekProvider(provider) {
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		if agent.MaxTokens > 0 {
+			payload["max_tokens"] = agent.MaxTokens
+		}
+	} else {
+		if agent.MaxTokens > 0 {
+			payload["max_tokens"] = agent.MaxTokens
+		}
 	}
 	if agent.Temperature > 0 {
 		payload["temperature"] = agent.Temperature
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
-	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+	var endpoint string
+	if isDeepSeekModel(aiConfig.Model) || isDeepSeekProvider(provider) {
+		endpoint = buildDeepSeekEndpoint(provider.BaseURL)
+	} else {
+		endpoint = fmt.Sprintf("%s/chat/completions", strings.TrimRight(provider.BaseURL, "/"))
+	}
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payloadBytes))
 	if err != nil {

@@ -471,6 +471,15 @@ type AIConfig struct {
 	Model   string
 }
 
+// isDeepSeekConfig checks if the AI config is for a DeepSeek model/provider
+func isDeepSeekConfig(config AIConfig) bool {
+	m := strings.ToLower(config.Model)
+	if strings.HasPrefix(m, "deepseek-v4-") || m == "deepseek-chat" || m == "deepseek-reasoner" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(config.BaseURL), "deepseek.com")
+}
+
 // RunRAG executes the full RAG pipeline: retrieve → score → filter → synthesize
 func RunRAG(config AIConfig, skillID uint, skillName, question string, ironRules bool) RAGResult {
 	store := GetStore()
@@ -729,9 +738,24 @@ func callAI(config AIConfig, prompt string, temperature float64, maxTokens int) 
 		"temperature": temperature,
 		"max_tokens":  maxTokens,
 	}
+
+	// DeepSeek V4 specific: add thinking parameter to avoid thinking mode consuming tokens
+	if isDeepSeekConfig(config) {
+		payload["thinking"] = map[string]string{"type": "disabled"}
+	}
+
 	payloadBytes, _ := json.Marshal(payload)
 
-	endpoint := fmt.Sprintf("%s/chat/completions", strings.TrimRight(config.BaseURL, "/"))
+	// Build endpoint - strip /v1 for DeepSeek V4
+	var endpoint string
+	if isDeepSeekConfig(config) {
+		base := strings.TrimRight(config.BaseURL, "/")
+		base = strings.TrimSuffix(base, "/v1")
+		endpoint = base + "/chat/completions"
+	} else {
+		endpoint = fmt.Sprintf("%s/chat/completions", strings.TrimRight(config.BaseURL, "/"))
+	}
+
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payloadBytes))
 	if err != nil {
 		logger.Log.Errorf("RAG: create request failed: %v", err)
@@ -757,7 +781,8 @@ func callAI(config AIConfig, prompt string, temperature float64, maxTokens int) 
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -765,7 +790,14 @@ func callAI(config AIConfig, prompt string, temperature float64, maxTokens int) 
 		return ""
 	}
 	if len(result.Choices) > 0 {
-		return result.Choices[0].Message.Content
+		content := result.Choices[0].Message.Content
+		if content != "" {
+			return content
+		}
+		// Fallback to reasoning_content if content is empty (DeepSeek V4 thinking mode)
+		if result.Choices[0].Message.ReasoningContent != "" {
+			return result.Choices[0].Message.ReasoningContent
+		}
 	}
 	return ""
 }
