@@ -219,6 +219,11 @@ func (s *TotpService) generateTotpPass(customer, project, version, totpType stri
 	return pass, timestamp, nil
 }
 
+// CheckIssueFromJira delegates to JiraService for issue lookup (cache-first, then API)
+func (s *TotpService) CheckIssueFromJira(issue string) (map[string]string, error) {
+	return GetJiraService().CheckIssue(issue)
+}
+
 // generateOTP generates a 6-digit TOTP code using the given base32 secret
 func generateOTP(secret string) (string, error) {
 	secret = strings.ToUpper(strings.TrimSpace(secret))

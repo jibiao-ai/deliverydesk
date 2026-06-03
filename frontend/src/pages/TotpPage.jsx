@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Plus, CheckCircle, XCircle, Clock, RefreshCw, FileText, Eye, EyeOff } from 'lucide-react';
+import { Shield, Plus, CheckCircle, XCircle, Clock, RefreshCw, FileText, Eye, EyeOff, Search } from 'lucide-react';
 import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
 import {
@@ -8,6 +8,7 @@ import {
   getPendingTotpReviews,
   getAllTotpApplications,
   auditTotpApplications,
+  checkTotpIssue,
 } from '../services/api';
 
 const STATUS_MAP = {
@@ -306,6 +307,37 @@ function ApplyModal({ onClose, onSuccess }) {
     reason: '',
   });
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  const handleCheckIssue = async () => {
+    if (!form.issue.trim()) {
+      toast.error('请先输入工单号');
+      return;
+    }
+    setChecking(true);
+    try {
+      const res = await checkTotpIssue(form.issue.trim());
+      if (res?.code === 0 && res.data) {
+        const updates = {};
+        if (res.data.customer) updates.customer = res.data.customer;
+        if (res.data.project) updates.project = res.data.project;
+        if (res.data.version && (res.data.version === 'V5' || res.data.version === 'V6')) {
+          updates.version = res.data.version;
+        }
+        if (Object.keys(updates).length > 0) {
+          setForm({ ...form, ...updates });
+          toast.success('工单信息已自动填充');
+        } else {
+          toast.success('工单存在，但未找到客户/项目信息，请手动填写');
+        }
+      } else {
+        toast.error(res?.message || '工单检查失败');
+      }
+    } catch (e) {
+      toast.error('检查失败，请确认Jira配置正确');
+    }
+    setChecking(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -344,13 +376,25 @@ function ApplyModal({ onClose, onSuccess }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">关联工单</label>
-            <input
-              type="text"
-              value={form.issue}
-              onChange={(e) => setForm({ ...form, issue: e.target.value })}
-              placeholder="例如: ECSDESK-1234"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={form.issue}
+                onChange={(e) => setForm({ ...form, issue: e.target.value })}
+                placeholder="例如: ECSDESK-1234"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+              <button
+                type="button"
+                onClick={handleCheckIssue}
+                disabled={checking || !form.issue.trim()}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              >
+                <Search className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
+                {checking ? '检查中...' : '检查'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">输入工单号后点击“检查”可自动填充客户名称和项目名称</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Eye, EyeOff, RefreshCw, Server, Key, MessageSquare } from 'lucide-react';
+import { Settings, Save, Eye, EyeOff, RefreshCw, Server, Key, MessageSquare, Database } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getSettings, updateSettings } from '../services/api';
+import { getSettings, updateSettings, syncJiraIssues } from '../services/api';
 
 const CATEGORY_META = {
   jira: { label: 'Jira 配置', icon: Server, description: '配置 Jira 集成参数，用于工单验证和自动关联' },
@@ -12,6 +12,7 @@ const CATEGORY_META = {
 export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [settings, setSettings] = useState({});
   const [modified, setModified] = useState({});
   const [visiblePasswords, setVisiblePasswords] = useState({});
@@ -61,6 +62,21 @@ export default function SettingsPage() {
     setVisiblePasswords((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleSyncJira = async () => {
+    setSyncing(true);
+    try {
+      const res = await syncJiraIssues();
+      if (res?.code === 0) {
+        toast.success(`Jira同步完成: ${res.data?.count || 0} 条工单`);
+      } else {
+        toast.error(res?.message || '同步失败');
+      }
+    } catch (e) {
+      toast.error('同步请求失败');
+    }
+    setSyncing(false);
+  };
+
   const categories = Object.keys(settings);
   const hasChanges = Object.keys(modified).length > 0;
 
@@ -78,6 +94,15 @@ export default function SettingsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncJira}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-100 disabled:opacity-50 transition-colors"
+            title="手动同步Jira工单数据到本地缓存"
+          >
+            <Database className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
+            {syncing ? '同步中...' : '同步Jira'}
+          </button>
           <button
             onClick={fetchSettings}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"

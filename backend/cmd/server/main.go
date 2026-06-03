@@ -65,6 +65,10 @@ func main() {
 	h := handler.NewHandler(chatService)
 	totpH := handler.NewTotpHandler()
 
+	// Start periodic Jira sync (every 2 hours)
+	jiraSvc := service.GetJiraService()
+	jiraSvc.StartPeriodicSync(2 * time.Hour)
+
 	// Setup Gin router
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -141,6 +145,8 @@ func main() {
 			// TOTP Applications (all authenticated users)
 			auth.POST("/totp/apply", totpH.CreateTotpApplication)
 			auth.GET("/totp/my-applications", totpH.ListMyApplications)
+			auth.GET("/totp/check-issue", totpH.CheckIssue)
+			auth.GET("/totp/jira-cache", totpH.ListJiraCache)
 
 			// Admin routes
 			admin := auth.Group("")
@@ -167,6 +173,7 @@ func main() {
 				admin.GET("/totp/pending-reviews", totpH.ListPendingReviews)
 				admin.GET("/totp/all", totpH.ListAllApplications)
 				admin.POST("/totp/audit", totpH.AuditApplication)
+				admin.POST("/totp/sync-jira", totpH.SyncJiraIssues)
 
 				// System Settings (admin only)
 				admin.GET("/settings", totpH.GetSettings)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
+	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/internal/service"
 )
 
@@ -18,10 +19,26 @@ func NewTotpHandler() *TotpHandler {
 	return &TotpHandler{svc: service.NewTotpService()}
 }
 
+// getCurrentUser retrieves user from context (using user_id set by AuthMiddleware)
+func (h *TotpHandler) getCurrentUser(c *gin.Context) *model.User {
+	userID := c.GetUint("user_id")
+	if userID == 0 {
+		return nil
+	}
+	var user model.User
+	if err := repository.DB.First(&user, userID).Error; err != nil {
+		return nil
+	}
+	return &user
+}
+
 // CreateTotpApplication handles POST /api/totp/apply
 func (h *TotpHandler) CreateTotpApplication(c *gin.Context) {
-	user, _ := c.Get("user")
-	currentUser := user.(*model.User)
+	currentUser := h.getCurrentUser(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "用户信息获取失败"})
+		return
+	}
 
 	var req struct {
 		Issue    string `json:"issue"`
@@ -66,8 +83,11 @@ func (h *TotpHandler) CreateTotpApplication(c *gin.Context) {
 
 // ListMyApplications handles GET /api/totp/my-applications
 func (h *TotpHandler) ListMyApplications(c *gin.Context) {
-	user, _ := c.Get("user")
-	currentUser := user.(*model.User)
+	currentUser := h.getCurrentUser(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "用户信息获取失败"})
+		return
+	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
@@ -139,8 +159,11 @@ func (h *TotpHandler) ListAllApplications(c *gin.Context) {
 
 // AuditApplication handles POST /api/totp/audit
 func (h *TotpHandler) AuditApplication(c *gin.Context) {
-	user, _ := c.Get("user")
-	currentUser := user.(*model.User)
+	currentUser := h.getCurrentUser(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "用户信息获取失败"})
+		return
+	}
 
 	var req struct {
 		IDs      []uint `json:"ids" binding:"required"`
@@ -192,4 +215,58 @@ func (h *TotpHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "设置已更新"})
+}
+
+// CheckIssue handles GET /api/totp/check-issue?issue=ECSDESK-xxx
+// Queries local cache first, then Jira API to auto-fill customer and project name
+func (h *TotpHandler) CheckIssue(c *gin.Context) {
+	issue := c.Query("issue")
+	if issue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "issue参数不能为空"})
+		return
+	}
+
+	result, err := h.svc.CheckIssueFromJira(issue)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": -1, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
+}
+
+// SyncJiraIssues handles POST /api/totp/sync-jira (admin only)
+// Triggers a manual Jira data sync
+func (h *TotpHandler) SyncJiraIssues(c *gin.Context) {
+	jiraSvc := service.GetJiraService()
+	count, err := jiraSvc.SyncJiraIssues()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": -1, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "同步完成", "data": gin.H{"count": count}})
+}
+
+// ListJiraCache handles GET /api/totp/jira-cache (for auto-complete)
+func (h *TotpHandler) ListJiraCache(c *gin.Context) {
+	keyword := c.DefaultQuery("keyword", "")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	jiraSvc := service.GetJiraService()
+	items, total, err := jiraSvc.GetCachedIssues(keyword, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{
+		"items": items,
+		"total": total,
+		"page":  page,
+	}})
 }
