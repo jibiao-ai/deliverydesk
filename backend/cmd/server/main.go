@@ -63,6 +63,7 @@ func main() {
 	chatService.WarmUpSkillStore()
 
 	h := handler.NewHandler(chatService)
+	totpH := handler.NewTotpHandler()
 
 	// Setup Gin router
 	r := gin.New()
@@ -137,6 +138,10 @@ func main() {
 			// Website Links
 			auth.GET("/website-categories", h.GetWebsiteCategories)
 
+			// TOTP Applications (all authenticated users)
+			auth.POST("/totp/apply", totpH.CreateTotpApplication)
+			auth.GET("/totp/my-applications", totpH.ListMyApplications)
+
 			// Admin routes
 			admin := auth.Group("")
 			admin.Use(middleware.AdminMiddleware())
@@ -157,6 +162,15 @@ func main() {
 				admin.GET("/ldap-configs/:id/diagnose", h.DiagnoseLDAP)
 
 				admin.GET("/operation-logs", h.ListOperationLogs)
+
+				// TOTP Audit (admin only)
+				admin.GET("/totp/pending-reviews", totpH.ListPendingReviews)
+				admin.GET("/totp/all", totpH.ListAllApplications)
+				admin.POST("/totp/audit", totpH.AuditApplication)
+
+				// System Settings (admin only)
+				admin.GET("/settings", totpH.GetSettings)
+				admin.PUT("/settings", totpH.UpdateSettings)
 
 				// Diagnostic endpoint for skill/RAG debugging
 				admin.GET("/diagnose/skills", h.DiagnoseSkills)

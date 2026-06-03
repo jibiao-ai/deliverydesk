@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server,
+  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +13,7 @@ const userMenuGroups = [
       { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
       { id: 'websites', label: '公司系统', icon: Globe },
       { id: 'chat', label: '即时对话', icon: MessageSquare },
+      { id: 'totp', label: '双因子管理', icon: Key },
     ],
   },
 ];
@@ -37,6 +38,7 @@ const adminMenuGroups = [
     items: [
       { id: 'ldap', label: 'LDAP管理', icon: Server },
       { id: 'users', label: '用户管理', icon: Users },
+      { id: 'settings', label: '系统设置', icon: Settings },
       { id: 'operation-logs', label: '操作日志', icon: FileText },
     ],
   },

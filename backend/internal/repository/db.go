@@ -121,11 +121,14 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"WebsiteLink":     &model.WebsiteLink{},
 		"AIProvider":      &model.AIProvider{},
 		"OperationLog":    &model.OperationLog{},
+		"TotpApplication": &model.TotpApplication{},
+		"SystemSetting":   &model.SystemSetting{},
 	}
 	migrationOrder := []string{
 		"User", "LDAPConfig", "Agent", "Skill", "SkillDocument", "AgentSkill",
 		"Conversation", "Message", "TaskLog",
 		"WebsiteCategory", "WebsiteLink", "AIProvider", "OperationLog",
+		"TotpApplication", "SystemSetting",
 	}
 	for _, name := range migrationOrder {
 		m := migrationModels[name]
@@ -276,6 +279,8 @@ func seedDefaultData(db *gorm.DB) {
 	// Seed knowledge skills (张雪峰考研, 乔布斯)
 	seedKnowledgeSkills(db)
 
+	// Seed default system settings
+	seedSystemSettings(db)
 
 	// Seed default agents
 	var agentCount int64
@@ -897,5 +902,30 @@ func opsExpertSystemPrompt() string {
 - 生产环境操作遵循审批流程
 - 提供具体命令和配置示例
 - 记录操作日志用于审计`
+}
+
+// seedSystemSettings seeds default system settings (idempotent)
+func seedSystemSettings(db *gorm.DB) {
+	defaults := []model.SystemSetting{
+		{Category: "jira", Key: "jira_server", Value: "", Label: "Jira 服务器地址", ValueType: "text", SortOrder: 1},
+		{Category: "jira", Key: "jira_username", Value: "", Label: "Jira 用户名", ValueType: "text", SortOrder: 2},
+		{Category: "jira", Key: "jira_password", Value: "", Label: "Jira API Token", ValueType: "password", SortOrder: 3},
+		{Category: "totp", Key: "totp_server", Value: "http://lic.easystack.cn", Label: "TOTP 服务器地址", ValueType: "text", SortOrder: 1},
+		{Category: "totp", Key: "totp_auth_user", Value: "totp", Label: "TOTP 认证用户", ValueType: "text", SortOrder: 2},
+		{Category: "totp", Key: "totp_auth_pass", Value: "Totp@2013", Label: "TOTP 认证密码", ValueType: "password", SortOrder: 3},
+		{Category: "totp", Key: "roller_secret", Value: "6GAF6NXNYCT75FV3APTJU4R5XZJ7X6I4", Label: "Roller OTP Secret", ValueType: "password", SortOrder: 4},
+		{Category: "totp", Key: "auto_approve", Value: "false", Label: "自动审批(跳过审核)", ValueType: "boolean", SortOrder: 5},
+		{Category: "wechat", Key: "corp_id", Value: "", Label: "企业微信 Corp ID", ValueType: "text", SortOrder: 1},
+		{Category: "wechat", Key: "secret", Value: "", Label: "企业微信 Secret", ValueType: "password", SortOrder: 2},
+		{Category: "wechat", Key: "app_id", Value: "", Label: "应用 ID", ValueType: "text", SortOrder: 3},
+	}
+
+	for _, s := range defaults {
+		var existing model.SystemSetting
+		if err := db.Where("category = ? AND `key` = ?", s.Category, s.Key).First(&existing).Error; err != nil {
+			db.Create(&s)
+		}
+	}
+	logger.Log.Info("Default system settings seeded")
 }
 
