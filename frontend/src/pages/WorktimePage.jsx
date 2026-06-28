@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Clock, Users, TrendingUp, Calendar, Plus, Trash2, UserPlus, Search,
-  ChevronDown, ChevronRight, BarChart3, Briefcase, RefreshCw, Download,
-  Activity, Timer, Target, AlertCircle, FileSpreadsheet
+  ChevronDown, ChevronRight, ChevronLeft, BarChart3, Briefcase, RefreshCw, Download,
+  Activity, Timer, Target, AlertCircle, FileSpreadsheet, CalendarRange
 } from 'lucide-react';
 import { getWorktimeStats, getWorktimeUsers, addWorktimeUser, removeWorktimeUser } from '../services/api';
 import toast from 'react-hot-toast';
@@ -46,24 +46,127 @@ function GlassCard({ children, className = '', hover = true }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Period Selector Component
+   Date Picker Calendar (frosted glass + rounded)
 ═══════════════════════════════════════════════════════════════════ */
-function PeriodSelector({ period, onChange }) {
+function DatePickerCalendar({ value, onChange, onClose, label }) {
+  const [viewDate, setViewDate] = useState(() => value ? new Date(value) : new Date());
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+
+  const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
+
+  const handleSelect = (day) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(dateStr);
+  };
+
+  const selectedDay = value && value.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)
+    ? parseInt(value.split('-')[2], 10) : null;
+
+  return (
+    <div className="rounded-2xl border border-white/50 shadow-xl bg-white/80 backdrop-blur-xl p-4 w-72">
+      <p className="text-xs text-gray-400 mb-2 font-medium">{label}</p>
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+          <ChevronLeft className="w-4 h-4 text-gray-500" />
+        </button>
+        <span className="text-sm font-semibold text-gray-700">{year}年{month + 1}月</span>
+        <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+          <ChevronRight className="w-4 h-4 text-gray-500" />
+        </button>
+      </div>
+      {/* Week headers */}
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {weekDays.map((d) => (
+          <div key={d} className="text-center text-xs text-gray-400 font-medium py-1">{d}</div>
+        ))}
+      </div>
+      {/* Days grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+          <div key={`empty-${i}`} />
+        ))}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          const isSelected = day === selectedDay;
+          const isToday = (() => {
+            const t = new Date();
+            return t.getFullYear() === year && t.getMonth() === month && t.getDate() === day;
+          })();
+          return (
+            <button
+              key={day}
+              onClick={() => handleSelect(day)}
+              className={`w-8 h-8 rounded-lg text-sm font-medium transition-all duration-150 ${
+                isSelected
+                  ? 'bg-primary-600 text-white shadow-md shadow-primary-200'
+                  : isToday
+                    ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                    : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      {value && (
+        <p className="mt-2 text-xs text-center text-primary-600 font-medium">已选: {value}</p>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Period Selector Component (with custom date range picker)
+═══════════════════════════════════════════════════════════════════ */
+function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) {
+  const [showCustom, setShowCustom] = useState(false);
+  const [tempStart, setTempStart] = useState(customRange?.start_date || '');
+  const [tempEnd, setTempEnd] = useState(customRange?.end_date || '');
+  const popoverRef = useRef(null);
+
   const periods = [
     { value: 'month', label: '本月', icon: Calendar },
     { value: 'quarter', label: '本季度', icon: BarChart3 },
     { value: 'year', label: '本年度', icon: TrendingUp },
   ];
 
+  // Close popover on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setShowCustom(false);
+      }
+    };
+    if (showCustom) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showCustom]);
+
+  const handleApplyCustom = () => {
+    if (tempStart && tempEnd) {
+      onCustomRangeChange(tempStart, tempEnd);
+      setShowCustom(false);
+    } else {
+      toast.error('请选择起止日期');
+    }
+  };
+
   return (
-    <div className="flex gap-2 p-1 bg-white/50 backdrop-blur-sm rounded-xl border border-gray-200/50">
+    <div className="flex gap-2 p-1 bg-white/50 backdrop-blur-sm rounded-xl border border-gray-200/50 relative">
       {periods.map((p) => {
         const Icon = p.icon;
         const isActive = period === p.value;
         return (
           <button
             key={p.value}
-            onClick={() => onChange(p.value)}
+            onClick={() => { onChange(p.value); setShowCustom(false); }}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
               isActive
                 ? 'bg-primary-600 text-white shadow-md shadow-primary-200'
@@ -75,6 +178,63 @@ function PeriodSelector({ period, onChange }) {
           </button>
         );
       })}
+      {/* Custom period button */}
+      <button
+        onClick={() => setShowCustom(!showCustom)}
+        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+          period === 'custom'
+            ? 'bg-primary-600 text-white shadow-md shadow-primary-200'
+            : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-800'
+        }`}
+      >
+        <CalendarRange className="w-4 h-4" />
+        自定义
+      </button>
+
+      {/* Custom date range popover */}
+      {showCustom && (
+        <div
+          ref={popoverRef}
+          className="absolute top-full right-0 mt-2 z-50 rounded-2xl border border-white/50 shadow-2xl bg-white/85 backdrop-blur-2xl p-5"
+        >
+          <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <CalendarRange className="w-4 h-4 text-primary-500" />
+            自定义统计周期
+          </p>
+          <div className="flex gap-4">
+            <DatePickerCalendar
+              value={tempStart}
+              onChange={setTempStart}
+              label="开始日期"
+            />
+            <DatePickerCalendar
+              value={tempEnd}
+              onChange={setTempEnd}
+              label="结束日期"
+            />
+          </div>
+          <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+            <div className="text-xs text-gray-400">
+              {tempStart && tempEnd ? `${tempStart} 至 ${tempEnd}` : '请选择日期范围'}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowCustom(false)}
+                className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleApplyCustom}
+                disabled={!tempStart || !tempEnd}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -310,6 +470,7 @@ function UserDetailCard({ user }) {
 ═══════════════════════════════════════════════════════════════════ */
 export default function WorktimePage() {
   const [period, setPeriod] = useState('month');
+  const [customRange, setCustomRange] = useState({ start_date: '', end_date: '' });
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -328,7 +489,12 @@ export default function WorktimePage() {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getWorktimeStats({ period });
+      const params = { period };
+      if (period === 'custom' && customRange.start_date && customRange.end_date) {
+        params.start_date = customRange.start_date;
+        params.end_date = customRange.end_date;
+      }
+      const res = await getWorktimeStats(params);
       if (res?.code === 0) {
         setStats(res.data);
       } else {
@@ -339,10 +505,16 @@ export default function WorktimePage() {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, customRange]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Handle custom range selection
+  const handleCustomRange = (start, end) => {
+    setCustomRange({ start_date: start, end_date: end });
+    setPeriod('custom');
+  };
 
   // Add user
   const handleAddUser = async (name) => {
@@ -372,6 +544,10 @@ export default function WorktimePage() {
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams({ period, type });
+      if (period === 'custom' && customRange.start_date && customRange.end_date) {
+        params.set('start_date', customRange.start_date);
+        params.set('end_date', customRange.end_date);
+      }
       const response = await fetch(`/api/worktime/export?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -421,7 +597,12 @@ export default function WorktimePage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <PeriodSelector period={period} onChange={setPeriod} />
+            <PeriodSelector
+              period={period}
+              onChange={setPeriod}
+              customRange={customRange}
+              onCustomRangeChange={handleCustomRange}
+            />
             <button
               onClick={fetchStats}
               disabled={loading}
