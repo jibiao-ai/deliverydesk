@@ -254,6 +254,16 @@ type WorktimeUser struct {
 	AddedBy   uint           `json:"added_by"`                                  // who added this user
 }
 
+// WorktimeCache stores cached worktime query results for performance optimization
+type WorktimeCache struct {
+	ID        uint      `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	StartDate string    `gorm:"size:16;uniqueIndex:idx_worktime_cache_range;not null" json:"start_date"`
+	EndDate   string    `gorm:"size:16;uniqueIndex:idx_worktime_cache_range;not null" json:"end_date"`
+	Data      string    `gorm:"type:longtext" json:"data"` // JSON-serialized WorktimeSummary
+}
+
 // JiraIssueCache stores synced Jira issue data (ECSDESK + CSE) for fast local lookup
 type JiraIssueCache struct {
 	ID          uint           `gorm:"primarykey" json:"id"`

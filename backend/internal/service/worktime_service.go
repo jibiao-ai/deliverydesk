@@ -2,6 +2,7 @@ package service
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -160,8 +161,16 @@ func GetDateRange(periodType string, refDate time.Time) (string, string) {
 	}
 }
 
-// GetWorktimeStats fetches and aggregates worktime data for tracked users
+// GetWorktimeStats fetches and aggregates worktime data for tracked users.
+// It first checks local cache; if not available, queries Redmine and caches the result.
 func (s *WorktimeService) GetWorktimeStats(periodType string, startDate, endDate string) (*WorktimeSummary, error) {
+	// Try to load from cache first
+	cached, err := s.loadFromCache(startDate, endDate)
+	if err == nil && cached != nil {
+		logger.Log.Infof("Worktime: loaded from cache for %s to %s", startDate, endDate)
+		return cached, nil
+	}
+
 	// Get tracked users
 	users, err := s.ListUsers()
 	if err != nil {
@@ -192,7 +201,147 @@ func (s *WorktimeService) GetWorktimeStats(periodType string, startDate, endDate
 
 	// Aggregate data
 	summary := s.aggregateEntries(entries, userNames, periodType, startDate, endDate)
+
+	// Save to cache asynchronously
+	go s.saveToCache(startDate, endDate, summary)
+
 	return summary, nil
+}
+
+// GetWorktimeStatsNoCache fetches from Redmine directly (bypasses cache), used for auto-fetch
+func (s *WorktimeService) GetWorktimeStatsNoCache(periodType string, startDate, endDate string) (*WorktimeSummary, error) {
+	users, err := s.ListUsers()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tracked users: %w", err)
+	}
+
+	if len(users) == 0 {
+		return &WorktimeSummary{
+			Period:    periodType,
+			StartDate: startDate,
+			EndDate:   endDate,
+			Users:     []WorktimeUserStat{},
+			Total:     WorktimeTotals{},
+		}, nil
+	}
+
+	userNames := make([]string, len(users))
+	for i, u := range users {
+		userNames[i] = u.Name
+	}
+
+	entries, err := s.queryRedmine(startDate, endDate, userNames)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query redmine: %w", err)
+	}
+
+	summary := s.aggregateEntries(entries, userNames, periodType, startDate, endDate)
+
+	// Save to cache
+	s.saveToCache(startDate, endDate, summary)
+
+	return summary, nil
+}
+
+// InvalidateCache removes cached data for a given date range
+func (s *WorktimeService) InvalidateCache(startDate, endDate string) {
+	repository.DB.Where("start_date = ? AND end_date = ?", startDate, endDate).
+		Delete(&model.WorktimeCache{})
+}
+
+// loadFromCache loads cached worktime summary from DB
+func (s *WorktimeService) loadFromCache(startDate, endDate string) (*WorktimeSummary, error) {
+	var cache model.WorktimeCache
+	err := repository.DB.Where("start_date = ? AND end_date = ?", startDate, endDate).First(&cache).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if cache is older than 24 hours — if so, consider stale
+	if time.Since(cache.UpdatedAt) > 24*time.Hour {
+		return nil, fmt.Errorf("cache stale")
+	}
+
+	var summary WorktimeSummary
+	if err := json.Unmarshal([]byte(cache.Data), &summary); err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
+// saveToCache persists worktime summary to DB cache
+func (s *WorktimeService) saveToCache(startDate, endDate string, summary *WorktimeSummary) {
+	data, err := json.Marshal(summary)
+	if err != nil {
+		logger.Log.Warnf("Failed to marshal worktime summary for cache: %v", err)
+		return
+	}
+
+	var cache model.WorktimeCache
+	result := repository.DB.Where("start_date = ? AND end_date = ?", startDate, endDate).First(&cache)
+	if result.Error != nil {
+		// Create new cache entry
+		cache = model.WorktimeCache{
+			StartDate: startDate,
+			EndDate:   endDate,
+			Data:      string(data),
+		}
+		if err := repository.DB.Create(&cache).Error; err != nil {
+			logger.Log.Warnf("Failed to create worktime cache: %v", err)
+		}
+	} else {
+		// Update existing
+		repository.DB.Model(&cache).Update("data", string(data))
+	}
+	logger.Log.Infof("Worktime cache saved for %s to %s", startDate, endDate)
+}
+
+// StartMonthlyAutoFetch starts a goroutine that auto-fetches last month's worktime on the 1st of each month
+func (s *WorktimeService) StartMonthlyAutoFetch() {
+	go func() {
+		for {
+			now := time.Now()
+			// Calculate next 1st of month at 02:00 AM
+			var nextRun time.Time
+			if now.Day() == 1 && now.Hour() < 2 {
+				// Still today
+				nextRun = time.Date(now.Year(), now.Month(), 1, 2, 0, 0, 0, now.Location())
+			} else {
+				// Next month 1st
+				nextMonth := time.Date(now.Year(), now.Month()+1, 1, 2, 0, 0, 0, now.Location())
+				nextRun = nextMonth
+			}
+
+			sleepDuration := time.Until(nextRun)
+			logger.Log.Infof("Worktime auto-fetch: next run at %s (sleeping %v)", nextRun.Format("2006-01-02 15:04:05"), sleepDuration)
+			time.Sleep(sleepDuration)
+
+			// Fetch last month's worktime
+			s.fetchAndCacheLastMonth()
+		}
+	}()
+}
+
+// fetchAndCacheLastMonth fetches last month's complete worktime and caches it
+func (s *WorktimeService) fetchAndCacheLastMonth() {
+	now := time.Now()
+	lastMonth := now.AddDate(0, -1, 0)
+	startDate := time.Date(lastMonth.Year(), lastMonth.Month(), 1, 0, 0, 0, 0, lastMonth.Location()).Format("2006-01-02")
+	endDate := time.Date(now.Year(), now.Month(), 0, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+
+	logger.Log.Infof("Worktime auto-fetch: fetching data for %s to %s", startDate, endDate)
+
+	// Invalidate old cache for this range
+	s.InvalidateCache(startDate, endDate)
+
+	summary, err := s.GetWorktimeStatsNoCache("month", startDate, endDate)
+	if err != nil {
+		logger.Log.Errorf("Worktime auto-fetch failed: %v", err)
+		return
+	}
+
+	logger.Log.Infof("Worktime auto-fetch complete: %d users, %.1f total hours for %s to %s",
+		len(summary.Users), summary.Total.TotalHours, startDate, endDate)
 }
 
 // queryRedmine connects to Redmine MySQL and executes the worktime query
@@ -609,8 +758,28 @@ func (s *WorktimeService) ListUsers() ([]model.WorktimeUser, error) {
 	return users, nil
 }
 
-// AddUser adds a new tracked user
+// AddUser adds a new tracked user. If the user was previously soft-deleted, it restores them.
 func (s *WorktimeService) AddUser(name string, addedBy uint) (*model.WorktimeUser, error) {
+	// First check if a soft-deleted user with this name exists
+	var existing model.WorktimeUser
+	result := repository.DB.Unscoped().Where("name = ?", name).First(&existing)
+	if result.Error == nil {
+		// Record exists
+		if existing.DeletedAt.Valid {
+			// Soft-deleted — restore it
+			existing.DeletedAt.Valid = false
+			existing.DeletedAt.Time = time.Time{}
+			existing.AddedBy = addedBy
+			if err := repository.DB.Unscoped().Save(&existing).Error; err != nil {
+				return nil, err
+			}
+			return &existing, nil
+		}
+		// Already active — just return it (no error)
+		return &existing, nil
+	}
+
+	// Not found at all — create new
 	user := &model.WorktimeUser{
 		Name:    name,
 		AddedBy: addedBy,
@@ -633,14 +802,12 @@ func (s *WorktimeService) BatchAddUsers(names []string, addedBy uint) ([]model.W
 		if name == "" {
 			continue
 		}
-		user := model.WorktimeUser{Name: name, AddedBy: addedBy}
-		// Use FirstOrCreate to avoid duplicates
-		result := repository.DB.Where("name = ?", name).FirstOrCreate(&user)
-		if result.Error != nil {
-			logger.Log.Warnf("Failed to add worktime user %s: %v", name, result.Error)
+		user, err := s.AddUser(name, addedBy)
+		if err != nil {
+			logger.Log.Warnf("Failed to add worktime user %s: %v", name, err)
 			continue
 		}
-		created = append(created, user)
+		created = append(created, *user)
 	}
 	return created, nil
 }
