@@ -10,6 +10,7 @@ import LDAPPage from '../pages/LDAPPage';
 import UsersPage from '../pages/UsersPage';
 import OperationLogPage from '../pages/OperationLogPage';
 import TotpPage from '../pages/TotpPage';
+import WorktimePage from '../pages/WorktimePage';
 import SettingsPage from '../pages/SettingsPage';
 import useStore from '../store/useStore';
 import { Bell } from 'lucide-react';
@@ -25,6 +26,7 @@ const pageComponents = {
   users: UsersPage,
   'operation-logs': OperationLogPage,
   totp: TotpPage,
+  worktime: WorktimePage,
   settings: SettingsPage,
 };
 
@@ -39,6 +41,7 @@ const PAGE_META = {
   users:            { title: '用户管理',   subtitle: '管理平台用户账号和权限' },
   'operation-logs': { title: '操作日志',   subtitle: '记录平台关键操作' },
   totp:             { title: '双因子管理', subtitle: '申请和审核双因子认证密码' },
+  worktime:         { title: '工时管理',   subtitle: 'Redmine 工时数据统计与分析' },
   settings:         { title: '系统设置',   subtitle: '管理集成配置和服务参数' },
 };
 
@@ -48,7 +51,7 @@ const THEMES = [
 ];
 
 // Pages that require admin role
-const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings']);
+const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime']);
 
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);

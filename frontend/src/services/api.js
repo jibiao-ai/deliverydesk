@@ -206,9 +206,17 @@ export const auditTotpApplications = (data) => api.post('/totp/audit', data);
 export const checkTotpIssue = (issue) => api.get('/totp/check-issue', { params: { issue } });
 export const syncJiraIssues = () => api.post('/totp/sync-jira');
 export const getJiraCache = (params) => api.get('/totp/jira-cache', { params });
+export const getTotpAdmins = () => api.get('/totp/admins');
 
 // System Settings
 export const getSettings = (params) => api.get('/settings', { params });
 export const updateSettings = (data) => api.put('/settings', data);
+
+// Worktime Management
+export const getWorktimeStats = (params) => api.get('/worktime/stats', { params });
+export const getWorktimeUsers = () => api.get('/worktime/users');
+export const addWorktimeUser = (name) => api.post('/worktime/users', { name });
+export const removeWorktimeUser = (id) => api.delete(`/worktime/users/${id}`);
+export const batchAddWorktimeUsers = (names) => api.post('/worktime/users/batch', { names });
 
 export default api;

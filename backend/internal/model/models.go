@@ -206,25 +206,28 @@ type OperationLog struct {
 
 // TotpApplication represents a dual-factor authentication request
 type TotpApplication struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-	UserID      uint           `gorm:"index;not null" json:"user_id"`
-	Username    string         `gorm:"size:64;not null" json:"username"`     // applicant name
-	Issue       string         `gorm:"size:256" json:"issue"`                // related ticket/issue
-	Customer    string         `gorm:"size:128" json:"customer"`             // customer name
-	Project     string         `gorm:"size:256" json:"project"`              // project name
-	Version     string         `gorm:"size:64" json:"version"`               // platform version (V5/V6)
-	TotpType    string         `gorm:"size:32;default:roller" json:"totp_type"` // roller / totp
-	Reason      string         `gorm:"type:text" json:"reason"`              // application reason
-	AuditorID   uint           `gorm:"index" json:"auditor_id"`              // reviewer user ID
-	AuditorName string         `gorm:"size:64" json:"auditor_name"`          // reviewer name
-	AuditStatus string         `gorm:"size:32;default:pending" json:"audit_status"` // pending, approved, rejected
-	AuditRemark string         `gorm:"type:text" json:"audit_remark"`        // reviewer's remark
-	AuditTime   *time.Time     `json:"audit_time"`                           // when audit happened
-	TotpPass    string         `gorm:"size:256" json:"totp_pass"`            // generated password (visible only after approval)
-	Timestamp   string         `gorm:"size:128" json:"timestamp"`            // TOTP generation timestamp
+	ID                  uint           `gorm:"primarykey" json:"id"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+	DeletedAt           gorm.DeletedAt `gorm:"index" json:"-"`
+	UserID              uint           `gorm:"index;not null" json:"user_id"`
+	Username            string         `gorm:"size:64;not null" json:"username"`               // applicant name
+	Issue               string         `gorm:"size:256" json:"issue"`                          // related ticket/issue
+	IssueSummary        string         `gorm:"size:512" json:"issue_summary"`                  // issue title/summary for review context
+	Customer            string         `gorm:"size:128" json:"customer"`                       // customer name
+	Project             string         `gorm:"size:256" json:"project"`                        // project name
+	Version             string         `gorm:"size:64" json:"version"`                         // platform version (V5/V6)
+	TotpType            string         `gorm:"size:32;default:roller" json:"totp_type"`        // roller / totp
+	Reason              string         `gorm:"type:text" json:"reason"`                        // application reason
+	AssignedAuditorID   uint           `gorm:"index" json:"assigned_auditor_id"`               // designated reviewer user ID
+	AssignedAuditorName string         `gorm:"size:64" json:"assigned_auditor_name"`           // designated reviewer name
+	AuditorID           uint           `gorm:"index" json:"auditor_id"`                        // actual reviewer user ID
+	AuditorName         string         `gorm:"size:64" json:"auditor_name"`                    // actual reviewer name
+	AuditStatus         string         `gorm:"size:32;default:pending" json:"audit_status"`    // pending, approved, rejected
+	AuditRemark         string         `gorm:"type:text" json:"audit_remark"`                  // reviewer's remark
+	AuditTime           *time.Time     `json:"audit_time"`                                     // when audit happened
+	TotpPass            string         `gorm:"size:256" json:"totp_pass"`                      // generated password (visible only after approval)
+	Timestamp           string         `gorm:"size:128" json:"timestamp"`                      // TOTP generation timestamp
 }
 
 // SystemSetting stores key-value configuration entries managed by admin
@@ -239,6 +242,16 @@ type SystemSetting struct {
 	Label     string         `gorm:"size:256" json:"label"`       // display label
 	ValueType string         `gorm:"size:32;default:text" json:"value_type"` // text, password, number, boolean
 	SortOrder int            `gorm:"default:0" json:"sort_order"`
+}
+
+// WorktimeUser represents a tracked personnel for worktime statistics
+type WorktimeUser struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	Name      string         `gorm:"size:64;uniqueIndex;not null" json:"name"` // Redmine display name (e.g. 王利东)
+	AddedBy   uint           `json:"added_by"`                                  // who added this user
 }
 
 // JiraIssueCache stores synced Jira issue data (ECSDESK + CSE) for fast local lookup
