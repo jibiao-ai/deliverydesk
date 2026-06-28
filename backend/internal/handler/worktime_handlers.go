@@ -223,20 +223,20 @@ func (h *WorktimeHandler) exportDeliveryCSV(writer *csv.Writer, summary *service
 					row := []string{
 						proj.ProjectName,                                    // 项目名称
 						proj.ProjectNo,                                      // 项目编号
-						"",                                                  // 销售
-						"",                                                  // 售前
-						"",                                                  // 合同号
+						proj.Sales,                                          // 销售
+						proj.Presales,                                       // 售前
+						proj.ContractNo,                                     // 合同号
 						proj.ContractParty,                                  // 合同甲方
 						proj.EndUser,                                        // 最终用户
-						"",                                                  // 合同签署时间
-						"",                                                  // 项目负责人
-						"",                                                  // 区域
-						"",                                                  // 省份
-						"",                                                  // 交付类型
-						"",                                                  // 是否重点
-						"",                                                  // 客户类型
-						"",                                                  // 项目类型
-						"",                                                  // 项目状态
+						proj.ContractDate,                                   // 合同签署时间
+						proj.ProjectManager,                                 // 项目负责人
+						proj.Region,                                         // 区域
+						proj.Province,                                       // 省份
+						proj.DeliveryType,                                   // 交付类型
+						proj.IsKey,                                          // 是否重点
+						proj.CustomerType,                                   // 客户类型
+						proj.ProjectType,                                    // 项目类型
+						proj.ProjectStatus,                                  // 项目状态
 						user.Name,                                           // 执行人
 						month.Month,                                         // 月份
 						task.TaskName,                                       // 任务名称
