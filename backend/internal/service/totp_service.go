@@ -64,11 +64,16 @@ func (s *TotpService) ListMyApplications(userID uint, page, pageSize int) ([]mod
 }
 
 // ListPendingReviews returns pending applications for admin audit
-func (s *TotpService) ListPendingReviews(page, pageSize int) ([]model.TotpApplication, int64, error) {
+// If auditorID is specified, only returns applications assigned to that auditor (or unassigned ones)
+func (s *TotpService) ListPendingReviews(auditorID uint, page, pageSize int) ([]model.TotpApplication, int64, error) {
 	var total int64
 	var apps []model.TotpApplication
 
 	query := repository.DB.Where("audit_status = ?", "pending")
+	// Show applications assigned to this auditor OR unassigned (assigned_auditor_id = 0)
+	if auditorID > 0 {
+		query = query.Where("assigned_auditor_id = ? OR assigned_auditor_id = 0", auditorID)
+	}
 	query.Model(&model.TotpApplication{}).Count(&total)
 
 	offset := (page - 1) * pageSize
@@ -222,6 +227,23 @@ func (s *TotpService) generateTotpPass(customer, project, version, totpType stri
 // CheckIssueFromJira delegates to JiraService for issue lookup (cache-first, then API)
 func (s *TotpService) CheckIssueFromJira(issue string) (map[string]string, error) {
 	return GetJiraService().CheckIssue(issue)
+}
+
+// GetAdminUsers returns all users with role=admin (for auditor assignment dropdown)
+func (s *TotpService) GetAdminUsers() ([]map[string]interface{}, error) {
+	var users []model.User
+	if err := repository.DB.Where("role = ?", "admin").Find(&users).Error; err != nil {
+		return nil, err
+	}
+	result := make([]map[string]interface{}, 0, len(users))
+	for _, u := range users {
+		result = append(result, map[string]interface{}{
+			"id":           u.ID,
+			"username":     u.Username,
+			"display_name": u.DisplayName,
+		})
+	}
+	return result, nil
 }
 
 // generateOTP generates a 6-digit TOTP code using the given base32 secret

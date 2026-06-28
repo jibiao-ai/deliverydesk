@@ -64,6 +64,7 @@ func main() {
 
 	h := handler.NewHandler(chatService)
 	totpH := handler.NewTotpHandler()
+	worktimeH := handler.NewWorktimeHandler()
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -147,6 +148,14 @@ func main() {
 			auth.GET("/totp/my-applications", totpH.ListMyApplications)
 			auth.GET("/totp/check-issue", totpH.CheckIssue)
 			auth.GET("/totp/jira-cache", totpH.ListJiraCache)
+			auth.GET("/totp/admins", totpH.GetAdminList)
+
+			// Worktime Management (all authenticated users)
+			auth.GET("/worktime/stats", worktimeH.GetWorktimeStats)
+			auth.GET("/worktime/users", worktimeH.ListWorktimeUsers)
+			auth.POST("/worktime/users", worktimeH.AddWorktimeUser)
+			auth.DELETE("/worktime/users/:id", worktimeH.RemoveWorktimeUser)
+			auth.POST("/worktime/users/batch", worktimeH.BatchAddWorktimeUsers)
 
 			// Admin routes
 			admin := auth.Group("")

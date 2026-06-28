@@ -112,6 +112,7 @@ func (h *TotpHandler) ListMyApplications(c *gin.Context) {
 
 // ListPendingReviews handles GET /api/totp/pending-reviews (admin only)
 func (h *TotpHandler) ListPendingReviews(c *gin.Context) {
+	currentUser := h.getCurrentUser(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	if page < 1 {
@@ -121,7 +122,12 @@ func (h *TotpHandler) ListPendingReviews(c *gin.Context) {
 		pageSize = 10
 	}
 
-	apps, total, err := h.svc.ListPendingReviews(page, pageSize)
+	var auditorID uint
+	if currentUser != nil {
+		auditorID = currentUser.ID
+	}
+
+	apps, total, err := h.svc.ListPendingReviews(auditorID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": err.Error()})
 		return
@@ -269,4 +275,15 @@ func (h *TotpHandler) ListJiraCache(c *gin.Context) {
 		"total": total,
 		"page":  page,
 	}})
+}
+
+// GetAdminList handles GET /api/totp/admins
+// Returns list of admin users for the "assign auditor" dropdown
+func (h *TotpHandler) GetAdminList(c *gin.Context) {
+	admins, err := h.svc.GetAdminUsers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": admins})
 }
