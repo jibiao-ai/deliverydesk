@@ -40,17 +40,29 @@ const (
 
 // WorktimeEntry represents a single time entry from Redmine
 type WorktimeEntry struct {
-	ProjectName   string  `json:"project_name"`
-	ProjectNo     string  `json:"project_no"`
-	ContractParty string  `json:"contract_party"`
-	EndUser       string  `json:"end_user"`
-	Executor      string  `json:"executor"`
-	Hours         float64 `json:"hours"`
-	ManDayCost    float64 `json:"man_day_cost"`
-	SpentOn       string  `json:"spent_on"`
-	TaskName      string  `json:"task_name"`
-	TaskSubject   string  `json:"task_subject"`
-	WorkContent   string  `json:"work_content"`
+	ProjectName    string  `json:"project_name"`
+	ProjectNo      string  `json:"project_no"`
+	ContractParty  string  `json:"contract_party"`
+	EndUser        string  `json:"end_user"`
+	Sales          string  `json:"sales"`
+	Presales       string  `json:"presales"`
+	ContractNo     string  `json:"contract_no"`
+	ProjectManager string  `json:"project_manager"`
+	Region         string  `json:"region"`
+	Province       string  `json:"province"`
+	DeliveryType   string  `json:"delivery_type"`
+	IsKey          string  `json:"is_key"`
+	CustomerType   string  `json:"customer_type"`
+	ProjectType    string  `json:"project_type"`
+	ProjectStatus  string  `json:"project_status"`
+	ContractDate   string  `json:"contract_date"`
+	Executor       string  `json:"executor"`
+	Hours          float64 `json:"hours"`
+	ManDayCost     float64 `json:"man_day_cost"`
+	SpentOn        string  `json:"spent_on"`
+	TaskName       string  `json:"task_name"`
+	TaskSubject    string  `json:"task_subject"`
+	WorkContent    string  `json:"work_content"`
 }
 
 // WorktimeUserStat represents aggregated worktime per user
@@ -64,14 +76,26 @@ type WorktimeUserStat struct {
 
 // WorktimeProjectStat per-project stats within a user
 type WorktimeProjectStat struct {
-	ProjectName   string              `json:"project_name"`
-	ProjectNo     string              `json:"project_no"`
-	ContractParty string              `json:"contract_party"`
-	EndUser       string              `json:"end_user"`
-	TotalHours    float64             `json:"total_hours"`
-	TotalManDays  float64             `json:"total_man_days"`
-	TotalCostDays float64             `json:"total_cost_days"`
-	MonthDetails  []WorktimeMonthStat `json:"month_details"`
+	ProjectName    string              `json:"project_name"`
+	ProjectNo      string              `json:"project_no"`
+	ContractParty  string              `json:"contract_party"`
+	EndUser        string              `json:"end_user"`
+	Sales          string              `json:"sales"`
+	Presales       string              `json:"presales"`
+	ContractNo     string              `json:"contract_no"`
+	ProjectManager string              `json:"project_manager"`
+	Region         string              `json:"region"`
+	Province       string              `json:"province"`
+	DeliveryType   string              `json:"delivery_type"`
+	IsKey          string              `json:"is_key"`
+	CustomerType   string              `json:"customer_type"`
+	ProjectType    string              `json:"project_type"`
+	ProjectStatus  string              `json:"project_status"`
+	ContractDate   string              `json:"contract_date"`
+	TotalHours     float64             `json:"total_hours"`
+	TotalManDays   float64             `json:"total_man_days"`
+	TotalCostDays  float64             `json:"total_cost_days"`
+	MonthDetails   []WorktimeMonthStat `json:"month_details"`
 }
 
 // WorktimeMonthStat per-month stats within a project
@@ -196,6 +220,18 @@ SELECT
 	tt1.projectNo AS project_no,
 	tt1.contract_first_party AS contract_party,
 	tt1.end_user,
+	tt1.sale_user,
+	tt1.pre_sale_user,
+	tt1.contract_number,
+	tt1.contract_date,
+	CONCAT(us.lastname, us.firstname) AS project_manager,
+	tt1.are AS region,
+	tt1.pro AS province,
+	tt1.payType AS delivery_type,
+	CASE WHEN tt1.keyPoint = '0' THEN '否' WHEN tt1.keyPoint = '1' THEN '否' ELSE '' END AS is_key,
+	tt1.customType AS customer_type,
+	tt1.project_type,
+	tt1.current_state AS project_status,
 	CONCAT(us2.lastname, us2.firstname) AS executor,
 	te.hours,
 	CASE WHEN te.hours >= 8 THEN 1 WHEN te.hours <= 4 THEN 0.5 ELSE 0.5 END AS man_day_cost,
@@ -220,25 +256,56 @@ FROM
 			p.NAME,
 			t.projectNo,
 			pes.contract_first_party,
-			pes.end_user
+			pes.end_user,
+			pes.sale_user,
+			pes.pre_sale_user,
+			pes.contract_number,
+			pes.contract_date,
+			t.proowner,
+			t.are,
+			t.pro,
+			t.payType,
+			t.keyPoint,
+			t.customType,
+			pm.project_type,
+			pm.current_state
 		FROM projects p
 		LEFT JOIN pms pm ON p.id = pm.project_id
 		LEFT JOIN pm_stages ps ON (ps.pm_id = pm.id AND (stage_type = 'early' OR stage_type = 'start'))
 		LEFT JOIN (
-			SELECT pms1.stage_id, pms1.contract_first_party, pms1.end_user
+			SELECT pms1.stage_id, pms1.contract_first_party, pms1.end_user,
+				pms1.sale_user, pms1.pre_sale_user, pms1.contract_number,
+				pms1.contract_date
 			FROM pm_starts pms1
 			WHERE pms1.created_at >= '2020-01-03 09:35:03'
 			UNION ALL
-			SELECT pme1.stage_id, pme1.contract_first_party, pme1.end_user
+			SELECT pme1.stage_id, pme1.contract_first_party, pme1.end_user,
+				pme1.sale_user, pme1.pre_sale_user, pme1.contract_number,
+				pme1.contract_date
 			FROM pm_earlies pme1
 			WHERE pme1.created_at < '2020-01-03 09:35:03'
 		) pes ON pes.stage_id = ps.id
 		LEFT JOIN (
-			SELECT c8.customized_id, c8.VALUE AS projectNo
-			FROM custom_values c8
-			WHERE c8.custom_field_id = 11
+			SELECT
+				c1.customized_id,
+				c1.VALUE AS pro,
+				c2.VALUE AS are,
+				c4.VALUE AS payType,
+				c6.VALUE AS customType,
+				c7.VALUE AS keyPoint,
+				c8.VALUE AS projectNo,
+				c9.VALUE AS proowner
+			FROM custom_values c1
+			LEFT JOIN custom_values c2 ON (c1.customized_id = c2.customized_id AND c2.custom_field_id = 38)
+			LEFT JOIN custom_values c4 ON (c1.customized_id = c4.customized_id AND c4.custom_field_id = 53)
+			LEFT JOIN custom_values c6 ON (c1.customized_id = c6.customized_id AND c6.custom_field_id = 66)
+			LEFT JOIN custom_values c7 ON (c1.customized_id = c7.customized_id AND c7.custom_field_id = 55)
+			LEFT JOIN custom_values c8 ON (c1.customized_id = c8.customized_id AND c8.custom_field_id = 11)
+			LEFT JOIN custom_values c9 ON (c1.customized_id = c9.customized_id AND c9.custom_field_id = 17)
+			WHERE c1.custom_field_id = 58
 		) t ON p.id = t.customized_id
 	) tt1 ON te.project_id = tt1.id
+	LEFT JOIN users us ON tt1.proowner = us.id
 	LEFT JOIN users us2 ON tt.executor = us2.id
 WHERE
 	te.spent_on BETWEEN ? AND ?
@@ -259,12 +326,20 @@ ORDER BY te.spent_on`
 	var entries []WorktimeEntry
 	for rows.Next() {
 		var e WorktimeEntry
-		var projectName, projectNo, contractParty, endUser, executor, taskName, taskSubject, workContent sql.NullString
+		var projectName, projectNo, contractParty, endUser sql.NullString
+		var saleUser, preSaleUser, contractNumber, contractDate sql.NullString
+		var projectManager, region, province, deliveryType sql.NullString
+		var isKey, customerType, projectType, projectStatus sql.NullString
+		var executor, taskName, taskSubject, workContent sql.NullString
 		var hours, manDayCost sql.NullFloat64
 		var spentOn sql.NullTime
 
 		err := rows.Scan(
-			&projectName, &projectNo, &contractParty, &endUser, &executor,
+			&projectName, &projectNo, &contractParty, &endUser,
+			&saleUser, &preSaleUser, &contractNumber, &contractDate,
+			&projectManager, &region, &province, &deliveryType,
+			&isKey, &customerType, &projectType, &projectStatus,
+			&executor,
 			&hours, &manDayCost, &spentOn, &taskName, &taskSubject, &workContent,
 		)
 		if err != nil {
@@ -286,6 +361,18 @@ ORDER BY te.spent_on`
 		e.ProjectNo = nullStr(projectNo)
 		e.ContractParty = nullStr(contractParty)
 		e.EndUser = nullStr(endUser)
+		e.Sales = nullStr(saleUser)
+		e.Presales = nullStr(preSaleUser)
+		e.ContractNo = nullStr(contractNumber)
+		e.ContractDate = nullStr(contractDate)
+		e.ProjectManager = nullStr(projectManager)
+		e.Region = nullStr(region)
+		e.Province = nullStr(province)
+		e.DeliveryType = nullStr(deliveryType)
+		e.IsKey = nullStr(isKey)
+		e.CustomerType = nullStr(customerType)
+		e.ProjectType = nullStr(projectType)
+		e.ProjectStatus = nullStr(projectStatus)
 		e.Executor = executorName
 		e.Hours = nullFloat(hours)
 		e.ManDayCost = nullFloat(manDayCost)
@@ -458,14 +545,26 @@ func (s *WorktimeService) aggregateEntries(entries []WorktimeEntry, userNames []
 			}
 
 			projectStats = append(projectStats, WorktimeProjectStat{
-				ProjectName:   pd.info.ProjectName,
-				ProjectNo:     projNo,
-				ContractParty: pd.info.ContractParty,
-				EndUser:       pd.info.EndUser,
-				TotalHours:    projHours,
-				TotalManDays:  projManDays,
-				TotalCostDays: projCostDays,
-				MonthDetails:  monthStats,
+				ProjectName:    pd.info.ProjectName,
+				ProjectNo:      projNo,
+				ContractParty:  pd.info.ContractParty,
+				EndUser:        pd.info.EndUser,
+				Sales:          pd.info.Sales,
+				Presales:       pd.info.Presales,
+				ContractNo:     pd.info.ContractNo,
+				ProjectManager: pd.info.ProjectManager,
+				Region:         pd.info.Region,
+				Province:       pd.info.Province,
+				DeliveryType:   pd.info.DeliveryType,
+				IsKey:          pd.info.IsKey,
+				CustomerType:   pd.info.CustomerType,
+				ProjectType:    pd.info.ProjectType,
+				ProjectStatus:  pd.info.ProjectStatus,
+				ContractDate:   pd.info.ContractDate,
+				TotalHours:     projHours,
+				TotalManDays:   projManDays,
+				TotalCostDays:  projCostDays,
+				MonthDetails:   monthStats,
 			})
 
 			userTotalHours += projHours
