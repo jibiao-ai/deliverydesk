@@ -352,6 +352,23 @@ func seedDefaultData(db *gorm.DB) {
 
 	// Fix typo: 合适费控报销 -> 合思费控报销
 	db.Model(&model.WebsiteLink{}).Where("name = ?", "合适费控报销").Update("name", "合思费控报销")
+
+	// Seed default worktime users (idempotent - only if table is empty)
+	var worktimeUserCount int64
+	db.Model(&model.WorktimeUser{}).Count(&worktimeUserCount)
+	if worktimeUserCount == 0 {
+		defaultWorktimeUsers := []string{
+			"王利东", "郭建华", "潘牧阳", "樊继标", "任超伟", "林飞飞", "何哲",
+			"王志峰", "汪翔", "梁兆", "李智豪", "刘沪宁", "刘涛", "孟竹青",
+			"岳金虎", "何梓潇", "孙洪峰", "强有明", "王长庆", "王秋鹤", "樊亚州",
+			"陈雷", "贾书林", "王春春", "王明福", "孙奇", "尚玉龙", "张杰",
+			"陈京川", "赵起", "傅友权", "冯伯伟", "万德良", "曹瑞", "李阳宇",
+		}
+		for _, name := range defaultWorktimeUsers {
+			db.FirstOrCreate(&model.WorktimeUser{}, model.WorktimeUser{Name: name})
+		}
+		logger.Log.Infof("Seeded %d default worktime users", len(defaultWorktimeUsers))
+	}
 }
 
 func seedWebsiteLinks(db *gorm.DB) {

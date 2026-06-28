@@ -152,6 +152,7 @@ func main() {
 
 			// Worktime Management (all authenticated users)
 			auth.GET("/worktime/stats", worktimeH.GetWorktimeStats)
+			auth.GET("/worktime/export", worktimeH.ExportWorktime)
 			auth.GET("/worktime/users", worktimeH.ListWorktimeUsers)
 			auth.POST("/worktime/users", worktimeH.AddWorktimeUser)
 			auth.DELETE("/worktime/users/:id", worktimeH.RemoveWorktimeUser)

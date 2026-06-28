@@ -2,37 +2,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Clock, Users, TrendingUp, Calendar, Plus, Trash2, UserPlus, Search,
   ChevronDown, ChevronRight, BarChart3, Briefcase, RefreshCw, Download,
-  Activity, Timer, Target, AlertCircle
+  Activity, Timer, Target, AlertCircle, FileSpreadsheet
 } from 'lucide-react';
 import { getWorktimeStats, getWorktimeUsers, addWorktimeUser, removeWorktimeUser } from '../services/api';
 import toast from 'react-hot-toast';
 
 /* ═══════════════════════════════════════════════════════════════════
-   Elastic animation keyframes injected via style tag
+   Minimal animation styles (no elastic/bounce)
 ═══════════════════════════════════════════════════════════════════ */
 const styleTag = document.createElement('style');
 styleTag.textContent = `
-  @keyframes elasticIn {
-    0% { opacity: 0; transform: scale(0.3) translateY(20px); }
-    50% { opacity: 1; transform: scale(1.05) translateY(-5px); }
-    70% { transform: scale(0.95) translateY(2px); }
-    100% { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  @keyframes elasticPulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-  }
-  @keyframes fadeSlideUp {
-    0% { opacity: 0; transform: translateY(15px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
   @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
   }
-  .elastic-in { animation: elasticIn 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55) forwards; }
-  .elastic-pulse:hover { animation: elasticPulse 0.3s ease; }
-  .fade-slide-up { animation: fadeSlideUp 0.4s ease forwards; }
   .shimmer-loading {
     background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
     background-size: 200% 100%;
@@ -45,18 +28,17 @@ if (!document.getElementById('worktime-animations')) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Frosted Glass Card Component
+   Frosted Glass Card Component (no elastic animation)
 ═══════════════════════════════════════════════════════════════════ */
-function GlassCard({ children, className = '', delay = 0, hover = true }) {
+function GlassCard({ children, className = '', hover = true }) {
   return (
     <div
       className={`
         rounded-2xl border border-white/40 shadow-lg
         bg-white/70 backdrop-blur-xl
-        ${hover ? 'elastic-pulse hover:shadow-xl hover:border-primary-200/60 transition-all duration-300' : ''}
-        elastic-in ${className}
+        ${hover ? 'hover:shadow-xl hover:border-primary-200/60 transition-all duration-300' : ''}
+        ${className}
       `}
-      style={{ animationDelay: `${delay}ms` }}
     >
       {children}
     </div>
@@ -82,9 +64,9 @@ function PeriodSelector({ period, onChange }) {
           <button
             key={p.value}
             onClick={() => onChange(p.value)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
               isActive
-                ? 'bg-primary-600 text-white shadow-md shadow-primary-200 scale-105'
+                ? 'bg-primary-600 text-white shadow-md shadow-primary-200'
                 : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-800'
             }`}
           >
@@ -100,7 +82,7 @@ function PeriodSelector({ period, onChange }) {
 /* ═══════════════════════════════════════════════════════════════════
    Stats Card Component
 ═══════════════════════════════════════════════════════════════════ */
-function StatCard({ icon: Icon, label, value, unit, color, delay }) {
+function StatCard({ icon: Icon, label, value, unit, color }) {
   const colorClasses = {
     blue: 'from-blue-500 to-blue-600 shadow-blue-200',
     green: 'from-emerald-500 to-emerald-600 shadow-emerald-200',
@@ -109,7 +91,7 @@ function StatCard({ icon: Icon, label, value, unit, color, delay }) {
   };
 
   return (
-    <GlassCard delay={delay} className="p-5">
+    <GlassCard className="p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-500 font-medium">{label}</p>
@@ -131,7 +113,7 @@ function StatCard({ icon: Icon, label, value, unit, color, delay }) {
 /* ═══════════════════════════════════════════════════════════════════
    User Management Panel
 ═══════════════════════════════════════════════════════════════════ */
-function UserManagePanel({ users, onAdd, onRemove, loading }) {
+function UserManagePanel({ users, onAdd, onRemove }) {
   const [newName, setNewName] = useState('');
   const [showPanel, setShowPanel] = useState(false);
 
@@ -142,7 +124,7 @@ function UserManagePanel({ users, onAdd, onRemove, loading }) {
   };
 
   return (
-    <GlassCard delay={200} className="p-5">
+    <GlassCard className="p-5">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-md shadow-indigo-200">
@@ -161,8 +143,8 @@ function UserManagePanel({ users, onAdd, onRemove, loading }) {
       </div>
 
       {showPanel && (
-        <div className="fade-slide-up">
-          {/* Add user input */}
+        <div>
+          {/* Add user input - accepts any Chinese name, no validation */}
           <div className="flex gap-2 mb-3">
             <div className="flex-1 relative">
               <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -171,14 +153,14 @@ function UserManagePanel({ users, onAdd, onRemove, loading }) {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                placeholder="输入姓名添加人员..."
+                placeholder="输入中文姓名添加人员..."
                 className="w-full pl-9 pr-4 py-2 rounded-xl border border-gray-200/80 bg-white/60 backdrop-blur-sm text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-300 transition-all"
               />
             </div>
             <button
               onClick={handleAdd}
               disabled={!newName.trim()}
-              className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-primary-200 hover:shadow-lg hover:shadow-primary-300"
+              className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-primary-200"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -186,11 +168,10 @@ function UserManagePanel({ users, onAdd, onRemove, loading }) {
 
           {/* User list */}
           <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1" style={{ scrollbarWidth: 'thin' }}>
-            {users.map((u, idx) => (
+            {users.map((u) => (
               <div
                 key={u.id}
-                className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-50/80 hover:bg-gray-100/80 group transition-all"
-                style={{ animationDelay: `${idx * 30}ms` }}
+                className="flex items-center justify-between px-3 py-2 rounded-xl bg-gray-50/80 hover:bg-gray-100/80 group transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-xs text-white font-medium shadow-sm">
@@ -240,15 +221,12 @@ function UserManagePanel({ users, onAdd, onRemove, loading }) {
 /* ═══════════════════════════════════════════════════════════════════
    User Worktime Detail Card (expandable)
 ═══════════════════════════════════════════════════════════════════ */
-function UserDetailCard({ user, index }) {
+function UserDetailCard({ user }) {
   const [expanded, setExpanded] = useState(false);
 
   if (user.total_hours === 0 && user.project_details?.length === 0) {
     return (
-      <div
-        className="fade-slide-up flex items-center gap-3 px-4 py-3 rounded-xl bg-white/50 backdrop-blur-sm border border-gray-100/50"
-        style={{ animationDelay: `${index * 60}ms` }}
-      >
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/50 backdrop-blur-sm border border-gray-100/50">
         <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-sm text-gray-500 font-medium">
           {user.name.slice(0, 1)}
         </div>
@@ -259,14 +237,11 @@ function UserDetailCard({ user, index }) {
   }
 
   return (
-    <div
-      className="fade-slide-up rounded-xl border border-gray-100/60 bg-white/60 backdrop-blur-sm overflow-hidden transition-all hover:shadow-md"
-      style={{ animationDelay: `${index * 60}ms` }}
-    >
+    <div className="rounded-xl border border-gray-100/60 bg-white/60 backdrop-blur-sm overflow-hidden transition-all hover:shadow-md">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-50/50 transition-all"
+        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
       >
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-sm text-white font-bold shadow-md shadow-primary-200">
           {user.name.slice(0, 1)}
@@ -289,7 +264,7 @@ function UserDetailCard({ user, index }) {
             <p className="text-sm font-bold text-purple-600">{user.total_cost_days.toFixed(1)}</p>
           </div>
         </div>
-        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${expanded ? 'rotate-90' : ''}`} />
+        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
       </button>
 
       {/* Expanded: project details */}
@@ -307,7 +282,6 @@ function UserDetailCard({ user, index }) {
               {proj.contract_party && (
                 <p className="text-xs text-gray-400 mb-2 ml-6">甲方: {proj.contract_party}</p>
               )}
-              {/* Month details */}
               {proj.month_details?.map((month, midx) => (
                 <div key={midx} className="ml-6 mt-2">
                   <p className="text-xs font-medium text-gray-500 flex items-center gap-1">
@@ -339,6 +313,7 @@ export default function WorktimePage() {
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Fetch tracked users
@@ -391,6 +366,40 @@ export default function WorktimePage() {
     }
   };
 
+  // Export CSV files
+  const handleExport = async (type) => {
+    setExporting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({ period, type });
+      const response = await fetch(`/api/worktime/export?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        toast.error(err.message || '导出失败');
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('Content-Disposition');
+      const filename = disposition?.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/)?.[1] || 
+        (type === 'delivery' ? '交付工时.csv' : '人员工时.csv');
+      a.download = decodeURIComponent(filename);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('导出成功');
+    } catch (err) {
+      toast.error('导出失败: ' + (err.message || '网络错误'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Filter users by search
   const filteredUsers = stats?.users?.filter((u) =>
     !searchTerm || u.name.includes(searchTerm)
@@ -411,7 +420,7 @@ export default function WorktimePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <PeriodSelector period={period} onChange={setPeriod} />
             <button
               onClick={fetchStats}
@@ -424,48 +433,40 @@ export default function WorktimePage() {
           </div>
         </div>
 
-        {/* Date range display */}
+        {/* Date range + Export buttons */}
         {stats && (
-          <div className="flex items-center gap-2 text-sm text-gray-500 fade-slide-up">
-            <Calendar className="w-4 h-4" />
-            <span>统计周期：{stats.start_date} 至 {stats.end_date}</span>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Calendar className="w-4 h-4" />
+              <span>统计周期：{stats.start_date} 至 {stats.end_date}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleExport('delivery')}
+                disabled={exporting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-medium hover:bg-emerald-100 border border-emerald-200/50 transition-all disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                导出交付工时
+              </button>
+              <button
+                onClick={() => handleExport('personnel')}
+                disabled={exporting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 border border-blue-200/50 transition-all disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                导出人员工时
+              </button>
+            </div>
           </div>
         )}
 
         {/* Summary Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            icon={Timer}
-            label="总工时"
-            value={stats?.total?.total_hours || 0}
-            unit="小时"
-            color="blue"
-            delay={0}
-          />
-          <StatCard
-            icon={Target}
-            label="实际人天"
-            value={stats?.total?.total_man_days || 0}
-            unit="天"
-            color="green"
-            delay={100}
-          />
-          <StatCard
-            icon={Activity}
-            label="成本人天"
-            value={stats?.total?.total_cost_days || 0}
-            unit="天"
-            color="purple"
-            delay={200}
-          />
-          <StatCard
-            icon={Briefcase}
-            label="涉及项目"
-            value={stats?.total?.project_count || 0}
-            unit="个"
-            color="orange"
-            delay={300}
-          />
+          <StatCard icon={Timer} label="总工时" value={stats?.total?.total_hours || 0} unit="小时" color="blue" />
+          <StatCard icon={Target} label="实际人天" value={stats?.total?.total_man_days || 0} unit="天" color="green" />
+          <StatCard icon={Activity} label="成本人天" value={stats?.total?.total_cost_days || 0} unit="天" color="purple" />
+          <StatCard icon={Briefcase} label="涉及项目" value={stats?.total?.project_count || 0} unit="个" color="orange" />
         </div>
 
         {/* User Management */}
@@ -473,11 +474,10 @@ export default function WorktimePage() {
           users={users}
           onAdd={handleAddUser}
           onRemove={handleRemoveUser}
-          loading={loading}
         />
 
         {/* User Worktime Details */}
-        <GlassCard delay={300} className="p-5" hover={false}>
+        <GlassCard className="p-5" hover={false}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-md shadow-emerald-200">
@@ -515,8 +515,8 @@ export default function WorktimePage() {
           {/* User list */}
           {!loading && (
             <div className="space-y-2">
-              {filteredUsers.map((user, idx) => (
-                <UserDetailCard key={user.name} user={user} index={idx} />
+              {filteredUsers.map((user) => (
+                <UserDetailCard key={user.name} user={user} />
               ))}
               {filteredUsers.length === 0 && !loading && (
                 <div className="text-center py-12 text-gray-400">

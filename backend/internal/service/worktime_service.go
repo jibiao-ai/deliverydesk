@@ -85,11 +85,12 @@ type WorktimeMonthStat struct {
 
 // WorktimeTaskEntry represents task-level detail
 type WorktimeTaskEntry struct {
-	TaskName  string  `json:"task_name"`
-	Hours     float64 `json:"hours"`
-	ManDays   float64 `json:"man_days"`
-	CostDays  float64 `json:"cost_days"`
-	DateRange string  `json:"date_range"`
+	TaskName  string   `json:"task_name"`
+	Hours     float64  `json:"hours"`
+	ManDays   float64  `json:"man_days"`
+	CostDays  float64  `json:"cost_days"`
+	DateRange string   `json:"date_range"`
+	Dates     []string `json:"dates"` // individual dates for export
 }
 
 // WorktimeSummary is the top-level response
@@ -439,6 +440,7 @@ func (s *WorktimeService) aggregateEntries(entries []WorktimeEntry, userNames []
 						ManDays:   manDays,
 						CostDays:  td.costDays,
 						DateRange: dateRange,
+						Dates:     td.dates,
 					})
 				}
 
