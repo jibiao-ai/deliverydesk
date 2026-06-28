@@ -191,11 +191,12 @@ function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) 
         自定义
       </button>
 
-      {/* Custom date range popover */}
+      {/* Custom date range popover - fixed position to avoid overflow clipping */}
       {showCustom && (
         <div
           ref={popoverRef}
-          className="absolute top-full right-0 mt-2 z-50 rounded-2xl border border-white/50 shadow-2xl bg-white/85 backdrop-blur-2xl p-5"
+          className="fixed z-[9999] rounded-2xl border border-white/50 shadow-2xl bg-white/95 backdrop-blur-2xl p-5"
+          style={{ top: '60px', right: '24px' }}
         >
           <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <CalendarRange className="w-4 h-4 text-primary-500" />
@@ -379,78 +380,77 @@ function UserManagePanel({ users, onAdd, onRemove }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   User Worktime Detail Card (expandable)
+   User Worktime Detail Card (compact card for grid layout)
 ═══════════════════════════════════════════════════════════════════ */
 function UserDetailCard({ user }) {
   const [expanded, setExpanded] = useState(false);
 
   if (user.total_hours === 0 && user.project_details?.length === 0) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/50 backdrop-blur-sm border border-gray-100/50">
-        <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-sm text-gray-500 font-medium">
-          {user.name.slice(0, 1)}
+      <div className="rounded-xl bg-white/50 backdrop-blur-sm border border-gray-100/50 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500 font-medium">
+            {user.name.slice(0, 1)}
+          </div>
+          <span className="text-sm font-medium text-gray-600 truncate">{user.name}</span>
         </div>
-        <span className="text-sm text-gray-600">{user.name}</span>
-        <span className="ml-auto text-xs text-gray-400">暂无工时记录</span>
+        <p className="text-xs text-gray-400 text-center">暂无工时记录</p>
       </div>
     );
   }
 
   return (
     <div className="rounded-xl border border-gray-100/60 bg-white/60 backdrop-blur-sm overflow-hidden transition-all hover:shadow-md">
-      {/* Header */}
+      {/* Compact Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
+        className="w-full p-4 text-left hover:bg-gray-50/50 transition-colors"
       >
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-sm text-white font-bold shadow-md shadow-primary-200">
-          {user.name.slice(0, 1)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-800">{user.name}</p>
-          <p className="text-xs text-gray-400">{user.project_details?.length || 0} 个项目</p>
-        </div>
-        <div className="flex items-center gap-4 mr-2">
-          <div className="text-right">
-            <p className="text-xs text-gray-400">总工时</p>
-            <p className="text-sm font-bold text-blue-600">{user.total_hours.toFixed(1)}h</p>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-xs text-white font-bold shadow-sm">
+            {user.name.slice(0, 1)}
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400">人天</p>
-            <p className="text-sm font-bold text-emerald-600">{user.total_man_days.toFixed(1)}</p>
+          <span className="text-sm font-semibold text-gray-800 truncate flex-1">{user.name}</span>
+          <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
+        </div>
+        <div className="grid grid-cols-3 gap-1 text-center">
+          <div>
+            <p className="text-[10px] text-gray-400">工时</p>
+            <p className="text-xs font-bold text-blue-600">{user.total_hours.toFixed(1)}h</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400">成本人天</p>
-            <p className="text-sm font-bold text-purple-600">{user.total_cost_days.toFixed(1)}</p>
+          <div>
+            <p className="text-[10px] text-gray-400">人天</p>
+            <p className="text-xs font-bold text-emerald-600">{user.total_man_days.toFixed(1)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-400">成本</p>
+            <p className="text-xs font-bold text-purple-600">{user.total_cost_days.toFixed(1)}</p>
           </div>
         </div>
-        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
+        <p className="text-[10px] text-gray-400 mt-2 text-center">{user.project_details?.length || 0} 个项目</p>
       </button>
 
       {/* Expanded: project details */}
       {expanded && user.project_details && (
-        <div className="px-5 pb-4 space-y-3 border-t border-gray-100/60">
+        <div className="px-3 pb-3 space-y-2 border-t border-gray-100/60">
           {user.project_details.map((proj, pidx) => (
-            <div key={pidx} className="mt-3 rounded-xl bg-gray-50/80 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Briefcase className="w-4 h-4 text-gray-400" />
-                <span className="text-sm font-medium text-gray-700">{proj.project_name || proj.project_no}</span>
-                <span className="text-xs text-gray-400 ml-auto">
-                  {proj.total_hours.toFixed(1)}h / {proj.total_man_days.toFixed(0)}天
-                </span>
+            <div key={pidx} className="mt-2 rounded-lg bg-gray-50/80 p-2.5">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Briefcase className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                <span className="text-xs font-medium text-gray-700 truncate">{proj.project_name || proj.project_no}</span>
               </div>
-              {proj.contract_party && (
-                <p className="text-xs text-gray-400 mb-2 ml-6">甲方: {proj.contract_party}</p>
-              )}
+              <p className="text-[10px] text-gray-400 ml-4.5">
+                {proj.total_hours.toFixed(1)}h / {proj.total_man_days.toFixed(0)}天
+              </p>
               {proj.month_details?.map((month, midx) => (
-                <div key={midx} className="ml-6 mt-2">
-                  <p className="text-xs font-medium text-gray-500 flex items-center gap-1">
-                    <Calendar className="w-3 h-3" /> {month.month}
+                <div key={midx} className="ml-4 mt-1.5">
+                  <p className="text-[10px] font-medium text-gray-500 flex items-center gap-1">
+                    <Calendar className="w-2.5 h-2.5" /> {month.month}
                     <span className="text-gray-400">({month.total_hours.toFixed(1)}h)</span>
                   </p>
                   {month.tasks?.map((task, tidx) => (
-                    <div key={tidx} className="flex items-center gap-2 mt-1 text-xs text-gray-500 ml-4">
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary-300" />
+                    <div key={tidx} className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-500 ml-3">
+                      <span className="w-1 h-1 rounded-full bg-primary-300 flex-shrink-0" />
                       <span className="flex-1 truncate">{task.task_name}</span>
                       <span className="text-gray-400">{task.hours.toFixed(1)}h</span>
                     </div>
@@ -650,13 +650,6 @@ export default function WorktimePage() {
           <StatCard icon={Briefcase} label="涉及项目" value={stats?.total?.project_count || 0} unit="个" color="orange" />
         </div>
 
-        {/* User Management */}
-        <UserManagePanel
-          users={users}
-          onAdd={handleAddUser}
-          onRemove={handleRemoveUser}
-        />
-
         {/* User Worktime Details */}
         <GlassCard className="p-5" hover={false}>
           <div className="flex items-center justify-between mb-4">
@@ -693,9 +686,9 @@ export default function WorktimePage() {
             </div>
           )}
 
-          {/* User list */}
+          {/* User list - 4 per row grid */}
           {!loading && (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {filteredUsers.map((user) => (
                 <UserDetailCard key={user.name} user={user} />
               ))}
@@ -710,6 +703,13 @@ export default function WorktimePage() {
             </div>
           )}
         </GlassCard>
+
+        {/* User Management - placed at bottom */}
+        <UserManagePanel
+          users={users}
+          onAdd={handleAddUser}
+          onRemove={handleRemoveUser}
+        />
       </div>
     </div>
   );
