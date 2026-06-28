@@ -70,6 +70,10 @@ func main() {
 	jiraSvc := service.GetJiraService()
 	jiraSvc.StartPeriodicSync(2 * time.Hour)
 
+	// Start monthly auto-fetch for worktime (fetches last month's data on the 1st)
+	worktimeSvc := service.GetWorktimeService()
+	worktimeSvc.StartMonthlyAutoFetch()
+
 	// Setup Gin router
 	r := gin.New()
 	r.Use(gin.Recovery())

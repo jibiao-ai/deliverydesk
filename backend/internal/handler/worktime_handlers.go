@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bufio"
 	"encoding/csv"
 	"fmt"
 	"net/http"
@@ -190,10 +191,14 @@ func (h *WorktimeHandler) ExportWorktime(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.PathEscape(filename)))
 
-	writer := csv.NewWriter(c.Writer)
+	// Use buffered writer for better export performance
+	bw := bufio.NewWriterSize(c.Writer, 64*1024) // 64KB buffer
+	defer bw.Flush()
 
 	// Write UTF-8 BOM for Excel to recognize Chinese characters
-	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+	bw.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(bw)
 
 	if exportType == "personnel" {
 		h.exportPersonnelCSV(writer, summary)
