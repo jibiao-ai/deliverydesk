@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Clock, Users, TrendingUp, Calendar, Plus, Trash2, UserPlus, Search,
   ChevronDown, ChevronRight, ChevronLeft, BarChart3, Briefcase, RefreshCw, Download,
@@ -131,6 +132,8 @@ function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) 
   const [tempStart, setTempStart] = useState(customRange?.start_date || '');
   const [tempEnd, setTempEnd] = useState(customRange?.end_date || '');
   const popoverRef = useRef(null);
+  const btnRef = useRef(null);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
   const periods = [
     { value: 'month', label: '本月', icon: Calendar },
@@ -138,15 +141,38 @@ function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) 
     { value: 'year', label: '本年度', icon: TrendingUp },
   ];
 
+  // Calculate popover position dynamically from button
+  useEffect(() => {
+    if (showCustom && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const popoverWidth = 640; // approximate width of the popover
+      let left = rect.left + rect.width / 2 - popoverWidth / 2;
+      // Clamp to viewport
+      if (left < 12) left = 12;
+      if (left + popoverWidth > window.innerWidth - 12) left = window.innerWidth - popoverWidth - 12;
+      setPopoverPos({ top: rect.bottom + 8, left });
+    }
+  }, [showCustom]);
+
   // Close popover on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target) &&
+        btnRef.current && !btnRef.current.contains(e.target)
+      ) {
         setShowCustom(false);
       }
     };
     if (showCustom) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [showCustom]);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') setShowCustom(false); };
+    if (showCustom) document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
   }, [showCustom]);
 
   const handleApplyCustom = () => {
@@ -158,8 +184,61 @@ function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) 
     }
   };
 
+  // Portal-rendered popover content
+  const popoverContent = showCustom ? ReactDOM.createPortal(
+    <div
+      ref={popoverRef}
+      className="rounded-2xl border border-gray-200 shadow-2xl bg-white p-5"
+      style={{
+        position: 'fixed',
+        top: `${popoverPos.top}px`,
+        left: `${popoverPos.left}px`,
+        zIndex: 99999,
+        minWidth: '620px',
+      }}
+    >
+      <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+        <CalendarRange className="w-4 h-4 text-primary-500" />
+        自定义统计周期
+      </p>
+      <div className="flex gap-4">
+        <DatePickerCalendar
+          value={tempStart}
+          onChange={setTempStart}
+          label="开始日期"
+        />
+        <DatePickerCalendar
+          value={tempEnd}
+          onChange={setTempEnd}
+          label="结束日期"
+        />
+      </div>
+      <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+        <div className="text-xs text-gray-400">
+          {tempStart && tempEnd ? `${tempStart} 至 ${tempEnd}` : '请选择日期范围'}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCustom(false)}
+            className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleApplyCustom}
+            disabled={!tempStart || !tempEnd}
+            className="px-4 py-1.5 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   return (
-    <div className="flex gap-2 p-1 bg-white/50 backdrop-blur-sm rounded-xl border border-gray-200/50 relative">
+    <div className="flex gap-2 p-1 bg-white/50 backdrop-blur-sm rounded-xl border border-gray-200/50">
       {periods.map((p) => {
         const Icon = p.icon;
         const isActive = period === p.value;
@@ -180,6 +259,7 @@ function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) 
       })}
       {/* Custom period button */}
       <button
+        ref={btnRef}
         onClick={() => setShowCustom(!showCustom)}
         className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
           period === 'custom'
@@ -190,52 +270,7 @@ function PeriodSelector({ period, onChange, customRange, onCustomRangeChange }) 
         <CalendarRange className="w-4 h-4" />
         自定义
       </button>
-
-      {/* Custom date range popover - fixed position to avoid overflow clipping */}
-      {showCustom && (
-        <div
-          ref={popoverRef}
-          className="fixed z-[9999] rounded-2xl border border-white/50 shadow-2xl bg-white/95 backdrop-blur-2xl p-5"
-          style={{ top: '60px', right: '24px' }}
-        >
-          <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <CalendarRange className="w-4 h-4 text-primary-500" />
-            自定义统计周期
-          </p>
-          <div className="flex gap-4">
-            <DatePickerCalendar
-              value={tempStart}
-              onChange={setTempStart}
-              label="开始日期"
-            />
-            <DatePickerCalendar
-              value={tempEnd}
-              onChange={setTempEnd}
-              label="结束日期"
-            />
-          </div>
-          <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
-            <div className="text-xs text-gray-400">
-              {tempStart && tempEnd ? `${tempStart} 至 ${tempEnd}` : '请选择日期范围'}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowCustom(false)}
-                className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleApplyCustom}
-                disabled={!tempStart || !tempEnd}
-                className="px-4 py-1.5 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-              >
-                确定
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {popoverContent}
     </div>
   );
 }
