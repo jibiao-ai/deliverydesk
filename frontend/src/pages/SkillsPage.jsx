@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Zap, Plus, Trash2, Edit3, Upload, FileText, RefreshCw, Loader2, Database, Globe2, Search, ChevronDown, ChevronUp, X, Brain, BookOpen } from 'lucide-react';
+import { Zap, Plus, Trash2, Edit3, Upload, FileText, RefreshCw, Loader2, Database, Globe2, Search, ChevronDown, ChevronUp, X, Brain, BookOpen, AlertTriangle } from 'lucide-react';
 import { getSkills, createSkill, updateSkill, deleteSkill, uploadSkillDocument, uploadSkillDocuments, reindexSkill, deleteSkillDocument } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -27,6 +27,8 @@ export default function SkillsPage() {
   const [uploadProgress, setUploadProgress] = useState({});
   const [reindexing, setReindexing] = useState({});
   const [deletingDoc, setDeletingDoc] = useState({});
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // skill to delete
+  const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', type: 'delivery', category: '' });
 
   const loadSkills = useCallback(async () => {
@@ -68,12 +70,18 @@ export default function SkillsPage() {
   };
 
   const handleDelete = async (sk) => {
-    if (!confirm(`确定删除技能「${sk.name}」？`)) return;
+    setDeleteConfirm(sk);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
     try {
-      const res = await deleteSkill(sk.id);
+      const res = await deleteSkill(deleteConfirm.id);
       if (res.code === 0) { toast.success('删除成功'); loadSkills(); }
       else toast.error(res.message || '删除失败');
     } catch (e) { toast.error('删除失败'); }
+    finally { setDeleting(false); setDeleteConfirm(null); }
   };
 
   const handleUpload = async (skillId, e) => {
@@ -350,6 +358,47 @@ export default function SkillsPage() {
             <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
               <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
               <button onClick={handleSave} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal - Glassmorphism + Rounded Card + Icon */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="rounded-2xl border border-white/50 shadow-2xl bg-white/90 backdrop-blur-xl w-full max-w-sm mx-4 p-6">
+            {/* Icon */}
+            <div className="flex justify-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+            </div>
+            {/* Title */}
+            <h3 className="text-center text-base font-semibold text-gray-800 mb-2">确认删除技能</h3>
+            {/* Message */}
+            <p className="text-center text-sm text-gray-500 mb-1">
+              确定要删除技能 <span className="font-medium text-gray-700">「{deleteConfirm.name}」</span> 吗？
+            </p>
+            <p className="text-center text-xs text-gray-400 mb-6">
+              删除后将同时移除关联的文档和索引数据，此操作不可撤销。
+            </p>
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors shadow-sm shadow-red-200 disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {deleting ? '删除中...' : '确认删除'}
+              </button>
             </div>
           </div>
         </div>
