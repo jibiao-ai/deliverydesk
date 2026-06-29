@@ -65,6 +65,7 @@ func main() {
 	h := handler.NewHandler(chatService)
 	totpH := handler.NewTotpHandler()
 	worktimeH := handler.NewWorktimeHandler()
+	projectH := handler.NewProjectHandler()
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -73,6 +74,10 @@ func main() {
 	// Start monthly auto-fetch for worktime (fetches last month's data on the 1st)
 	worktimeSvc := service.GetWorktimeService()
 	worktimeSvc.StartMonthlyAutoFetch()
+
+	// Start periodic project sync from Redmine (daily at 2:00 AM)
+	projectSvc := service.GetProjectService()
+	projectSvc.StartPeriodicSync()
 
 	// Setup Gin router
 	r := gin.New()
@@ -161,6 +166,11 @@ func main() {
 			auth.POST("/worktime/users", worktimeH.AddWorktimeUser)
 			auth.DELETE("/worktime/users/:id", worktimeH.RemoveWorktimeUser)
 			auth.POST("/worktime/users/batch", worktimeH.BatchAddWorktimeUsers)
+
+			// Project Management (all authenticated users)
+			auth.GET("/projects/stats", projectH.GetProjectStats)
+			auth.GET("/projects/list", projectH.GetProjectList)
+			auth.POST("/projects/sync", projectH.SyncProjects)
 
 			// Admin routes
 			admin := auth.Group("")

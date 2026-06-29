@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key, Clock,
+  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key, Clock, FolderKanban,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ const adminMenuGroups = [
     items: [
       { id: 'agents', label: '智能体', icon: Bot },
       { id: 'worktime', label: '工时管理', icon: Clock },
+      { id: 'projects', label: '项目管理', icon: FolderKanban },
     ],
   },
   {
