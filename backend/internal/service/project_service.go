@@ -31,20 +31,21 @@ func GetProjectService() *ProjectService {
 
 // ProjectStats aggregates project statistics for the frontend
 type ProjectStats struct {
-	TotalProjects     int                    `json:"total_projects"`
-	PeriodNew         int                    `json:"period_new"`           // new projects in selected period
-	WeekNew           int                    `json:"week_new"`            // new projects in past 7 days
-	MonthlyTrend      []MonthlyCount         `json:"monthly_trend"`       // line chart data
-	RegionDistribution []NameCount           `json:"region_distribution"` // donut chart data
-	TypeDistribution   []NameCount           `json:"type_distribution"`   // donut chart data
-	StatusDistribution []NameCount           `json:"status_distribution"` // bar chart data
-	Top5Regions       []NameCount            `json:"top5_regions"`        // TOP5 regions
-	Top5Managers      []NameCount            `json:"top5_managers"`       // TOP5 project managers
-	Top5Customers     []NameCount            `json:"top5_customers"`      // TOP5 customers
-	YoYComparison     []YoYData             `json:"yoy_comparison"`      // year-over-year comparison
-	WeeklyProjects    []DailyCount           `json:"weekly_projects"`     // past week daily creation
-	MonthDailyProjects []DailyCount          `json:"month_daily_projects"` // daily new projects for current month
-	LastSyncTime      string                 `json:"last_sync_time"`
+	TotalProjects      int                    `json:"total_projects"`
+	PeriodNew          int                    `json:"period_new"`             // new projects in selected period
+	WeekNew            int                    `json:"week_new"`              // new projects in past 7 days
+	MonthlyTrend       []MonthlyCount         `json:"monthly_trend"`         // line chart data
+	RegionDistribution []NameCount            `json:"region_distribution"`   // donut chart data
+	ProvinceDistribution []NameCount          `json:"province_distribution"` // province map data
+	TypeDistribution   []NameCount            `json:"type_distribution"`     // donut chart data
+	StatusDistribution []NameCount            `json:"status_distribution"`   // bar chart data
+	Top5Regions        []NameCount            `json:"top5_regions"`          // TOP5 regions
+	Top5Managers       []NameCount            `json:"top5_managers"`         // TOP5 project managers
+	Top5Customers      []NameCount            `json:"top5_customers"`        // TOP5 customers
+	YoYComparison      []YoYData             `json:"yoy_comparison"`        // year-over-year comparison
+	RecentMonthTrend   []DailyCount           `json:"recent_month_trend"`    // past 30 days daily creation line
+	MonthDailyProjects []DailyCount           `json:"month_daily_projects"`  // period new projects (adaptive)
+	LastSyncTime       string                 `json:"last_sync_time"`
 }
 
 // MonthlyCount represents monthly project creation count
@@ -394,6 +395,9 @@ func (s *ProjectService) GetStats(periodType string, startDate string, endDate s
 	// Region distribution
 	stats.RegionDistribution = s.getDistribution(db, "region")
 
+	// Province distribution (for China map)
+	stats.ProvinceDistribution = s.getDistribution(db, "province")
+
 	// Project type distribution
 	stats.TypeDistribution = s.getDistribution(db, "project_type")
 
@@ -412,8 +416,8 @@ func (s *ProjectService) GetStats(periodType string, startDate string, endDate s
 	// Year-over-year comparison
 	stats.YoYComparison = s.getYoYComparison(db)
 
-	// Weekly daily breakdown
-	stats.WeeklyProjects = s.getWeeklyDaily(db)
+	// Recent month (30 days) daily trend
+	stats.RecentMonthTrend = s.getRecentMonthTrend(db)
 
 	// Month daily new projects (default: current month, or use period startDate/endDate if monthly)
 	monthStart := time.Now().Format("2006-01") + "-01"
@@ -461,7 +465,7 @@ func (s *ProjectService) getDistribution(db *gorm.DB, column string) []NameCount
 		Where(fmt.Sprintf("%s != '' AND %s IS NOT NULL", column, column)).
 		Group("name").
 		Order("count DESC").
-		Limit(10).
+		Limit(50).
 		Rows()
 	if err != nil {
 		logger.Log.Warnf("getDistribution(%s) error: %v", column, err)
@@ -524,19 +528,19 @@ func (s *ProjectService) getYoYComparison(db *gorm.DB) []YoYData {
 	return results
 }
 
-// getWeeklyDaily returns daily project creation for the past 7 days
-func (s *ProjectService) getWeeklyDaily(db *gorm.DB) []DailyCount {
+// getRecentMonthTrend returns daily project creation for the past 30 days
+func (s *ProjectService) getRecentMonthTrend(db *gorm.DB) []DailyCount {
 	var results []DailyCount
-	weekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+	monthAgo := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
 
 	rows, err := db.Model(&model.ProjectInfo{}).
 		Select("DATE(project_start_date) as date, COUNT(*) as count").
-		Where("project_start_date >= ?", weekAgo).
+		Where("project_start_date >= ?", monthAgo).
 		Group("date").
 		Order("date ASC").
 		Rows()
 	if err != nil {
-		logger.Log.Warnf("getWeeklyDaily error: %v", err)
+		logger.Log.Warnf("getRecentMonthTrend error: %v", err)
 		return results
 	}
 	defer rows.Close()
