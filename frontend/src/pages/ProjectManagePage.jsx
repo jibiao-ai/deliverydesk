@@ -5,7 +5,6 @@ import {
   PieChart, Pie, Cell,
   BarChart, Bar,
 } from 'recharts';
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
 import {
   FolderKanban, TrendingUp, Calendar, RefreshCw, ChevronLeft, ChevronRight,
   MapPin, Users, Building2, Layers, Activity, Award, CalendarDays, CalendarRange, BarChart3,
@@ -14,24 +13,9 @@ import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
-const CHINA_GEO_URL = '/china.json';
 
 // Color palette for charts
 const COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#e0e7ff', '#818cf8', '#7c3aed', '#5b21b6', '#4f46e5', '#4338ca'];
-
-// Province name mapping: short name -> GeoJSON full name
-const PROVINCE_MAP = {
-  '北京': '北京市', '上海': '上海市', '天津': '天津市', '重庆': '重庆市',
-  '广东': '广东省', '江苏': '江苏省', '浙江': '浙江省', '山东': '山东省',
-  '河南': '河南省', '四川': '四川省', '湖北': '湖北省', '湖南': '湖南省',
-  '河北': '河北省', '福建': '福建省', '安徽': '安徽省', '辽宁': '辽宁省',
-  '陕西': '陕西省', '陕西省': '陕西省', '江西': '江西省', '广西': '广西壮族自治区',
-  '云南': '云南省', '贵州': '贵州省', '山西': '山西省', '吉林': '吉林省',
-  '黑龙江': '黑龙江省', '甘肃': '甘肃省', '内蒙古': '内蒙古自治区',
-  '新疆': '新疆维吾尔自治区', '宁夏': '宁夏回族自治区', '海南': '海南省',
-  '西藏': '西藏自治区', '青海': '青海省', '台湾': '台湾省',
-  '香港': '香港特别行政区', '澳门': '澳门特别行政区',
-};
 
 /* ═══════════════════════════════════════════════════════════
    Glassmorphism Card
@@ -424,108 +408,6 @@ function PeriodCalendarView({ data, period, customRange }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════
-   China Map Component (Fixed)
-═══════════════════════════════════════════════════════════ */
-function ChinaMap({ provinceData }) {
-  const [tooltipContent, setTooltipContent] = useState('');
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const [geoData, setGeoData] = useState(null);
-  const [geoError, setGeoError] = useState(false);
-
-  // Manually fetch GeoJSON to handle errors
-  useEffect(() => {
-    fetch(CHINA_GEO_URL)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => setGeoData(data))
-      .catch(err => {
-        console.error('Failed to load china.json:', err);
-        setGeoError(true);
-      });
-  }, []);
-
-  // Build lookup: geoJSON name -> count
-  const provinceCountMap = useMemo(() => {
-    const map = {};
-    (provinceData || []).forEach(item => {
-      const fullName = PROVINCE_MAP[item.name] || item.name;
-      map[fullName] = (map[fullName] || 0) + item.count;
-    });
-    return map;
-  }, [provinceData]);
-
-  const maxCount = useMemo(() => Math.max(...Object.values(provinceCountMap), 1), [provinceCountMap]);
-
-  if (geoError) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400">
-        <MapPin size={32} className="mb-2 opacity-40" />
-        <p className="text-xs">地图加载失败</p>
-      </div>
-    );
-  }
-
-  if (!geoData) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative w-full h-full">
-      <ComposableMap
-        projection="geoMercator"
-        projectionConfig={{ center: [104, 35], scale: 580 }}
-        width={500}
-        height={420}
-        style={{ width: '100%', height: '100%' }}
-      >
-        <Geographies geography={geoData}>
-          {({ geographies }) =>
-            geographies.map((geo) => {
-              const name = geo.properties.name;
-              const count = provinceCountMap[name] || 0;
-              const intensity = count > 0 ? 0.3 + (count / maxCount) * 0.7 : 0;
-              const fillColor = count > 0 ? `rgba(99, 102, 241, ${intensity})` : '#f1f5f9';
-              return (
-                <Geography
-                  key={geo.properties.adcode || geo.id || name}
-                  geography={geo}
-                  fill={fillColor}
-                  stroke="#e2e8f0"
-                  strokeWidth={0.5}
-                  style={{
-                    default: { outline: 'none' },
-                    hover: { fill: count > 0 ? '#6366f1' : '#e2e8f0', outline: 'none', cursor: count > 0 ? 'pointer' : 'default' },
-                    pressed: { outline: 'none' },
-                  }}
-                  onMouseEnter={(e) => {
-                    const shortName = Object.entries(PROVINCE_MAP).find(([, v]) => v === name)?.[0] || name;
-                    setTooltipContent(count > 0 ? `${shortName}: ${count} 个项目` : `${shortName}: 暂无项目`);
-                    setTooltipPos({ x: e.clientX, y: e.clientY });
-                  }}
-                  onMouseMove={(e) => setTooltipPos({ x: e.clientX, y: e.clientY })}
-                  onMouseLeave={() => setTooltipContent('')}
-                />
-              );
-            })
-          }
-        </Geographies>
-      </ComposableMap>
-      {tooltipContent && ReactDOM.createPortal(
-        <div className="fixed rounded-lg bg-gray-900/90 text-white text-xs px-3 py-1.5 pointer-events-none shadow-lg z-[99999]"
-          style={{ top: tooltipPos.y - 36, left: tooltipPos.x + 10 }}>
-          {tooltipContent}
-        </div>, document.body
-      )}
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════
    TOP5 Carousel Component (rotates every 10s)
@@ -767,7 +649,7 @@ export default function ProjectManagePage() {
         ))}
       </div>
 
-      {/* Row 2: Period Calendar + China Map + Recent month trend (3 cols) */}
+      {/* Row 2: Period Calendar + Recent month trend + TOP5 Carousel (3 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Period new breakdown - Calendar/Week/Year format */}
         <GlassCard icon={CalendarDays} title={`周期内新增立项（${periodLabel}）`} subtitle={period === 'custom' ? `${customRange.start} 至 ${customRange.end}` : `${getPeriodDates(period).start} 至 ${getPeriodDates(period).end}`}>
@@ -785,13 +667,6 @@ export default function ProjectManagePage() {
           </div>
         </GlassCard>
 
-        {/* China Map */}
-        <GlassCard icon={MapPin} title="全国项目分布" subtitle="按省份点亮（紫色=有项目）">
-          <div className="h-56">
-            <ChinaMap provinceData={stats?.province_distribution} />
-          </div>
-        </GlassCard>
-
         {/* Recent month trend (line) */}
         <GlassCard icon={TrendingUp} title="近一个月立项趋势" subtitle="过去30天每日新增">
           <div className="h-52">
@@ -804,6 +679,13 @@ export default function ProjectManagePage() {
                 <Line type="monotone" dataKey="count" name="立项数" stroke="#6366f1" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+        </GlassCard>
+
+        {/* TOP5 Carousel */}
+        <GlassCard icon={Award} title="TOP5 排行" subtitle="区域 / 项目经理 / 客户（自动轮播）">
+          <div className="h-52">
+            <Top5Carousel stats={stats} />
           </div>
         </GlassCard>
       </div>
@@ -858,7 +740,7 @@ export default function ProjectManagePage() {
         </GlassCard>
       </div>
 
-      {/* Row 4: Status bar + Region donut + TOP5 Carousel (3 cols) */}
+      {/* Row 4: Status bar + Region donut (2 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Project status bar chart */}
         <GlassCard icon={Activity} title="项目状态分布" subtitle="按当前状态统计">
@@ -887,13 +769,6 @@ export default function ProjectManagePage() {
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-          </div>
-        </GlassCard>
-
-        {/* TOP5 Carousel */}
-        <GlassCard icon={Award} title="TOP5 排行" subtitle="区域 / 项目经理 / 客户（自动轮播）">
-          <div className="h-48">
-            <Top5Carousel stats={stats} />
           </div>
         </GlassCard>
       </div>
