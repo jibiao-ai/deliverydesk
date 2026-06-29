@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   FolderKanban, TrendingUp, Calendar, RefreshCw, ChevronDown,
-  MapPin, Users, Building2, Layers, Activity, Award,
+  MapPin, Users, Building2, Layers, Activity, Award, CalendarDays,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 
@@ -262,6 +262,51 @@ export default function ProjectManagePage() {
         <StatCard icon={Activity} label="近7天新增" value={stats?.week_new} color="green" />
         <StatCard icon={Award} label="年度立项数" value={stats?.yoy_comparison?.length ? stats.yoy_comparison[stats.yoy_comparison.length - 1]?.count : '-'} color="orange" />
       </div>
+
+      {/* Monthly daily new projects calendar grid */}
+      <GlassCard icon={CalendarDays} title="每日新增立项" subtitle={`${period === 'custom' && customStart ? customStart : getPeriodDates('month').start} 至 ${period === 'custom' && customEnd ? customEnd : getPeriodDates('month').end} · 默认展示本月数据`}>
+        {(() => {
+          const dailyData = stats?.month_daily_projects || [];
+          if (dailyData.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                <CalendarDays size={40} className="mb-3 opacity-40" />
+                <p className="text-sm">暂无本月立项数据</p>
+                <p className="text-xs mt-1">数据同步后将自动展示每日新增立项数</p>
+              </div>
+            );
+          }
+          // Find max for color intensity
+          const maxCount = Math.max(...dailyData.map(d => d.count), 1);
+          return (
+            <div className="grid grid-cols-7 sm:grid-cols-10 lg:grid-cols-14 xl:grid-cols-16 gap-2">
+              {dailyData.map((item, idx) => {
+                const dayNum = item.date ? item.date.split('-')[2] : '';
+                const intensity = item.count / maxCount;
+                const bgColor = item.count > 0
+                  ? `rgba(99, 102, 241, ${0.15 + intensity * 0.7})`
+                  : 'rgba(243, 244, 246, 0.8)';
+                const textColor = item.count > 0 && intensity > 0.5 ? '#ffffff' : '#374151';
+                return (
+                  <div
+                    key={idx}
+                    className="relative flex flex-col items-center justify-center rounded-xl border border-white/30 p-2 min-h-[60px] transition-transform hover:scale-105"
+                    style={{ backgroundColor: bgColor }}
+                    title={`${item.date}: ${item.count} 个新项目`}
+                  >
+                    <span className="text-[10px] font-medium opacity-70" style={{ color: textColor }}>
+                      {dayNum}日
+                    </span>
+                    <span className="text-lg font-bold" style={{ color: textColor }}>
+                      {item.count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </GlassCard>
 
       {/* Charts Row 1: Line chart + Donut chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

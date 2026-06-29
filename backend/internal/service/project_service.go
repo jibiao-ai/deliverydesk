@@ -43,6 +43,7 @@ type ProjectStats struct {
 	Top5Customers     []NameCount            `json:"top5_customers"`      // TOP5 customers
 	YoYComparison     []YoYData             `json:"yoy_comparison"`      // year-over-year comparison
 	WeeklyProjects    []DailyCount           `json:"weekly_projects"`     // past week daily creation
+	MonthDailyProjects []DailyCount          `json:"month_daily_projects"` // daily new projects for current month
 	LastSyncTime      string                 `json:"last_sync_time"`
 }
 
@@ -414,6 +415,15 @@ func (s *ProjectService) GetStats(periodType string, startDate string, endDate s
 	// Weekly daily breakdown
 	stats.WeeklyProjects = s.getWeeklyDaily(db)
 
+	// Month daily new projects (default: current month, or use period startDate/endDate if monthly)
+	monthStart := time.Now().Format("2006-01") + "-01"
+	monthEnd := time.Now().Format("2006-01-02")
+	if startDate != "" && endDate != "" {
+		monthStart = startDate
+		monthEnd = endDate
+	}
+	stats.MonthDailyProjects = s.getMonthDailyProjects(db, monthStart, monthEnd)
+
 	return stats, nil
 }
 
@@ -535,6 +545,52 @@ func (s *ProjectService) getWeeklyDaily(db *gorm.DB) []DailyCount {
 		var dc DailyCount
 		rows.Scan(&dc.Date, &dc.Count)
 		results = append(results, dc)
+	}
+	return results
+}
+
+// getMonthDailyProjects returns daily project creation counts for the given date range
+// Fills in zero-count days so frontend always has a complete series
+func (s *ProjectService) getMonthDailyProjects(db *gorm.DB, startDate, endDate string) []DailyCount {
+	// Query actual counts from DB
+	countMap := make(map[string]int)
+	rows, err := db.Model(&model.ProjectInfo{}).
+		Select("DATE(project_start_date) as date, COUNT(*) as count").
+		Where("project_start_date >= ? AND project_start_date <= ?", startDate, endDate+" 23:59:59").
+		Group("date").
+		Order("date ASC").
+		Rows()
+	if err != nil {
+		logger.Log.Warnf("getMonthDailyProjects error: %v", err)
+		return nil
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var date string
+		var count int
+		rows.Scan(&date, &count)
+		if len(date) >= 10 {
+			countMap[date[:10]] = count
+		}
+	}
+
+	// Build full date series from startDate to endDate (inclusive)
+	start, err1 := time.Parse("2006-01-02", startDate)
+	end, err2 := time.Parse("2006-01-02", endDate)
+	if err1 != nil || err2 != nil {
+		// Fallback: return only what we have
+		var results []DailyCount
+		for d, c := range countMap {
+			results = append(results, DailyCount{Date: d, Count: c})
+		}
+		return results
+	}
+
+	var results []DailyCount
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		dateStr := d.Format("2006-01-02")
+		results = append(results, DailyCount{Date: dateStr, Count: countMap[dateStr]})
 	}
 	return results
 }
