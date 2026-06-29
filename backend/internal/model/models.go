@@ -287,7 +287,7 @@ type ProjectInfo struct {
 	AcceptStartDate   string         `gorm:"size:32" json:"accept_start_date"`           // 验收开始时间
 	AcceptEndDate     string         `gorm:"size:32" json:"accept_end_date"`             // 验收结束时间
 	ExpectAcceptDate  string         `gorm:"size:32" json:"expect_accept_date"`          // 预期验收时间
-	ProjectAcceptance string         `gorm:"size:64" json:"project_acceptance"`          // 项目整体验收
+	ProjectAcceptance string         `gorm:"size:1024" json:"project_acceptance"`        // 项目整体验收
 	ProjectManager    string         `gorm:"size:64;index" json:"project_manager"`       // 项目经理
 	Status            string         `gorm:"size:16" json:"status"`                      // 状态 (正常/异常)
 	Region            string         `gorm:"size:64;index" json:"region"`                // 区域
