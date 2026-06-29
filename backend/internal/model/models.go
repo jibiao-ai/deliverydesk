@@ -264,6 +264,43 @@ type WorktimeCache struct {
 	Data      string    `gorm:"type:longtext" json:"data"` // JSON-serialized WorktimeSummary
 }
 
+// ProjectInfo stores cached Redmine project data for project management statistics
+type ProjectInfo struct {
+	ID                uint           `gorm:"primarykey" json:"id"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
+	ProjectName       string         `gorm:"size:512;index" json:"project_name"`        // 项目名称
+	ProjectNo         string         `gorm:"size:128;index" json:"project_no"`           // 项目编号
+	SalesDirector     string         `gorm:"size:64" json:"sales_director"`              // 销售总监
+	SaleVP            string         `gorm:"size:64" json:"sale_vp"`                     // 销售VP
+	SaleUser          string         `gorm:"size:64" json:"sale_user"`                   // 销售
+	PreSaleUser       string         `gorm:"size:64" json:"pre_sale_user"`               // 售前
+	SaleOrderNumber   string         `gorm:"size:128" json:"sale_order_number"`          // 销售订单号
+	ContractNumber    string         `gorm:"size:128" json:"contract_number"`            // 合同号
+	ContractParty     string         `gorm:"size:256" json:"contract_party"`             // 合同甲方
+	EndUser           string         `gorm:"size:256" json:"end_user"`                   // 最终用户
+	ContractDate      string         `gorm:"size:32" json:"contract_date"`               // 合同签署时间
+	ProjectStartDate  string         `gorm:"size:32;index" json:"project_start_date"`    // 立项时间
+	DeliveryStartDate string         `gorm:"size:32" json:"delivery_start_date"`         // 交付开始时间
+	DeliveryEndDate   string         `gorm:"size:32" json:"delivery_end_date"`           // 交付结束时间
+	AcceptStartDate   string         `gorm:"size:32" json:"accept_start_date"`           // 验收开始时间
+	AcceptEndDate     string         `gorm:"size:32" json:"accept_end_date"`             // 验收结束时间
+	ExpectAcceptDate  string         `gorm:"size:32" json:"expect_accept_date"`          // 预期验收时间
+	ProjectAcceptance string         `gorm:"size:64" json:"project_acceptance"`          // 项目整体验收
+	ProjectManager    string         `gorm:"size:64;index" json:"project_manager"`       // 项目经理
+	Status            string         `gorm:"size:16" json:"status"`                      // 状态 (正常/异常)
+	Region            string         `gorm:"size:64;index" json:"region"`                // 区域
+	Province          string         `gorm:"size:64;index" json:"province"`              // 省份
+	BusinessNo        string         `gorm:"size:128" json:"business_no"`                // 商机号
+	DeliveryType      string         `gorm:"size:64;index" json:"delivery_type"`         // 交付类型
+	IsKeyProject      string         `gorm:"size:16" json:"is_key_project"`              // 是否重点
+	CustomerType      string         `gorm:"size:64;index" json:"customer_type"`         // 客户类型
+	ProjectType       string         `gorm:"size:64;index" json:"project_type"`          // 项目类型
+	ProjectStatus     string         `gorm:"size:64;index" json:"project_status"`        // 项目状态
+	SyncedAt          time.Time      `json:"synced_at"`                                  // last sync timestamp
+}
+
 // JiraIssueCache stores synced Jira issue data (ECSDESK + CSE) for fast local lookup
 type JiraIssueCache struct {
 	ID          uint           `gorm:"primarykey" json:"id"`
