@@ -41,12 +41,13 @@ func (h *TotpHandler) CreateTotpApplication(c *gin.Context) {
 	}
 
 	var req struct {
-		Issue    string `json:"issue"`
-		Customer string `json:"customer" binding:"required"`
-		Project  string `json:"project" binding:"required"`
-		Version  string `json:"version"`
-		TotpType string `json:"totp_type"`
-		Reason   string `json:"reason" binding:"required"`
+		Issue        string `json:"issue"`
+		IssueSummary string `json:"issue_summary"`
+		Customer     string `json:"customer" binding:"required"`
+		Project      string `json:"project" binding:"required"`
+		Version      string `json:"version"`
+		TotpType     string `json:"totp_type"`
+		Reason       string `json:"reason" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "请填写必填项: " + err.Error()})
@@ -61,14 +62,15 @@ func (h *TotpHandler) CreateTotpApplication(c *gin.Context) {
 	}
 
 	app := &model.TotpApplication{
-		UserID:   currentUser.ID,
-		Username: currentUser.DisplayName,
-		Issue:    req.Issue,
-		Customer: req.Customer,
-		Project:  req.Project,
-		Version:  req.Version,
-		TotpType: req.TotpType,
-		Reason:   req.Reason,
+		UserID:       currentUser.ID,
+		Username:     currentUser.DisplayName,
+		Issue:        req.Issue,
+		IssueSummary: req.IssueSummary,
+		Customer:     req.Customer,
+		Project:      req.Project,
+		Version:      req.Version,
+		TotpType:     req.TotpType,
+		Reason:       req.Reason,
 	}
 	if app.Username == "" {
 		app.Username = currentUser.Username
