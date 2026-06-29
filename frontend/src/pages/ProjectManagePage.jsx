@@ -5,9 +5,9 @@ import {
   PieChart, Pie, Cell,
   BarChart, Bar,
 } from 'recharts';
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
+import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
 import {
-  FolderKanban, TrendingUp, Calendar, RefreshCw, ChevronDown, ChevronLeft, ChevronRight,
+  FolderKanban, TrendingUp, Calendar, RefreshCw, ChevronLeft, ChevronRight,
   MapPin, Users, Building2, Layers, Activity, Award, CalendarDays, CalendarRange, BarChart3,
 } from 'lucide-react';
 import useStore from '../store/useStore';
@@ -227,11 +227,225 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   China Map Component
+   Calendar Heat Map for Period New Projects
+   - month: calendar (monthly view with day cells)
+   - quarter: week-based (grouped by week per month)
+   - year: 12-month grid (yearly overview)
+═══════════════════════════════════════════════════════════ */
+function PeriodCalendarView({ data, period, customRange }) {
+  // Build date->count lookup
+  const dateCountMap = useMemo(() => {
+    const map = {};
+    (data || []).forEach(item => {
+      if (item.date) map[item.date] = item.count;
+    });
+    return map;
+  }, [data]);
+
+  const maxCount = useMemo(() => Math.max(...Object.values(dateCountMap), 1), [dateCountMap]);
+
+  // Determine view type
+  const viewType = useMemo(() => {
+    if (period === 'month') return 'month';
+    if (period === 'quarter') return 'quarter';
+    if (period === 'year') return 'year';
+    // custom: determine by duration
+    if (customRange?.start && customRange?.end) {
+      const diffDays = (new Date(customRange.end) - new Date(customRange.start)) / (1000 * 60 * 60 * 24);
+      if (diffDays <= 60) return 'month';
+      if (diffDays <= 120) return 'quarter';
+      return 'year';
+    }
+    return 'month';
+  }, [period, customRange]);
+
+  // Week data for quarter view (always computed to avoid conditional hooks)
+  const weekData = useMemo(() => {
+    const weeks = [];
+    const entries = Object.entries(dateCountMap).sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length === 0) return [];
+
+    let currentWeek = [];
+    let weekStart = null;
+
+    entries.forEach(([date, count]) => {
+      const d = new Date(date);
+      const dayOfWeek = d.getDay();
+      if (dayOfWeek === 1 && currentWeek.length > 0) {
+        weeks.push({ start: weekStart, days: [...currentWeek], total: currentWeek.reduce((s, v) => s + v.count, 0) });
+        currentWeek = [];
+      }
+      if (currentWeek.length === 0) weekStart = date;
+      currentWeek.push({ date, count, dayOfWeek });
+    });
+    if (currentWeek.length > 0) {
+      weeks.push({ start: weekStart, days: [...currentWeek], total: currentWeek.reduce((s, v) => s + v.count, 0) });
+    }
+    return weeks;
+  }, [dateCountMap]);
+
+  // Monthly data for year view (always computed)
+  const monthlyData = useMemo(() => {
+    const monthMap = {};
+    Object.entries(dateCountMap).forEach(([date, count]) => {
+      const m = date.slice(0, 7); // YYYY-MM
+      monthMap[m] = (monthMap[m] || 0) + count;
+    });
+    const now = new Date();
+    const year = now.getFullYear();
+    const months = [];
+    for (let i = 0; i < 12; i++) {
+      const key = `${year}-${String(i + 1).padStart(2, '0')}`;
+      months.push({ month: `${i + 1}月`, key, count: monthMap[key] || 0 });
+    }
+    return months;
+  }, [dateCountMap]);
+
+  // Get color intensity for a count value
+  const getColorClass = (count) => {
+    if (!count || count === 0) return 'bg-gray-50 border-gray-100';
+    const ratio = count / maxCount;
+    if (ratio > 0.75) return 'bg-indigo-500 border-indigo-400 text-white';
+    if (ratio > 0.5) return 'bg-indigo-400 border-indigo-300 text-white';
+    if (ratio > 0.25) return 'bg-indigo-200 border-indigo-200 text-indigo-800';
+    return 'bg-indigo-100 border-indigo-100 text-indigo-700';
+  };
+
+  // ─── Month View: Calendar Grid ───
+  if (viewType === 'month') {
+    const now = new Date();
+    let year, month;
+    if (period === 'custom' && customRange?.start) {
+      const d = new Date(customRange.start);
+      year = d.getFullYear();
+      month = d.getMonth();
+    } else {
+      year = now.getFullYear();
+      month = now.getMonth();
+    }
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
+    const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-7 gap-1">
+          {weekDays.map((d) => (
+            <div key={d} className="text-center text-[9px] text-gray-400 font-medium py-0.5">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`e-${i}`} />)}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const day = i + 1;
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const count = dateCountMap[dateStr] || 0;
+            const isToday = now.getFullYear() === year && now.getMonth() === month && now.getDate() === day;
+
+            return (
+              <div key={day} title={`${dateStr}: ${count} 个项目`}
+                className={`relative w-full aspect-square rounded-lg border flex flex-col items-center justify-center transition-all duration-150 ${getColorClass(count)} ${isToday ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}`}>
+                <span className="text-[9px] font-medium leading-none">{day}</span>
+                {count > 0 && <span className="text-[8px] font-bold leading-none mt-0.5">{count}</span>}
+              </div>
+            );
+          })}
+        </div>
+        {/* Legend */}
+        <div className="flex items-center justify-end gap-1 mt-1">
+          <span className="text-[8px] text-gray-400">少</span>
+          <div className="w-3 h-3 rounded bg-gray-50 border border-gray-100" />
+          <div className="w-3 h-3 rounded bg-indigo-100 border border-indigo-100" />
+          <div className="w-3 h-3 rounded bg-indigo-200 border border-indigo-200" />
+          <div className="w-3 h-3 rounded bg-indigo-400 border border-indigo-300" />
+          <div className="w-3 h-3 rounded bg-indigo-500 border border-indigo-400" />
+          <span className="text-[8px] text-gray-400">多</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Quarter View: Week-based grid ───
+  if (viewType === 'quarter') {
+    const weekMax = Math.max(...weekData.map(w => w.total), 1);
+
+    return (
+      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+        {weekData.map((week, idx) => {
+          const ratio = week.total / weekMax;
+          const barWidth = Math.max(ratio * 100, 2);
+          return (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="text-[8px] text-gray-400 w-14 shrink-0 text-right">{week.start?.slice(5)}</span>
+              <div className="flex-1 h-5 bg-gray-50 rounded-md overflow-hidden relative">
+                <div className="h-full rounded-md bg-gradient-to-r from-indigo-400 to-purple-500 transition-all duration-300"
+                  style={{ width: `${barWidth}%` }} />
+                {week.total > 0 && (
+                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-600">{week.total}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {weekData.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+            <CalendarDays size={24} className="mb-1 opacity-40" />
+            <p className="text-[10px]">暂无数据</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Year View: 12-month grid ───
+  const yearMax = Math.max(...monthlyData.map(m => m.count), 1);
+
+  return (
+    <div className="grid grid-cols-4 gap-2">
+      {monthlyData.map((m) => {
+        const ratio = m.count / yearMax;
+        const bgClass = m.count === 0 ? 'bg-gray-50 border-gray-100' :
+          ratio > 0.75 ? 'bg-indigo-500 border-indigo-400' :
+          ratio > 0.5 ? 'bg-indigo-400 border-indigo-300' :
+          ratio > 0.25 ? 'bg-indigo-200 border-indigo-200' : 'bg-indigo-100 border-indigo-100';
+        const textClass = m.count === 0 ? 'text-gray-400' :
+          ratio > 0.5 ? 'text-white' : 'text-indigo-700';
+
+        return (
+          <div key={m.key} title={`${m.key}: ${m.count} 个项目`}
+            className={`rounded-xl border p-2 flex flex-col items-center justify-center transition-all duration-200 ${bgClass}`}>
+            <span className={`text-[10px] font-medium ${textClass}`}>{m.month}</span>
+            <span className={`text-sm font-bold ${textClass}`}>{m.count}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   China Map Component (Fixed)
 ═══════════════════════════════════════════════════════════ */
 function ChinaMap({ provinceData }) {
   const [tooltipContent, setTooltipContent] = useState('');
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [geoData, setGeoData] = useState(null);
+  const [geoError, setGeoError] = useState(false);
+
+  // Manually fetch GeoJSON to handle errors
+  useEffect(() => {
+    fetch(CHINA_GEO_URL)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => setGeoData(data))
+      .catch(err => {
+        console.error('Failed to load china.json:', err);
+        setGeoError(true);
+      });
+  }, []);
 
   // Build lookup: geoJSON name -> count
   const provinceCountMap = useMemo(() => {
@@ -245,6 +459,23 @@ function ChinaMap({ provinceData }) {
 
   const maxCount = useMemo(() => Math.max(...Object.values(provinceCountMap), 1), [provinceCountMap]);
 
+  if (geoError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-gray-400">
+        <MapPin size={32} className="mb-2 opacity-40" />
+        <p className="text-xs">地图加载失败</p>
+      </div>
+    );
+  }
+
+  if (!geoData) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-full">
       <ComposableMap
@@ -254,7 +485,7 @@ function ChinaMap({ provinceData }) {
         height={420}
         style={{ width: '100%', height: '100%' }}
       >
-        <Geographies geography={CHINA_GEO_URL}>
+        <Geographies geography={geoData}>
           {({ geographies }) =>
             geographies.map((geo) => {
               const name = geo.properties.name;
@@ -263,7 +494,7 @@ function ChinaMap({ provinceData }) {
               const fillColor = count > 0 ? `rgba(99, 102, 241, ${intensity})` : '#f1f5f9';
               return (
                 <Geography
-                  key={geo.rpisvgGeographyId || geo.properties.adcode}
+                  key={geo.properties.adcode || geo.id || name}
                   geography={geo}
                   fill={fillColor}
                   stroke="#e2e8f0"
@@ -292,6 +523,99 @@ function ChinaMap({ provinceData }) {
           {tooltipContent}
         </div>, document.body
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOP5 Carousel Component (rotates every 10s)
+═══════════════════════════════════════════════════════════ */
+function Top5Carousel({ stats }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const intervalRef = useRef(null);
+
+  const tabs = [
+    { key: 'regions', label: '区域', icon: MapPin, data: stats?.top5_regions, color: 'from-indigo-500 to-purple-600', textColor: 'text-indigo-600' },
+    { key: 'managers', label: '项目经理', icon: Users, data: stats?.top5_managers, color: 'from-blue-500 to-cyan-600', textColor: 'text-blue-600' },
+    { key: 'customers', label: '客户', icon: Building2, data: stats?.top5_customers, color: 'from-emerald-500 to-teal-600', textColor: 'text-emerald-600' },
+  ];
+
+  // Auto-rotate every 10 seconds
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      setActiveIndex(prev => (prev + 1) % tabs.length);
+    }, 10000);
+    return () => clearInterval(intervalRef.current);
+  }, [tabs.length]);
+
+  // Reset timer on manual tab click
+  const handleTabClick = (idx) => {
+    setActiveIndex(idx);
+    clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setActiveIndex(prev => (prev + 1) % tabs.length);
+    }, 10000);
+  };
+
+  const activeTab = tabs[activeIndex];
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Tab indicators */}
+      <div className="flex items-center gap-1 mb-3">
+        {tabs.map((tab, idx) => {
+          const Icon = tab.icon;
+          const isActive = idx === activeIndex;
+          return (
+            <button key={tab.key} onClick={() => handleTabClick(idx)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all duration-300 ${
+                isActive ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-400 hover:text-gray-600'
+              }`}>
+              <Icon size={10} />
+              {tab.label}
+            </button>
+          );
+        })}
+        {/* Progress bar */}
+        <div className="flex-1 flex justify-end">
+          <div className="flex gap-0.5">
+            {tabs.map((_, idx) => (
+              <div key={idx} className={`w-5 h-1 rounded-full transition-all duration-300 ${idx === activeIndex ? 'bg-indigo-200' : 'bg-gray-200'}`}>
+                {idx === activeIndex && (
+                  <div className="h-full rounded-full bg-indigo-600" style={{ animation: 'top5progress 10s linear infinite' }} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Content with slide animation */}
+      <div className="flex-1 overflow-hidden relative">
+        <div className="transition-all duration-500 ease-in-out" key={activeTab.key}>
+          {(activeTab.data || []).slice(0, 5).map((item, idx) => (
+            <div key={idx} className="flex items-center gap-2.5 py-1.5 group">
+              <span className={`w-5 h-5 rounded-lg text-[10px] font-bold text-white flex items-center justify-center bg-gradient-to-br ${activeTab.color} shadow-sm`}>
+                {idx + 1}
+              </span>
+              <span className="flex-1 text-xs text-gray-700 truncate group-hover:text-gray-900 transition-colors">{item.name || '未知'}</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full bg-gradient-to-r ${activeTab.color} transition-all duration-700`}
+                    style={{ width: `${Math.min((item.count / (activeTab.data?.[0]?.count || 1)) * 100, 100)}%` }} />
+                </div>
+                <span className={`text-xs font-semibold ${activeTab.textColor} min-w-[24px] text-right`}>{item.count}</span>
+              </div>
+            </div>
+          ))}
+          {(!activeTab.data || activeTab.data.length === 0) && (
+            <div className="flex flex-col items-center justify-center py-6 text-gray-400">
+              <activeTab.icon size={20} className="mb-1 opacity-40" />
+              <p className="text-[10px]">暂无数据</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -374,42 +698,20 @@ export default function ProjectManagePage() {
     } catch (e) { setSyncing(false); }
   };
 
-  // Determine period granularity for the "period new" grid
+  // Period label for the calendar card
   const periodLabel = useMemo(() => {
-    if (period === 'month') return '每日';
-    if (period === 'quarter') return '每月';
-    if (period === 'year') return '每月';
-    return '每日';
-  }, [period]);
-
-  // Adapt month_daily_projects data: for quarter/year -> aggregate by month
-  const periodNewData = useMemo(() => {
-    const raw = stats?.month_daily_projects || [];
-    if (!raw.length) return [];
-    if (period === 'month' || period === 'custom') {
-      // Check if custom range <= 60 days -> show daily, else monthly
-      if (period === 'custom' && customRange.start && customRange.end) {
-        const diffDays = (new Date(customRange.end) - new Date(customRange.start)) / (1000 * 60 * 60 * 24);
-        if (diffDays > 60) {
-          // Aggregate by month
-          const monthMap = {};
-          raw.forEach(item => {
-            const m = item.date?.slice(0, 7);
-            if (m) monthMap[m] = (monthMap[m] || 0) + item.count;
-          });
-          return Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([m, c]) => ({ date: m, count: c }));
-        }
-      }
-      return raw;
+    if (period === 'month') return '月历';
+    if (period === 'quarter') return '周历';
+    if (period === 'year') return '年历';
+    // custom: determine by duration
+    if (customRange.start && customRange.end) {
+      const diffDays = (new Date(customRange.end) - new Date(customRange.start)) / (1000 * 60 * 60 * 24);
+      if (diffDays <= 60) return '月历';
+      if (diffDays <= 120) return '周历';
+      return '年历';
     }
-    // quarter/year -> aggregate by month
-    const monthMap = {};
-    raw.forEach(item => {
-      const m = item.date?.slice(0, 7);
-      if (m) monthMap[m] = (monthMap[m] || 0) + item.count;
-    });
-    return Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).map(([m, c]) => ({ date: m, count: c }));
-  }, [stats, period, customRange]);
+    return '月历';
+  }, [period, customRange]);
 
   if (loading && !stats) {
     return (
@@ -465,33 +767,27 @@ export default function ProjectManagePage() {
         ))}
       </div>
 
-      {/* Row 2: Period new breakdown + China Map + Recent month trend (3 cols) */}
+      {/* Row 2: Period Calendar + China Map + Recent month trend (3 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Period new breakdown */}
+        {/* Period new breakdown - Calendar/Week/Year format */}
         <GlassCard icon={CalendarDays} title={`周期内新增立项（${periodLabel}）`} subtitle={period === 'custom' ? `${customRange.start} 至 ${customRange.end}` : `${getPeriodDates(period).start} 至 ${getPeriodDates(period).end}`}>
-          {periodNewData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-              <CalendarDays size={32} className="mb-2 opacity-40" />
-              <p className="text-xs">暂无数据</p>
-            </div>
-          ) : (
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={periodNewData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" tick={{ fontSize: 9 }} stroke="#9ca3af" interval={period === 'month' ? 2 : 0} angle={period === 'year' ? -30 : 0} />
-                  <YAxis tick={{ fontSize: 9 }} stroke="#9ca3af" allowDecimals={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="count" name="新增数" radius={[4, 4, 0, 0]} fill="#6366f1" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <div className="min-h-[220px] flex items-start">
+            {(!stats?.month_daily_projects || stats.month_daily_projects.length === 0) ? (
+              <div className="flex flex-col items-center justify-center w-full py-8 text-gray-400">
+                <CalendarDays size={32} className="mb-2 opacity-40" />
+                <p className="text-xs">暂无数据</p>
+              </div>
+            ) : (
+              <div className="w-full">
+                <PeriodCalendarView data={stats.month_daily_projects} period={period} customRange={customRange} />
+              </div>
+            )}
+          </div>
         </GlassCard>
 
         {/* China Map */}
         <GlassCard icon={MapPin} title="全国项目分布" subtitle="按省份点亮（紫色=有项目）">
-          <div className="h-52">
+          <div className="h-56">
             <ChinaMap provinceData={stats?.province_distribution} />
           </div>
         </GlassCard>
@@ -562,7 +858,7 @@ export default function ProjectManagePage() {
         </GlassCard>
       </div>
 
-      {/* Row 4: Status bar + Region donut + TOP5 (3 cols) */}
+      {/* Row 4: Status bar + Region donut + TOP5 Carousel (3 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Project status bar chart */}
         <GlassCard icon={Activity} title="项目状态分布" subtitle="按当前状态统计">
@@ -594,42 +890,10 @@ export default function ProjectManagePage() {
           </div>
         </GlassCard>
 
-        {/* TOP5 combined */}
-        <GlassCard icon={Award} title="TOP5 排行" subtitle="区域 / 项目经理 / 客户">
-          <div className="h-48 overflow-y-auto space-y-3" style={{ scrollbarWidth: 'thin' }}>
-            {/* TOP5 Regions */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-500 mb-1">区域</p>
-              {(stats?.top5_regions || []).slice(0, 3).map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 py-0.5">
-                  <span className="w-4 h-4 rounded text-[9px] font-bold text-white flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600">{idx + 1}</span>
-                  <span className="flex-1 text-xs text-gray-700 truncate">{item.name || '未知'}</span>
-                  <span className="text-xs font-semibold text-indigo-600">{item.count}</span>
-                </div>
-              ))}
-            </div>
-            {/* TOP5 Managers */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-500 mb-1">项目经理</p>
-              {(stats?.top5_managers || []).slice(0, 3).map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 py-0.5">
-                  <span className="w-4 h-4 rounded text-[9px] font-bold text-white flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-600">{idx + 1}</span>
-                  <span className="flex-1 text-xs text-gray-700 truncate">{item.name || '未知'}</span>
-                  <span className="text-xs font-semibold text-blue-600">{item.count}</span>
-                </div>
-              ))}
-            </div>
-            {/* TOP5 Customers */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-500 mb-1">客户</p>
-              {(stats?.top5_customers || []).slice(0, 3).map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 py-0.5">
-                  <span className="w-4 h-4 rounded text-[9px] font-bold text-white flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-600">{idx + 1}</span>
-                  <span className="flex-1 text-xs text-gray-700 truncate">{item.name || '未知'}</span>
-                  <span className="text-xs font-semibold text-emerald-600">{item.count}</span>
-                </div>
-              ))}
-            </div>
+        {/* TOP5 Carousel */}
+        <GlassCard icon={Award} title="TOP5 排行" subtitle="区域 / 项目经理 / 客户（自动轮播）">
+          <div className="h-48">
+            <Top5Carousel stats={stats} />
           </div>
         </GlassCard>
       </div>
