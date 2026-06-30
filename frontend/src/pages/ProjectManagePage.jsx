@@ -8,6 +8,7 @@ import {
 import {
   FolderKanban, TrendingUp, Calendar, RefreshCw, ChevronLeft, ChevronRight,
   MapPin, Users, Building2, Layers, Activity, Award, CalendarDays, CalendarRange, BarChart3,
+  PackageCheck,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
@@ -503,6 +504,86 @@ function Top5Carousel({ stats }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Pre-Delivery Scrolling List Component
+═══════════════════════════════════════════════════════════ */
+function PreDeliveryList({ data }) {
+  const scrollRef = useRef(null);
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Auto-scroll effect
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || !data || data.length === 0) return;
+
+    let animId;
+    let scrollSpeed = 0.5; // px per frame
+
+    const step = () => {
+      if (!isPaused && container) {
+        container.scrollTop += scrollSpeed;
+        // Reset to top when reaching bottom
+        if (container.scrollTop >= container.scrollHeight - container.clientHeight) {
+          container.scrollTop = 0;
+        }
+      }
+      animId = requestAnimationFrame(step);
+    };
+
+    animId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animId);
+  }, [data, isPaused]);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+        <PackageCheck size={32} className="mb-2 opacity-40" />
+        <p className="text-xs">暂无预交付项目</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Table header */}
+      <div className="grid grid-cols-7 gap-1 px-2 py-1.5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-100/50">
+        <span className="text-[9px] font-semibold text-indigo-700 col-span-2">项目名称</span>
+        <span className="text-[9px] font-semibold text-indigo-700">项目编号</span>
+        <span className="text-[9px] font-semibold text-indigo-700">销售</span>
+        <span className="text-[9px] font-semibold text-indigo-700">售前</span>
+        <span className="text-[9px] font-semibold text-indigo-700">商机号</span>
+        <span className="text-[9px] font-semibold text-indigo-700">省份</span>
+      </div>
+      {/* Scrolling content */}
+      <div
+        ref={scrollRef}
+        className="max-h-48 overflow-hidden"
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
+        style={{ scrollbarWidth: 'none' }}
+      >
+        {/* Duplicate data for seamless scroll */}
+        {[...data, ...data].map((item, idx) => (
+          <div key={idx}
+            className={`grid grid-cols-7 gap-1 px-2 py-1.5 border-b border-gray-50 hover:bg-indigo-50/50 transition-colors ${idx % 2 === 0 ? 'bg-white/50' : 'bg-gray-50/30'}`}>
+            <span className="text-[9px] text-gray-700 truncate col-span-2" title={item.project_name}>{item.project_name || '-'}</span>
+            <span className="text-[9px] text-gray-600 truncate" title={item.project_no}>{item.project_no || '-'}</span>
+            <span className="text-[9px] text-gray-600 truncate" title={item.sale_user}>{item.sale_user || '-'}</span>
+            <span className="text-[9px] text-gray-600 truncate" title={item.pre_sale_user}>{item.pre_sale_user || '-'}</span>
+            <span className="text-[9px] text-gray-600 truncate" title={item.business_no}>{item.business_no || '-'}</span>
+            <span className="text-[9px] text-gray-600 truncate" title={item.province}>{item.province || '-'}</span>
+          </div>
+        ))}
+      </div>
+      {/* Footer */}
+      <div className="flex items-center justify-between px-2">
+        <span className="text-[8px] text-gray-400">共 {data.length} 个预交付项目</span>
+        <span className="text-[8px] text-gray-400">鼠标悬停暂停滚动</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    Helper: get period dates
 ═══════════════════════════════════════════════════════════ */
 function getPeriodDates(period) {
@@ -537,6 +618,7 @@ export default function ProjectManagePage() {
   const [syncing, setSyncing] = useState(false);
   const [period, setPeriod] = useState('month');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
+  const [preDeliveryList, setPreDeliveryList] = useState([]);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -565,6 +647,22 @@ export default function ProjectManagePage() {
   }, [token, period, customRange]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Fetch pre-delivery list (only once on mount)
+  useEffect(() => {
+    const fetchPreDelivery = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/projects/pre-delivery`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.code === 0) setPreDeliveryList(data.data || []);
+      } catch (e) {
+        console.error('Failed to fetch pre-delivery list:', e);
+      }
+    };
+    fetchPreDelivery();
+  }, [token]);
 
   const handlePeriodChange = (p) => setPeriod(p);
   const handleCustomRangeChange = (start, end) => {
@@ -770,6 +868,13 @@ export default function ProjectManagePage() {
               </PieChart>
             </ResponsiveContainer>
           </div>
+        </GlassCard>
+      </div>
+
+      {/* Row 5: Pre-delivery list (full width) */}
+      <div className="grid grid-cols-1 gap-3">
+        <GlassCard icon={PackageCheck} title="预交付清单" subtitle={`交付类型为"预交付"的项目（共 ${preDeliveryList.length} 个）`}>
+          <PreDeliveryList data={preDeliveryList} />
         </GlassCard>
       </div>
     </div>

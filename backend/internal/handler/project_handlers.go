@@ -82,3 +82,14 @@ func (h *ProjectHandler) SyncProjects(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "同步任务已启动，请稍后刷新查看"})
 }
+
+// GetPreDeliveryList returns projects with delivery type '预交付'
+func (h *ProjectHandler) GetPreDeliveryList(c *gin.Context) {
+	projects, err := h.svc.GetPreDeliveryList()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "获取预交付清单失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": projects})
+}
