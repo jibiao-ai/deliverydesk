@@ -627,6 +627,28 @@ func (s *ProjectService) GetProjectList(page, pageSize int, search, region, proj
 	return projects, total, err
 }
 
+// PreDeliveryProject is a simplified view for pre-delivery list
+type PreDeliveryProject struct {
+	ProjectName  string `json:"project_name"`
+	ProjectNo    string `json:"project_no"`
+	SaleUser     string `json:"sale_user"`
+	PreSaleUser  string `json:"pre_sale_user"`
+	BusinessNo   string `json:"business_no"`
+	Province     string `json:"province"`
+	DeliveryType string `json:"delivery_type"`
+}
+
+// GetPreDeliveryList returns projects with delivery type '预交付'
+func (s *ProjectService) GetPreDeliveryList() ([]PreDeliveryProject, error) {
+	var projects []PreDeliveryProject
+	err := repository.DB.Model(&model.ProjectInfo{}).
+		Select("project_name, project_no, sale_user, pre_sale_user, business_no, province, delivery_type").
+		Where("delivery_type = ?", "预交付").
+		Order("project_start_date DESC").
+		Find(&projects).Error
+	return projects, err
+}
+
 // StartPeriodicSync starts a goroutine that syncs project data daily at 2:00 AM
 func (s *ProjectService) StartPeriodicSync() {
 	go func() {

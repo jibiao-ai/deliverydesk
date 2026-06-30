@@ -170,6 +170,7 @@ func main() {
 			// Project Management (all authenticated users)
 			auth.GET("/projects/stats", projectH.GetProjectStats)
 			auth.GET("/projects/list", projectH.GetProjectList)
+			auth.GET("/projects/pre-delivery", projectH.GetPreDeliveryList)
 			auth.POST("/projects/sync", projectH.SyncProjects)
 
 			// Admin routes
