@@ -223,6 +223,10 @@ func (h *WorktimeHandler) exportDeliveryCSV(writer *csv.Writer, summary *service
 
 	for _, user := range summary.Users {
 		for _, proj := range user.ProjectDetails {
+			// Skip ESS20210001 in delivery export (internal pre-delivery project)
+			if proj.ProjectNo == "ESS20210001" {
+				continue
+			}
 			for _, month := range proj.MonthDetails {
 				for _, task := range month.Tasks {
 					row := []string{
