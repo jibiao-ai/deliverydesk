@@ -592,8 +592,8 @@ func (s *WorktimeService) aggregateEntries(entries []WorktimeEntry, userNames []
 			projectKey = "no-project"
 		}
 
-		// Skip internal projects
-		if projectKey == "ESS20210002" || projectKey == "ESS20210001" {
+		// Skip internal projects (ESS20210002 is internal admin project)
+		if projectKey == "ESS20210002" {
 			continue
 		}
 
