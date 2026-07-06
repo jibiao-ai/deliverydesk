@@ -159,6 +159,14 @@ func InitDB(cfg config.DatabaseConfig) error {
 		}
 	}
 
+	// Explicit column migrations for existing databases
+	// Fix: totp_pass was VARCHAR(256) which is too small for TOTP server JSON responses
+	if db.Migrator().HasTable(&model.TotpApplication{}) {
+		if err := db.Exec("ALTER TABLE totp_applications MODIFY COLUMN totp_pass TEXT").Error; err != nil {
+			logger.Log.Warnf("ALTER totp_pass column warning (may already be TEXT): %v", err)
+		}
+	}
+
 	DB = db
 	logger.Log.Info("Database connection established and migrated")
 

@@ -226,7 +226,7 @@ type TotpApplication struct {
 	AuditStatus         string         `gorm:"size:32;default:pending" json:"audit_status"`    // pending, approved, rejected
 	AuditRemark         string         `gorm:"type:text" json:"audit_remark"`                  // reviewer's remark
 	AuditTime           *time.Time     `json:"audit_time"`                                     // when audit happened
-	TotpPass            string         `gorm:"size:256" json:"totp_pass"`                      // generated password (visible only after approval)
+	TotpPass            string         `gorm:"type:text" json:"totp_pass"`                      // generated password (visible only after approval)
 	Timestamp           string         `gorm:"size:128" json:"timestamp"`                      // TOTP generation timestamp
 }
 
