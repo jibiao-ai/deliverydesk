@@ -345,37 +345,56 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		return "", fmt.Errorf("TOTP生成接口返回错误: %d, body: %s", resp2.StatusCode, string(body2))
 	}
 
-	// Parse TOTP response - extract password from response
-	var totpResp struct {
-		Result []struct {
-			Password string `json:"password"`
-			Totp     string `json:"totp"`
-		} `json:"result"`
-		Password string `json:"password"`
-		Totp     string `json:"totp"`
-	}
+	// Parse TOTP response - extract password(s) from response
+	// The server may return various formats, try to handle them all
+	var totpResp map[string]interface{}
 	if err := json.Unmarshal(body2, &totpResp); err != nil {
 		return "", fmt.Errorf("解析TOTP响应失败: %v, body: %s", err, string(body2))
 	}
 
 	// Try to extract password from various response formats
-	var password string
-	if totpResp.Password != "" {
-		password = totpResp.Password
-	} else if totpResp.Totp != "" {
-		password = totpResp.Totp
-	} else if len(totpResp.Result) > 0 {
-		if totpResp.Result[0].Password != "" {
-			password = totpResp.Result[0].Password
-		} else if totpResp.Result[0].Totp != "" {
-			password = totpResp.Result[0].Totp
+	var passwords []string
+
+	// Check if response has a "result" array
+	if result, ok := totpResp["result"]; ok {
+		if resultArr, ok := result.([]interface{}); ok {
+			for _, item := range resultArr {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					// Try common password field names
+					for _, field := range []string{"password", "totp", "pass", "otp"} {
+						if v, ok := itemMap[field]; ok {
+							if str, ok := v.(string); ok && str != "" {
+								passwords = append(passwords, str)
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
-	if password == "" {
-		// If we can't parse a known field, return the full response as the password
-		// This ensures the user can see what the server returned
-		password = string(body2)
+	// Check top-level fields
+	if len(passwords) == 0 {
+		for _, field := range []string{"password", "totp", "pass", "otp"} {
+			if v, ok := totpResp[field]; ok {
+				if str, ok := v.(string); ok && str != "" {
+					passwords = append(passwords, str)
+					break
+				}
+			}
+		}
+	}
+
+	var password string
+	if len(passwords) > 0 {
+		password = strings.Join(passwords, "\n")
+	} else {
+		// If we can't parse a known field, return the raw response (truncated for safety)
+		raw := string(body2)
+		if len(raw) > 2000 {
+			raw = raw[:2000] + "...(truncated)"
+		}
+		password = raw
 	}
 
 	logger.Log.Infof("TOTP dynamic password generated for company=%s, project=%s, version=%s", customer, project, version)
