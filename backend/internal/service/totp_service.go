@@ -1,12 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -210,18 +215,171 @@ func (s *TotpService) generateTotpPass(customer, project, version, totpType stri
 		return pass, timestamp, nil
 	}
 
-	// For standard TOTP, we'd call the external TOTP server
-	// Since we can't make external HTTP calls in this context reliably,
-	// use the local OTP generation as a fallback
-	secret := s.GetSetting("totp", "roller_secret")
-	if secret == "" {
-		secret = "6GAF6NXNYCT75FV3APTJU4R5XZJ7X6I4"
-	}
-	pass, err := generateOTP(secret)
+	// For standard TOTP (动态密码), call the external TOTP server
+	pass, err := s.callTotpServer(customer, project, version)
 	if err != nil {
-		return "", "", fmt.Errorf("totp generation failed: %v", err)
+		return "", "", fmt.Errorf("动态密码生成失败: %v", err)
 	}
 	return pass, timestamp, nil
+}
+
+// callTotpServer calls the external TOTP server to generate a dynamic password (动态密码)
+// Flow: GET /totps/licenses → extract user_root_pass keys → POST /totps with key_items
+func (s *TotpService) callTotpServer(customer, project, version string) (string, error) {
+	// Read settings
+	serverURL := s.GetSetting("totp", "totp_server")
+	if serverURL == "" {
+		serverURL = "http://lic.easystack.cn"
+	}
+	authUser := s.GetSetting("totp", "totp_auth_user")
+	if authUser == "" {
+		authUser = "totp"
+	}
+	authPass := s.GetSetting("totp", "totp_auth_pass")
+	if authPass == "" {
+		authPass = "Totp@2013"
+	}
+
+	// Build base URL based on version (V6 uses /v6 path)
+	baseURL := strings.TrimRight(serverURL, "/")
+	if strings.ToUpper(version) == "V6" {
+		baseURL = baseURL + "/v6"
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	// Step 1: GET /totps/licenses?company=X&project=Y to find license keys
+	licensesURL := fmt.Sprintf("%s/totps/licenses?company=%s&project=%s",
+		baseURL, url.QueryEscape(customer), url.QueryEscape(project))
+
+	req, err := http.NewRequest("GET", licensesURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("创建请求失败: %v", err)
+	}
+	req.SetBasicAuth(authUser, authPass)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("请求TOTP服务器失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("读取响应失败: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("TOTP服务器返回错误状态码: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse licenses response
+	var licensesResp struct {
+		TotalCount int `json:"totalcount"`
+		Result     []struct {
+			UserRootPass string `json:"user_root_pass"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &licensesResp); err != nil {
+		return "", fmt.Errorf("解析licenses响应失败: %v, body: %s", err, string(body))
+	}
+
+	if licensesResp.TotalCount == 0 {
+		return "", fmt.Errorf("未查询到该项目的license信息 (company=%s, project=%s)", customer, project)
+	}
+
+	// Extract key_pass items from user_root_pass
+	type keyItem struct {
+		Company string `json:"company"`
+		Project string `json:"project"`
+		KeyPass string `json:"key_pass"`
+	}
+	var keyItems []keyItem
+	for _, item := range licensesResp.Result {
+		if item.UserRootPass != "" {
+			keyItems = append(keyItems, keyItem{
+				Company: customer,
+				Project: project,
+				KeyPass: item.UserRootPass,
+			})
+		}
+	}
+
+	if len(keyItems) == 0 {
+		return "", fmt.Errorf("该项目没有可申请的license (无user_root_pass)")
+	}
+
+	// Step 2: POST /totps with key_items to generate TOTP
+	totpReqBody := struct {
+		KeyItems []keyItem `json:"key_items"`
+	}{
+		KeyItems: keyItems,
+	}
+
+	jsonBody, err := json.Marshal(totpReqBody)
+	if err != nil {
+		return "", fmt.Errorf("序列化请求体失败: %v", err)
+	}
+
+	totpURL := fmt.Sprintf("%s/totps", baseURL)
+	req2, err := http.NewRequest("POST", totpURL, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("创建TOTP请求失败: %v", err)
+	}
+	req2.SetBasicAuth(authUser, authPass)
+	req2.Header.Set("Content-Type", "application/json")
+
+	resp2, err := client.Do(req2)
+	if err != nil {
+		return "", fmt.Errorf("请求TOTP密码生成失败: %v", err)
+	}
+	defer resp2.Body.Close()
+
+	body2, err := io.ReadAll(resp2.Body)
+	if err != nil {
+		return "", fmt.Errorf("读取TOTP响应失败: %v", err)
+	}
+
+	if resp2.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("TOTP生成接口返回错误: %d, body: %s", resp2.StatusCode, string(body2))
+	}
+
+	// Parse TOTP response - extract password from response
+	var totpResp struct {
+		Result []struct {
+			Password string `json:"password"`
+			Totp     string `json:"totp"`
+		} `json:"result"`
+		Password string `json:"password"`
+		Totp     string `json:"totp"`
+	}
+	if err := json.Unmarshal(body2, &totpResp); err != nil {
+		return "", fmt.Errorf("解析TOTP响应失败: %v, body: %s", err, string(body2))
+	}
+
+	// Try to extract password from various response formats
+	var password string
+	if totpResp.Password != "" {
+		password = totpResp.Password
+	} else if totpResp.Totp != "" {
+		password = totpResp.Totp
+	} else if len(totpResp.Result) > 0 {
+		if totpResp.Result[0].Password != "" {
+			password = totpResp.Result[0].Password
+		} else if totpResp.Result[0].Totp != "" {
+			password = totpResp.Result[0].Totp
+		}
+	}
+
+	if password == "" {
+		// If we can't parse a known field, return the full response as the password
+		// This ensures the user can see what the server returned
+		password = string(body2)
+	}
+
+	logger.Log.Infof("TOTP dynamic password generated for company=%s, project=%s, version=%s", customer, project, version)
+	return password, nil
 }
 
 // CheckIssueFromJira delegates to JiraService for issue lookup (cache-first, then API)
