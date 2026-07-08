@@ -240,7 +240,9 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		authPass = "Totp@2013"
 	}
 
-	// Build base URL based on version (V6 uses /v6 path)
+	// Build base URL based on version
+	// API doc: endpoints are /topoweb/totps/topos (GET) and /topoweb/totps (POST)
+	// V6 uses /v6 prefix before /topoweb path
 	baseURL := strings.TrimRight(serverURL, "/")
 	if strings.ToUpper(version) == "V6" {
 		baseURL = baseURL + "/v6"
@@ -248,8 +250,8 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	// Step 1: GET /totps/licenses?company=X&project=Y to find license keys
-	licensesURL := fmt.Sprintf("%s/totps/licenses?company=%s&project=%s",
+	// Step 1: GET /topoweb/totps/topos?company=X&project=Y to find license keys
+	licensesURL := fmt.Sprintf("%s/topoweb/totps/topos?company=%s&project=%s",
 		baseURL, url.QueryEscape(customer), url.QueryEscape(project))
 
 	req, err := http.NewRequest("GET", licensesURL, nil)
@@ -322,7 +324,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		return "", fmt.Errorf("序列化请求体失败: %v", err)
 	}
 
-	totpURL := fmt.Sprintf("%s/totps", baseURL)
+	totpURL := fmt.Sprintf("%s/topoweb/totps", baseURL)
 	req2, err := http.NewRequest("POST", totpURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("创建TOTP请求失败: %v", err)
@@ -346,7 +348,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 	}
 
 	// Parse TOTP response - extract password(s) from response
-	// The server may return various formats, try to handle them all
+	// API doc response format: {"result": [{"status": "success", "totp_pass": "421177", "timestamp": "..."}]}
 	var totpResp map[string]interface{}
 	if err := json.Unmarshal(body2, &totpResp); err != nil {
 		return "", fmt.Errorf("解析TOTP响应失败: %v, body: %s", err, string(body2))
@@ -354,18 +356,28 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 
 	// Try to extract password from various response formats
 	var passwords []string
+	var errors []string
 
 	// Check if response has a "result" array
 	if result, ok := totpResp["result"]; ok {
 		if resultArr, ok := result.([]interface{}); ok {
 			for _, item := range resultArr {
 				if itemMap, ok := item.(map[string]interface{}); ok {
-					// Try common password field names (totp_pass is the standard field from the server)
-					for _, field := range []string{"totp_pass", "password", "totp", "pass", "otp"} {
-						if v, ok := itemMap[field]; ok {
-							if str, ok := v.(string); ok && str != "" {
-								passwords = append(passwords, str)
+					// Check status field — skip error items
+					if status, ok := itemMap["status"]; ok {
+						if statusStr, ok := status.(string); ok && statusStr == "error" {
+							if tp, ok := itemMap["totp_pass"]; ok {
+								if tpStr, ok := tp.(string); ok {
+									errors = append(errors, tpStr)
+								}
 							}
+							continue
+						}
+					}
+					// Extract totp_pass from successful items
+					if v, ok := itemMap["totp_pass"]; ok {
+						if str, ok := v.(string); ok && str != "" {
+							passwords = append(passwords, str)
 						}
 					}
 				}
@@ -373,7 +385,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		}
 	}
 
-	// Check top-level fields
+	// Check top-level fields as fallback
 	if len(passwords) == 0 {
 		for _, field := range []string{"totp_pass", "password", "totp", "pass", "otp"} {
 			if v, ok := totpResp[field]; ok {
@@ -397,6 +409,8 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 			}
 		}
 		password = strings.Join(unique, " ")
+	} else if len(errors) > 0 {
+		return "", fmt.Errorf("TOTP服务器生成失败: %s", strings.Join(errors, "; "))
 	} else {
 		// If we can't parse a known field, return the raw response (truncated for safety)
 		raw := string(body2)
