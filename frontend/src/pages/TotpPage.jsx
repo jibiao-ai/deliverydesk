@@ -535,7 +535,7 @@ function ApplyModal({ onClose, onSuccess }) {
         if (res.data.customer) updates.customer = res.data.customer;
         if (res.data.project) updates.project = res.data.project;
         if (res.data.summary) updates.issue_summary = res.data.summary;
-        if (res.data.version && (res.data.version === 'V5' || res.data.version === 'V6')) {
+        if (res.data.version && (res.data.version === 'V5' || res.data.version === 'V6' || res.data.version === 'V611')) {
           updates.version = res.data.version;
         }
         if (Object.keys(updates).length > 0) {
@@ -669,7 +669,7 @@ function ApplyModal({ onClose, onSuccess }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">平台版本</label>
               <div className="flex items-center gap-4 mt-1">
-                {['V5', 'V6'].map((v) => (
+                {['V5', 'V6', 'V611'].map((v) => (
                   <label key={v} className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="radio"

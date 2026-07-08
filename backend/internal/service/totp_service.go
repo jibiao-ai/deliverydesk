@@ -224,7 +224,10 @@ func (s *TotpService) generateTotpPass(customer, project, version, totpType stri
 }
 
 // callTotpServer calls the external TOTP server to generate a dynamic password (动态密码)
-// Flow: GET /totps/licenses → extract user_root_pass keys → POST /totps with key_items
+// Three version types with different API paths:
+//   - V5:   GET /totps/licenses + POST /totps
+//   - V6:   GET /v6/totps/licenses + POST /v6/totps
+//   - V611 (V6.1.1+): GET /topoweb/totps/topos + POST /topoweb/totps
 func (s *TotpService) callTotpServer(customer, project, version string) (string, error) {
 	// Read settings
 	serverURL := s.GetSetting("totp", "totp_server")
@@ -240,17 +243,32 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		authPass = "Totp@2013"
 	}
 
-	// Build base URL based on version (V6 uses /v6 path prefix)
 	baseURL := strings.TrimRight(serverURL, "/")
-	if strings.ToUpper(version) == "V6" {
-		baseURL = baseURL + "/v6"
+
+	// Determine API paths based on version
+	// V611 (V6.1.1+) uses topoweb service with different endpoint paths
+	// V6 uses /v6 prefix
+	// V5 and V3V4 use base URL directly
+	var licensesPath, totpPath string
+	versionUpper := strings.ToUpper(version)
+
+	switch versionUpper {
+	case "V611":
+		licensesPath = "/topoweb/totps/topos"
+		totpPath = "/topoweb/totps"
+	case "V6":
+		licensesPath = "/v6/totps/licenses"
+		totpPath = "/v6/totps"
+	default: // V5, V3V4, etc.
+		licensesPath = "/totps/licenses"
+		totpPath = "/totps"
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	// Step 1: GET /totps/licenses?company=X&project=Y to find license keys
-	licensesURL := fmt.Sprintf("%s/totps/licenses?company=%s&project=%s",
-		baseURL, url.QueryEscape(customer), url.QueryEscape(project))
+	// Step 1: GET licenses/topos endpoint to find license keys
+	licensesURL := fmt.Sprintf("%s%s?company=%s&project=%s",
+		baseURL, licensesPath, url.QueryEscape(customer), url.QueryEscape(project))
 
 	req, err := http.NewRequest("GET", licensesURL, nil)
 	if err != nil {
@@ -322,7 +340,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		return "", fmt.Errorf("序列化请求体失败: %v", err)
 	}
 
-	totpURL := fmt.Sprintf("%s/totps", baseURL)
+	totpURL := fmt.Sprintf("%s%s", baseURL, totpPath)
 	req2, err := http.NewRequest("POST", totpURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("创建TOTP请求失败: %v", err)
