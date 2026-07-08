@@ -317,3 +317,36 @@ type JiraIssueCache struct {
 	Assignee    string         `gorm:"size:128" json:"assignee"`                   // assignee
 	TotpVersion string         `gorm:"size:32" json:"totp_version"`                // V5/V6/V3V4
 }
+
+// OpsEnvironment represents a customer operations environment from Jira CSE project
+type OpsEnvironment struct {
+	ID              uint           `gorm:"primarykey" json:"id"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	CSEKey          string         `gorm:"size:64;index" json:"cse_key"`                  // CSE issue key (e.g. CSE-123)
+	EnvDetailKey    string         `gorm:"size:64;index" json:"env_detail_key"`            // 环境详细信息 issue key
+	CustomerName    string         `gorm:"size:256;index" json:"customer_name"`            // 客户名
+	ProjectName     string         `gorm:"size:512;index" json:"project_name"`             // 项目名
+	CSEName         string         `gorm:"size:512" json:"cse_name"`                      // CSE名称
+	Status          string         `gorm:"size:64;index" json:"status"`                   // 状态: In Progress/Done/Discarded
+	ProjectNum      string         `gorm:"size:128" json:"project_num"`                   // 项目编号
+	ContractNum     string         `gorm:"size:128" json:"contract_num"`                  // 合同号
+	OpsRegion       string         `gorm:"size:64;index" json:"ops_region"`               // 运维区域
+	EnvType         string         `gorm:"size:128" json:"env_type"`                      // 环境类型
+	CPUArch         string         `gorm:"size:64" json:"cpu_arch"`                       // 架构
+	Version         string         `gorm:"size:64" json:"version"`                        // 版本
+	CustomerLevel   string         `gorm:"size:32" json:"customer_level"`                 // 客户级别
+	NodeCount       int            `json:"node_count"`                                    // 节点总数
+	City            string         `gorm:"size:128" json:"city"`                          // 所属地级市
+	Sales           string         `gorm:"size:128" json:"sales"`                         // 销售
+	SLA             string         `gorm:"size:32" json:"sla"`                            // SLA
+	IsRenewal       string         `gorm:"size:32" json:"is_renewal"`                     // 是否续保
+	DeployTime      string         `gorm:"size:32" json:"deploy_time"`                    // 部署时间
+	RenewalStart    string         `gorm:"size:32" json:"renewal_start"`                  // 续保开始时间
+	RenewalEnd      string         `gorm:"size:32" json:"renewal_end"`                    // 续保结束时间
+	MaintainStart   string         `gorm:"size:32" json:"maintain_start"`                 // 维保开始时间
+	MaintainEnd     string         `gorm:"size:32" json:"maintain_end"`                   // 维保结束时间
+	DiscardedAt     *time.Time     `json:"discarded_at"`                                  // 弃用时间
+	SyncedAt        *time.Time     `json:"synced_at"`                                     // 最后同步时间
+}

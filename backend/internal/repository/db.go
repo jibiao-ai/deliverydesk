@@ -127,13 +127,14 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"WorktimeUser":    &model.WorktimeUser{},
 		"WorktimeCache":   &model.WorktimeCache{},
 		"ProjectInfo":     &model.ProjectInfo{},
+		"OpsEnvironment":  &model.OpsEnvironment{},
 	}
 	migrationOrder := []string{
 		"User", "LDAPConfig", "Agent", "Skill", "SkillDocument", "AgentSkill",
 		"Conversation", "Message", "TaskLog",
 		"WebsiteCategory", "WebsiteLink", "AIProvider", "OperationLog",
 		"TotpApplication", "SystemSetting", "JiraIssueCache", "WorktimeUser", "WorktimeCache",
-		"ProjectInfo",
+		"ProjectInfo", "OpsEnvironment",
 	}
 	for _, name := range migrationOrder {
 		m := migrationModels[name]

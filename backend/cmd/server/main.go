@@ -66,6 +66,7 @@ func main() {
 	totpH := handler.NewTotpHandler()
 	worktimeH := handler.NewWorktimeHandler()
 	projectH := handler.NewProjectHandler()
+	opsEnvH := handler.NewOpsEnvHandler()
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -172,6 +173,13 @@ func main() {
 			auth.GET("/projects/list", projectH.GetProjectList)
 			auth.GET("/projects/pre-delivery", projectH.GetPreDeliveryList)
 			auth.POST("/projects/sync", projectH.SyncProjects)
+
+			// Ops Environment routes
+			auth.GET("/ops-env/list", opsEnvH.ListOpsEnvironments)
+			auth.GET("/ops-env/stats", opsEnvH.GetOpsEnvStats)
+			auth.GET("/ops-env/calendar", opsEnvH.GetOpsEnvCalendar)
+			auth.GET("/ops-env/regions", opsEnvH.GetRegions)
+			auth.POST("/ops-env/sync", opsEnvH.SyncOpsEnvironments)
 
 			// Admin routes
 			admin := auth.Group("")
