@@ -12,6 +12,7 @@ import OperationLogPage from '../pages/OperationLogPage';
 import TotpPage from '../pages/TotpPage';
 import WorktimePage from '../pages/WorktimePage';
 import ProjectManagePage from '../pages/ProjectManagePage';
+import OpsEnvironmentPage from '../pages/OpsEnvironmentPage';
 import SettingsPage from '../pages/SettingsPage';
 import useStore from '../store/useStore';
 import { Bell } from 'lucide-react';
@@ -29,6 +30,7 @@ const pageComponents = {
   totp: TotpPage,
   worktime: WorktimePage,
   projects: ProjectManagePage,
+  'ops-env': OpsEnvironmentPage,
   settings: SettingsPage,
 };
 
@@ -45,6 +47,7 @@ const PAGE_META = {
   totp:             { title: '双因子管理', subtitle: '申请和审核双因子认证密码' },
   worktime:         { title: '工时管理',   subtitle: 'Redmine 工时数据统计与分析' },
   projects:         { title: '项目管理',   subtitle: 'Redmine 项目立项数据统计看板' },
+  'ops-env':        { title: '运维环境',   subtitle: 'Jira 运维环境状态与弃用追踪' },
   settings:         { title: '系统设置',   subtitle: '管理集成配置和服务参数' },
 };
 
@@ -54,7 +57,7 @@ const THEMES = [
 ];
 
 // Pages that require admin role
-const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects']);
+const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects', 'ops-env']);
 
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);
