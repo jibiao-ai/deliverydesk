@@ -360,8 +360,8 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		if resultArr, ok := result.([]interface{}); ok {
 			for _, item := range resultArr {
 				if itemMap, ok := item.(map[string]interface{}); ok {
-					// Try common password field names
-					for _, field := range []string{"password", "totp", "pass", "otp"} {
+					// Try common password field names (totp_pass is the standard field from the server)
+					for _, field := range []string{"totp_pass", "password", "totp", "pass", "otp"} {
 						if v, ok := itemMap[field]; ok {
 							if str, ok := v.(string); ok && str != "" {
 								passwords = append(passwords, str)
@@ -375,7 +375,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 
 	// Check top-level fields
 	if len(passwords) == 0 {
-		for _, field := range []string{"password", "totp", "pass", "otp"} {
+		for _, field := range []string{"totp_pass", "password", "totp", "pass", "otp"} {
 			if v, ok := totpResp[field]; ok {
 				if str, ok := v.(string); ok && str != "" {
 					passwords = append(passwords, str)
@@ -387,7 +387,16 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 
 	var password string
 	if len(passwords) > 0 {
-		password = strings.Join(passwords, "\n")
+		// Deduplicate and join passwords (matching Python: " ".join(set(totp_pass)))
+		seen := make(map[string]bool)
+		var unique []string
+		for _, p := range passwords {
+			if !seen[p] {
+				seen[p] = true
+				unique = append(unique, p)
+			}
+		}
+		password = strings.Join(unique, " ")
 	} else {
 		// If we can't parse a known field, return the raw response (truncated for safety)
 		raw := string(body2)
