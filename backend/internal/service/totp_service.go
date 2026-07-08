@@ -240,9 +240,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		authPass = "Totp@2013"
 	}
 
-	// Build base URL based on version
-	// API doc: endpoints are /topoweb/totps/topos (GET) and /topoweb/totps (POST)
-	// V6 uses /v6 prefix before /topoweb path
+	// Build base URL based on version (V6 uses /v6 path prefix)
 	baseURL := strings.TrimRight(serverURL, "/")
 	if strings.ToUpper(version) == "V6" {
 		baseURL = baseURL + "/v6"
@@ -250,8 +248,8 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	// Step 1: GET /topoweb/totps/topos?company=X&project=Y to find license keys
-	licensesURL := fmt.Sprintf("%s/topoweb/totps/topos?company=%s&project=%s",
+	// Step 1: GET /totps/licenses?company=X&project=Y to find license keys
+	licensesURL := fmt.Sprintf("%s/totps/licenses?company=%s&project=%s",
 		baseURL, url.QueryEscape(customer), url.QueryEscape(project))
 
 	req, err := http.NewRequest("GET", licensesURL, nil)
@@ -324,7 +322,7 @@ func (s *TotpService) callTotpServer(customer, project, version string) (string,
 		return "", fmt.Errorf("序列化请求体失败: %v", err)
 	}
 
-	totpURL := fmt.Sprintf("%s/topoweb/totps", baseURL)
+	totpURL := fmt.Sprintf("%s/totps", baseURL)
 	req2, err := http.NewRequest("POST", totpURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("创建TOTP请求失败: %v", err)
