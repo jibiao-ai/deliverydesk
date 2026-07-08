@@ -294,7 +294,7 @@ func (s *JiraService) fetchIssueFromJira(issueKey string) (map[string]string, er
 				if labelStr, ok := label.(string); ok {
 					upper := strings.ToUpper(labelStr)
 					if strings.HasPrefix(upper, "V5") || strings.HasPrefix(upper, "V6") {
-						result["version"] = upper[:2]
+						result["version"] = getTotpVersion(labelStr)
 						break
 					}
 				}
@@ -488,11 +488,34 @@ func (s *JiraService) saveToCache(issueKey string, data map[string]string) {
 	}
 }
 
-// getTotpVersion converts version string to V5/V6/V3V4 format
+// getTotpVersion converts version string to V5/V6/V611 format
+// V6.1.1 and later (e.g., 6.1.1, 6.1.2, 6.2.x) use the topoweb API (V611)
+// V6.0.x and plain "V6"/"6" use the /v6 API (V6)
+// V5 and others use the base API (V5)
 func getTotpVersion(version string) string {
-	if strings.HasPrefix(version, "6") || strings.HasPrefix(version, "V6") {
+	v := strings.TrimSpace(version)
+	vUpper := strings.ToUpper(v)
+
+	// Remove "V" prefix for parsing
+	numPart := v
+	if strings.HasPrefix(vUpper, "V") {
+		numPart = v[1:]
+	}
+
+	if strings.HasPrefix(numPart, "6") {
+		// Check if it's 6.1.x or higher (V611 uses topoweb API)
+		parts := strings.Split(numPart, ".")
+		if len(parts) >= 2 {
+			// Parse minor version
+			minor := 0
+			fmt.Sscanf(parts[1], "%d", &minor)
+			if minor >= 1 {
+				return "V611"
+			}
+		}
+		// Plain "6" or "6.0.x" → V6
 		return "V6"
-	} else if strings.HasPrefix(version, "5") || strings.HasPrefix(version, "V5") {
+	} else if strings.HasPrefix(numPart, "5") {
 		return "V5"
 	}
 	return "V5" // default
