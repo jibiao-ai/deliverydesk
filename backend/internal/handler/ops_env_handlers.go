@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -409,6 +410,21 @@ func getJiraConfigForOpsEnv() (server, username, token string, err error) {
 // syncOpsEnvFromJira fetches environments from Jira and updates the database
 // Uses concurrent workers to speed up CSE issue fetching
 func syncOpsEnvFromJira() error {
+	// Prevent concurrent sync operations
+	opsEnvSyncingMu.Lock()
+	if opsEnvSyncing {
+		opsEnvSyncingMu.Unlock()
+		logger.Log.Info("OpsEnvironment sync already in progress, skipping")
+		return nil
+	}
+	opsEnvSyncing = true
+	opsEnvSyncingMu.Unlock()
+	defer func() {
+		opsEnvSyncingMu.Lock()
+		opsEnvSyncing = false
+		opsEnvSyncingMu.Unlock()
+	}()
+
 	jiraServer, jiraUser, jiraToken, err := getJiraConfigForOpsEnv()
 	if err != nil {
 		return err
@@ -618,6 +634,25 @@ func jiraSearchAll(server, user, token, jql, fields string) ([]jiraIssue, error)
 	return allIssues, nil
 }
 
+// opsEnvHTTPClient is a shared HTTP client with extended timeout and TLS skip for Jira API calls.
+// Reusing a single client enables TCP connection pooling across requests.
+var opsEnvHTTPClient = &http.Client{
+	Timeout: 180 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		MaxIdleConns:          20,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
+	},
+}
+
+// opsEnvSyncing prevents concurrent sync operations
+var (
+	opsEnvSyncing   bool
+	opsEnvSyncingMu sync.Mutex
+)
+
 func jiraSearch(server, user, token, jql, fields, nextPageToken string, maxResults int) ([]jiraIssue, string, bool, error) {
 	apiURL := fmt.Sprintf("%s/rest/api/3/search/jql?jql=%s&maxResults=%d&fields=%s",
 		server, url.QueryEscape(jql), maxResults, fields)
@@ -632,8 +667,7 @@ func jiraSearch(server, user, token, jql, fields, nextPageToken string, maxResul
 	req.SetBasicAuth(user, token)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := opsEnvHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", true, fmt.Errorf("request failed: %w", err)
 	}
@@ -662,8 +696,7 @@ func jiraGetIssue(server, user, token, issueKey, fields string) (*jiraIssue, err
 	req.SetBasicAuth(user, token)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := opsEnvHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
