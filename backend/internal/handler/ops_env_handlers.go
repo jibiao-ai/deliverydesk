@@ -1,11 +1,18 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jibiao-ai/deliverydesk/internal/config"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
@@ -39,11 +46,13 @@ func (h *OpsEnvHandler) ListOpsEnvironments(c *gin.Context) {
 	// Filter by status
 	switch status {
 	case "in_progress":
-		query = query.Where("status = ?", "In Progress")
+		query = query.Where("status IN (?, ?)", "正在进行", "In Progress")
 	case "done":
-		query = query.Where("status = ?", "Done")
+		query = query.Where("status IN (?, ?)", "已完成", "Done")
 	case "discarded":
-		query = query.Where("status = ?", "Discarded")
+		query = query.Where("status IN (?, ?)", "已弃用", "Discarded")
+	case "pending":
+		query = query.Where("status = ?", "待办")
 	default:
 		// all - no filter
 	}
@@ -125,12 +134,51 @@ func (h *OpsEnvHandler) GetOpsEnvStats(c *gin.Context) {
 	})
 }
 
+// GetOpsEnvTopCustomers handles GET /api/ops-env/top-customers
+// Returns TOP10 customers by environment count
+func (h *OpsEnvHandler) GetOpsEnvTopCustomers(c *gin.Context) {
+	type CustomerCount struct {
+		CustomerName string `json:"customer_name"`
+		Count        int64  `json:"count"`
+	}
+	var topCustomers []CustomerCount
+	repository.DB.Model(&model.OpsEnvironment{}).
+		Select("customer_name, count(*) as count").
+		Where("customer_name != ''").
+		Group("customer_name").
+		Order("count DESC").
+		Limit(10).
+		Find(&topCustomers)
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": topCustomers})
+}
+
+// GetOpsEnvTopNodes handles GET /api/ops-env/top-nodes
+// Returns TOP10 environments by node count
+func (h *OpsEnvHandler) GetOpsEnvTopNodes(c *gin.Context) {
+	type NodeTop struct {
+		CustomerName string `json:"customer_name"`
+		ProjectName  string `json:"project_name"`
+		CSEName      string `json:"cse_name"`
+		NodeCount    int    `json:"node_count"`
+	}
+	var topNodes []NodeTop
+	repository.DB.Model(&model.OpsEnvironment{}).
+		Select("customer_name, project_name, cse_name, node_count").
+		Where("node_count > 0").
+		Order("node_count DESC").
+		Limit(10).
+		Find(&topNodes)
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": topNodes})
+}
+
 // GetOpsEnvCalendar handles GET /api/ops-env/calendar
 // Returns daily discard counts for calendar view
 func (h *OpsEnvHandler) GetOpsEnvCalendar(c *gin.Context) {
 	year, _ := strconv.Atoi(c.DefaultQuery("year", strconv.Itoa(time.Now().Year())))
 	month, _ := strconv.Atoi(c.DefaultQuery("month", strconv.Itoa(int(time.Now().Month()))))
-	viewType := c.DefaultQuery("view", "month") // day, month, year
+	viewType := c.DefaultQuery("view", "month") // month, year
 
 	type DayCount struct {
 		Date  string `json:"date"`
@@ -148,8 +196,8 @@ func (h *OpsEnvHandler) GetOpsEnvCalendar(c *gin.Context) {
 			Group("DATE_FORMAT(discarded_at, '%Y-%m')").
 			Order("date ASC").
 			Find(&dayCounts)
-	case "month":
-		// Get daily counts for a specific month
+	default:
+		// month - Get daily counts for a specific month
 		startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 		endDate := startDate.AddDate(0, 1, 0)
 		repository.DB.Model(&model.OpsEnvironment{}).
@@ -157,17 +205,6 @@ func (h *OpsEnvHandler) GetOpsEnvCalendar(c *gin.Context) {
 			Where("discarded_at IS NOT NULL AND discarded_at >= ? AND discarded_at < ?", startDate, endDate).
 			Group("DATE_FORMAT(discarded_at, '%Y-%m-%d')").
 			Order("date ASC").
-			Find(&dayCounts)
-	default:
-		// day - get a single day's discarded items (use date query param)
-		dateStr := c.Query("date")
-		if dateStr == "" {
-			dateStr = time.Now().Format("2006-01-02")
-		}
-		repository.DB.Model(&model.OpsEnvironment{}).
-			Select("DATE_FORMAT(discarded_at, '%Y-%m-%d') as date, count(*) as count").
-			Where("discarded_at IS NOT NULL AND DATE(discarded_at) = ?", dateStr).
-			Group("DATE_FORMAT(discarded_at, '%Y-%m-%d')").
 			Find(&dayCounts)
 	}
 
@@ -197,6 +234,40 @@ func (h *OpsEnvHandler) SyncOpsEnvironments(c *gin.Context) {
 	})
 }
 
+// RunOpsEnvSync is a package-level exported function that triggers OpsEnvironment sync.
+// This is used by main.go to run periodic background sync.
+func RunOpsEnvSync() error {
+	return syncOpsEnvFromJira()
+}
+
+// StartPeriodicOpsEnvSync starts background periodic sync for ops environments (every 6 hours)
+func StartPeriodicOpsEnvSync(interval time.Duration) {
+	go func() {
+		// Initial delay to let the server and Jira cache warm up first
+		time.Sleep(2 * time.Minute)
+
+		// Do initial sync
+		logger.Log.Info("Starting initial OpsEnvironment sync...")
+		if err := syncOpsEnvFromJira(); err != nil {
+			logger.Log.Warnf("Initial OpsEnvironment sync failed (will retry next cycle): %v", err)
+		} else {
+			logger.Log.Info("Initial OpsEnvironment sync completed")
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			logger.Log.Info("Running periodic OpsEnvironment sync...")
+			if err := syncOpsEnvFromJira(); err != nil {
+				logger.Log.Warnf("Periodic OpsEnvironment sync failed: %v", err)
+			} else {
+				logger.Log.Info("Periodic OpsEnvironment sync completed")
+			}
+		}
+	}()
+}
+
 // GetRegions handles GET /api/ops-env/regions
 func (h *OpsEnvHandler) GetRegions(c *gin.Context) {
 	var regions []string
@@ -209,16 +280,495 @@ func (h *OpsEnvHandler) GetRegions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": regions})
 }
 
+// DiagnoseOpsEnv handles GET /api/ops-env/diagnose
+// Returns diagnostic information to help troubleshoot sync issues
+func (h *OpsEnvHandler) DiagnoseOpsEnv(c *gin.Context) {
+	diag := gin.H{}
+
+	// 1. Check database table record count
+	var totalRecords int64
+	repository.DB.Model(&model.OpsEnvironment{}).Count(&totalRecords)
+	diag["db_total_records"] = totalRecords
+
+	// 2. Check last sync time
+	var lastSynced model.OpsEnvironment
+	err := repository.DB.Order("synced_at DESC").First(&lastSynced).Error
+	if err != nil {
+		diag["last_sync_time"] = nil
+		diag["last_sync_error"] = "no records found or query error"
+	} else {
+		diag["last_sync_time"] = lastSynced.SyncedAt
+		diag["last_sync_env_key"] = lastSynced.EnvDetailKey
+	}
+
+	// 3. Check Jira configuration status
+	jiraServer, jiraUser, jiraToken, cfgErr := getJiraConfigForOpsEnv()
+	if cfgErr != nil {
+		diag["jira_config_status"] = "MISSING"
+		diag["jira_config_error"] = cfgErr.Error()
+	} else {
+		diag["jira_config_status"] = "OK"
+		diag["jira_server"] = jiraServer
+		diag["jira_user"] = jiraUser
+		diag["jira_token_len"] = len(jiraToken)
+	}
+
+	// 4. Test Jira connectivity (quick test)
+	if cfgErr == nil {
+		testJQL := `project = CSE and issuetype = 环境详细信息`
+		_, _, _, testErr := jiraSearch(jiraServer, jiraUser, jiraToken, testJQL, "summary", "", 1)
+		if testErr != nil {
+			diag["jira_connectivity"] = "FAILED"
+			diag["jira_test_error"] = testErr.Error()
+		} else {
+			diag["jira_connectivity"] = "OK"
+		}
+	}
+
+	// 5. Status distribution
+	type StatusCount struct {
+		Status string `json:"status"`
+		Count  int64  `json:"count"`
+	}
+	var statusCounts []StatusCount
+	repository.DB.Model(&model.OpsEnvironment{}).
+		Select("status, count(*) as count").
+		Group("status").
+		Find(&statusCounts)
+	diag["status_distribution"] = statusCounts
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": diag})
+}
+
+// ─── Jira REST API integration ────────────────────────────────────────────────
+
+// jiraSearchResponse represents Jira REST v3 search API response (cursor-based)
+type jiraSearchResponse struct {
+	Issues        []jiraIssue `json:"issues"`
+	NextPageToken string      `json:"nextPageToken"`
+	IsLast        bool        `json:"isLast"`
+	Total         int         `json:"total"`
+}
+
+type jiraIssue struct {
+	Key    string          `json:"key"`
+	Fields json.RawMessage `json:"fields"`
+}
+
+// jiraFieldValue for option fields like {value: "xxx"}
+type jiraFieldValue struct {
+	Value string `json:"value"`
+	Name  string `json:"name"`
+}
+
+// getJiraConfigForOpsEnv reads Jira settings from SystemSetting table first, then falls back to environment variables.
+// This matches the approach used in jira_service.go to ensure web-UI configured credentials are used.
+func getJiraConfigForOpsEnv() (server, username, token string, err error) {
+	// Try reading from database SystemSetting table first (set via admin UI)
+	var setting model.SystemSetting
+
+	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_server").First(&setting).Error; e == nil && setting.Value != "" {
+		server = setting.Value
+	}
+	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_username").First(&setting).Error; e == nil && setting.Value != "" {
+		username = setting.Value
+	}
+	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_password").First(&setting).Error; e == nil && setting.Value != "" {
+		token = setting.Value
+	}
+
+	// Fallback to environment variables
+	if server == "" {
+		cfg := config.Load()
+		server = cfg.Jira.Server
+	}
+	if username == "" {
+		cfg := config.Load()
+		username = cfg.Jira.Username
+	}
+	if token == "" {
+		cfg := config.Load()
+		token = cfg.Jira.APIToken
+	}
+
+	if server == "" || username == "" || token == "" {
+		return "", "", "", fmt.Errorf("Jira configuration missing (check SystemSettings or env vars): server=%q, user=%q, token_len=%d",
+			server, username, len(token))
+	}
+	server = strings.TrimRight(server, "/")
+	return server, username, token, nil
+}
+
 // syncOpsEnvFromJira fetches environments from Jira and updates the database
 func syncOpsEnvFromJira() error {
-	logger.Log.Info("Starting OpsEnvironment sync from Jira...")
-	// This will be called by the handler, actual Jira sync logic uses the same
-	// credentials from system_settings (jira_server, jira_username, jira_password)
-	// For now, we'll let the admin import data via the frontend or use the settings
+	jiraServer, jiraUser, jiraToken, err := getJiraConfigForOpsEnv()
+	if err != nil {
+		return err
+	}
 
-	// The sync logic is similar to get_case.py but adapted for Go
-	// It queries Jira for CustomerEnvironment issues and populates the database
-	// This is a placeholder - the actual implementation would use the Jira API
-	logger.Log.Info("OpsEnvironment sync: placeholder - configure Jira settings for full sync")
+	logger.Log.Infof("Starting OpsEnvironment sync from Jira %s ...", jiraServer)
+
+	// Step 1: Fetch all 环境详细信息 issues
+	jql := `project = CSE and issuetype = 环境详细信息`
+	envIssues, err := jiraSearchAll(jiraServer, jiraUser, jiraToken, jql,
+		"customfield_11191,customfield_11190,customfield_11307,customfield_11271,"+
+			"customfield_11338,customfield_11354,customfield_11289,customfield_11303,"+
+			"customfield_11357,customfield_11359,customfield_11360,customfield_11288,"+
+			"customfield_11273,customfield_10007,status")
+	if err != nil {
+		return fmt.Errorf("fetch env detail issues: %w", err)
+	}
+
+	logger.Log.Infof("Fetched %d environment detail issues from Jira", len(envIssues))
+
+	now := time.Now()
+	syncCount := 0
+	errCount := 0
+
+	for _, envIssue := range envIssues {
+		if err := processEnvIssue(envIssue, jiraServer, jiraUser, jiraToken, &now); err != nil {
+			logger.Log.Warnf("Skip issue %s: %v", envIssue.Key, err)
+			errCount++
+			continue
+		}
+		syncCount++
+	}
+
+	logger.Log.Infof("OpsEnvironment sync complete: %d synced, %d errors, %d total",
+		syncCount, errCount, len(envIssues))
 	return nil
+}
+
+func processEnvIssue(envIssue jiraIssue, server, user, token string, now *time.Time) error {
+	// Parse env detail fields
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(envIssue.Fields, &fields); err != nil {
+		return fmt.Errorf("unmarshal fields: %w", err)
+	}
+
+	customerName := extractStringArray(fields["customfield_11191"])
+	projectName := extractString(fields["customfield_11190"])
+	contractNum := extractString(fields["customfield_11307"])
+	customerLevel := extractOptionValue(fields["customfield_11271"])
+	city := extractString(fields["customfield_11338"])
+	sales := extractString(fields["customfield_11354"])
+	sla := extractOptionValue(fields["customfield_11289"])
+	opsRegion := extractOptionValue(fields["customfield_11303"])
+	isRenewal := extractString(fields["customfield_11357"])
+	renewalStart := extractString(fields["customfield_11359"])
+	renewalEnd := extractString(fields["customfield_11360"])
+	maintainStart := extractString(fields["customfield_11288"])
+	maintainEnd := extractString(fields["customfield_11273"])
+
+	// Get CSE key from customfield_10007
+	cseKey := extractString(fields["customfield_10007"])
+	if cseKey == "" {
+		return fmt.Errorf("no CSE key (customfield_10007)")
+	}
+
+	// Get env issue status
+	envStatus := extractStatusName(fields["status"])
+
+	// Fetch CSE issue for additional details
+	cseIssue, err := jiraGetIssue(server, user, token, cseKey,
+		"summary,status,fixVersions,customfield_11196,customfield_11220,customfield_11299,"+
+			"customfield_11287,created,"+
+			"customfield_11197,customfield_11199,customfield_11201,"+
+			"customfield_11203,customfield_11205,customfield_11207")
+	if err != nil {
+		return fmt.Errorf("fetch CSE %s: %w", cseKey, err)
+	}
+
+	var cseFields map[string]json.RawMessage
+	if err := json.Unmarshal(cseIssue.Fields, &cseFields); err != nil {
+		return fmt.Errorf("unmarshal CSE fields: %w", err)
+	}
+
+	cseName := extractString(cseFields["summary"])
+	cseStatus := extractStatusName(cseFields["status"])
+	// Try fixVersions first, then fall back to customfield_11196
+	version := extractVersionName(cseFields["fixVersions"])
+	if version == "" {
+		version = extractVersionName(cseFields["customfield_11196"])
+	}
+	envType := extractString(cseFields["customfield_11220"])
+	cpuArch := extractStringArrayFirst(cseFields["customfield_11299"])
+	projectNum := extractString(cseFields["customfield_11287"])
+	deployTime := extractString(cseFields["created"])
+
+	// Calculate node count
+	nodeCount := sumNodeFields(cseFields)
+
+	// Use CSE status as the main status (In Progress / Done / Discarded)
+	status := cseStatus
+	if status == "" {
+		status = envStatus
+	}
+
+	// Determine discarded_at
+	var discardedAt *time.Time
+	if strings.EqualFold(status, "Discarded") || strings.EqualFold(status, "discarded") {
+		discardedAt = now
+	}
+
+	// Upsert by env_detail_key
+	var existing model.OpsEnvironment
+	result := repository.DB.Where("env_detail_key = ?", envIssue.Key).First(&existing)
+
+	env := model.OpsEnvironment{
+		CSEKey:        cseKey,
+		EnvDetailKey:  envIssue.Key,
+		CustomerName:  customerName,
+		ProjectName:   projectName,
+		CSEName:       cseName,
+		Status:        status,
+		ProjectNum:    projectNum,
+		ContractNum:   contractNum,
+		OpsRegion:     opsRegion,
+		EnvType:       envType,
+		CPUArch:       cpuArch,
+		Version:       version,
+		CustomerLevel: customerLevel,
+		NodeCount:     nodeCount,
+		City:          city,
+		Sales:         sales,
+		SLA:           sla,
+		IsRenewal:     isRenewal,
+		DeployTime:    deployTime,
+		RenewalStart:  renewalStart,
+		RenewalEnd:    renewalEnd,
+		MaintainStart: maintainStart,
+		MaintainEnd:   maintainEnd,
+		SyncedAt:      now,
+	}
+
+	// Keep existing discarded_at if already set
+	if result.Error == nil {
+		if existing.DiscardedAt != nil {
+			discardedAt = existing.DiscardedAt
+		}
+		env.ID = existing.ID
+		env.CreatedAt = existing.CreatedAt
+		env.DiscardedAt = discardedAt
+		repository.DB.Save(&env)
+	} else {
+		env.DiscardedAt = discardedAt
+		repository.DB.Create(&env)
+	}
+
+	return nil
+}
+
+// ─── Jira REST helpers ────────────────────────────────────────────────────────
+
+func jiraSearchAll(server, user, token, jql, fields string) ([]jiraIssue, error) {
+	var allIssues []jiraIssue
+	nextPageToken := ""
+	maxResults := 100
+
+	for {
+		issues, nextToken, isLast, err := jiraSearch(server, user, token, jql, fields, nextPageToken, maxResults)
+		if err != nil {
+			return nil, err
+		}
+		allIssues = append(allIssues, issues...)
+		if isLast || len(issues) == 0 || nextToken == "" {
+			break
+		}
+		nextPageToken = nextToken
+	}
+	return allIssues, nil
+}
+
+func jiraSearch(server, user, token, jql, fields, nextPageToken string, maxResults int) ([]jiraIssue, string, bool, error) {
+	apiURL := fmt.Sprintf("%s/rest/api/3/search/jql?jql=%s&maxResults=%d&fields=%s",
+		server, url.QueryEscape(jql), maxResults, fields)
+	if nextPageToken != "" {
+		apiURL += "&nextPageToken=" + url.QueryEscape(nextPageToken)
+	}
+
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, "", true, err
+	}
+	req.SetBasicAuth(user, token)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", true, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", true, fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+	}
+
+	var result jiraSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, "", true, fmt.Errorf("decode response: %w", err)
+	}
+	return result.Issues, result.NextPageToken, result.IsLast, nil
+}
+
+func jiraGetIssue(server, user, token, issueKey, fields string) (*jiraIssue, error) {
+	apiURL := fmt.Sprintf("%s/rest/api/3/issue/%s?fields=%s",
+		server, issueKey, fields)
+
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth(user, token)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+	}
+
+	var issue jiraIssue
+	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
+		return nil, fmt.Errorf("decode issue: %w", err)
+	}
+	return &issue, nil
+}
+
+// ─── Field extraction helpers ─────────────────────────────────────────────────
+
+func extractString(raw json.RawMessage) string {
+	if raw == nil || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	// Try as number
+	var n float64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return fmt.Sprintf("%.0f", n)
+	}
+	return ""
+}
+
+func extractStringArray(raw json.RawMessage) string {
+	if raw == nil || string(raw) == "null" {
+		return ""
+	}
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err == nil && len(arr) > 0 {
+		return arr[0]
+	}
+	// Try as single string
+	return extractString(raw)
+}
+
+func extractStringArrayFirst(raw json.RawMessage) string {
+	if raw == nil || string(raw) == "null" {
+		return ""
+	}
+	// Try as array of strings
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err == nil && len(arr) > 0 {
+		return arr[0]
+	}
+	// Try as array of objects with value
+	var objArr []jiraFieldValue
+	if err := json.Unmarshal(raw, &objArr); err == nil && len(objArr) > 0 {
+		if objArr[0].Value != "" {
+			return objArr[0].Value
+		}
+		return objArr[0].Name
+	}
+	return extractString(raw)
+}
+
+func extractOptionValue(raw json.RawMessage) string {
+	if raw == nil || string(raw) == "null" {
+		return ""
+	}
+	// Try as array of objects with value field
+	var arr []jiraFieldValue
+	if err := json.Unmarshal(raw, &arr); err == nil && len(arr) > 0 {
+		if arr[0].Value != "" {
+			return arr[0].Value
+		}
+		return arr[0].Name
+	}
+	// Try as single object
+	var obj jiraFieldValue
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		if obj.Value != "" {
+			return obj.Value
+		}
+		return obj.Name
+	}
+	return extractString(raw)
+}
+
+func extractStatusName(raw json.RawMessage) string {
+	if raw == nil || string(raw) == "null" {
+		return ""
+	}
+	var status struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &status); err == nil {
+		return status.Name
+	}
+	return extractString(raw)
+}
+
+func extractVersionName(raw json.RawMessage) string {
+	if raw == nil || string(raw) == "null" {
+		return ""
+	}
+	// Try as array of version objects (fixVersions style)
+	var verArr []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &verArr); err == nil && len(verArr) > 0 {
+		return verArr[0].Name
+	}
+	// Try as single version object
+	var ver struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &ver); err == nil && ver.Name != "" {
+		return ver.Name
+	}
+	return extractString(raw)
+}
+
+func sumNodeFields(fields map[string]json.RawMessage) int {
+	nodeFields := []string{
+		"customfield_11197", // 控制节点
+		"customfield_11199", // 控制存储节点
+		"customfield_11201", // 计算节点
+		"customfield_11203", // 存储节点
+		"customfield_11205", // 计算存储节点
+		"customfield_11207", // 融合节点
+	}
+	total := 0
+	for _, f := range nodeFields {
+		raw := fields[f]
+		if raw == nil || string(raw) == "null" {
+			continue
+		}
+		var n float64
+		if err := json.Unmarshal(raw, &n); err == nil {
+			total += int(n)
+		}
+	}
+	return total
 }

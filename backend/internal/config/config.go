@@ -11,6 +11,13 @@ type Config struct {
 	RabbitMQ RabbitMQConfig
 	AI       AIConfig
 	LDAP     LDAPConfig
+	Jira     JiraConfig
+}
+
+type JiraConfig struct {
+	Server   string
+	Username string
+	APIToken string
 }
 
 type ServerConfig struct {
@@ -103,6 +110,11 @@ func Load() *Config {
 				DisplayName: getEnv("LDAP_ATTR_DISPLAY_NAME", "cn"),
 				MemberOf:    getEnv("LDAP_ATTR_MEMBER_OF", "memberOf"),
 			},
+		},
+		Jira: JiraConfig{
+			Server:   getEnv("JIRA_SERVER", "https://easystack.atlassian.net"),
+			Username: getEnv("JIRA_USERNAME", ""),
+			APIToken: getEnv("JIRA_API_TOKEN", ""),
 		},
 	}
 }

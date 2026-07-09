@@ -80,6 +80,9 @@ func main() {
 	projectSvc := service.GetProjectService()
 	projectSvc.StartPeriodicSync()
 
+	// Start periodic OpsEnvironment sync from Jira CSE (every 6 hours)
+	handler.StartPeriodicOpsEnvSync(6 * time.Hour)
+
 	// Setup Gin router
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -174,12 +177,15 @@ func main() {
 			auth.GET("/projects/pre-delivery", projectH.GetPreDeliveryList)
 			auth.POST("/projects/sync", projectH.SyncProjects)
 
-			// Ops Environment routes
-			auth.GET("/ops-env/list", opsEnvH.ListOpsEnvironments)
-			auth.GET("/ops-env/stats", opsEnvH.GetOpsEnvStats)
-			auth.GET("/ops-env/calendar", opsEnvH.GetOpsEnvCalendar)
-			auth.GET("/ops-env/regions", opsEnvH.GetRegions)
-			auth.POST("/ops-env/sync", opsEnvH.SyncOpsEnvironments)
+		// Ops Environment routes
+		auth.GET("/ops-env/list", opsEnvH.ListOpsEnvironments)
+		auth.GET("/ops-env/stats", opsEnvH.GetOpsEnvStats)
+		auth.GET("/ops-env/calendar", opsEnvH.GetOpsEnvCalendar)
+		auth.GET("/ops-env/regions", opsEnvH.GetRegions)
+		auth.GET("/ops-env/diagnose", opsEnvH.DiagnoseOpsEnv)
+		auth.GET("/ops-env/top-customers", opsEnvH.GetOpsEnvTopCustomers)
+		auth.GET("/ops-env/top-nodes", opsEnvH.GetOpsEnvTopNodes)
+		auth.POST("/ops-env/sync", opsEnvH.SyncOpsEnvironments)
 
 			// Admin routes
 			admin := auth.Group("")
