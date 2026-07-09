@@ -9,12 +9,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jibiao-ai/deliverydesk/internal/config"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
+	"github.com/jibiao-ai/deliverydesk/internal/service"
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
 )
 
@@ -362,32 +364,26 @@ type jiraFieldValue struct {
 }
 
 // getJiraConfigForOpsEnv reads Jira settings from SystemSetting table first, then falls back to environment variables.
-// This matches the approach used in jira_service.go to ensure web-UI configured credentials are used.
+// Uses the same TotpService.GetSetting() approach as jira_service.go to ensure consistency.
 func getJiraConfigForOpsEnv() (server, username, token string, err error) {
-	// Try reading from database SystemSetting table first (set via admin UI)
-	var setting model.SystemSetting
+	// Use TotpService.GetSetting for consistent DB access (same as jira_service.go)
+	svc := &service.TotpService{}
+	server = svc.GetSetting("jira", "jira_server")
+	username = svc.GetSetting("jira", "jira_username")
+	token = svc.GetSetting("jira", "jira_password")
 
-	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_server").First(&setting).Error; e == nil && setting.Value != "" {
-		server = setting.Value
-	}
-	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_username").First(&setting).Error; e == nil && setting.Value != "" {
-		username = setting.Value
-	}
-	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_password").First(&setting).Error; e == nil && setting.Value != "" {
-		token = setting.Value
-	}
+	logger.Log.Debugf("OpsEnv Jira config from DB: server=%q (len=%d), user=%q (len=%d), token_len=%d",
+		server, len(server), username, len(username), len(token))
 
 	// Fallback to environment variables
+	cfg := config.Load()
 	if server == "" {
-		cfg := config.Load()
 		server = cfg.Jira.Server
 	}
 	if username == "" {
-		cfg := config.Load()
 		username = cfg.Jira.Username
 	}
 	if token == "" {
-		cfg := config.Load()
 		token = cfg.Jira.APIToken
 	}
 
@@ -400,6 +396,7 @@ func getJiraConfigForOpsEnv() (server, username, token string, err error) {
 }
 
 // syncOpsEnvFromJira fetches environments from Jira and updates the database
+// Uses concurrent workers to speed up CSE issue fetching
 func syncOpsEnvFromJira() error {
 	jiraServer, jiraUser, jiraToken, err := getJiraConfigForOpsEnv()
 	if err != nil {
@@ -419,20 +416,44 @@ func syncOpsEnvFromJira() error {
 		return fmt.Errorf("fetch env detail issues: %w", err)
 	}
 
-	logger.Log.Infof("Fetched %d environment detail issues from Jira", len(envIssues))
+	logger.Log.Infof("Fetched %d environment detail issues from Jira, processing with concurrency...", len(envIssues))
 
 	now := time.Now()
-	syncCount := 0
-	errCount := 0
+	var syncCount, errCount int64
+	var mu sync.Mutex
 
-	for _, envIssue := range envIssues {
-		if err := processEnvIssue(envIssue, jiraServer, jiraUser, jiraToken, &now); err != nil {
-			logger.Log.Warnf("Skip issue %s: %v", envIssue.Key, err)
-			errCount++
-			continue
-		}
-		syncCount++
+	// Use worker pool for concurrent CSE issue fetching (10 concurrent workers)
+	concurrency := 10
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for i, envIssue := range envIssues {
+		wg.Add(1)
+		sem <- struct{}{} // acquire semaphore
+
+		go func(issue jiraIssue, idx int) {
+			defer wg.Done()
+			defer func() { <-sem }() // release semaphore
+
+			if err := processEnvIssue(issue, jiraServer, jiraUser, jiraToken, &now); err != nil {
+				if idx < 5 || idx%100 == 0 { // only log first few and periodic ones
+					logger.Log.Debugf("Skip issue %s: %v", issue.Key, err)
+				}
+				mu.Lock()
+				errCount++
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			syncCount++
+			if syncCount%50 == 0 {
+				logger.Log.Infof("OpsEnv sync progress: %d/%d processed", syncCount+errCount, len(envIssues))
+			}
+			mu.Unlock()
+		}(envIssue, i)
 	}
+
+	wg.Wait()
 
 	logger.Log.Infof("OpsEnvironment sync complete: %d synced, %d errors, %d total",
 		syncCount, errCount, len(envIssues))
