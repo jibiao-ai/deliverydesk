@@ -234,6 +234,40 @@ func (h *OpsEnvHandler) SyncOpsEnvironments(c *gin.Context) {
 	})
 }
 
+// RunOpsEnvSync is a package-level exported function that triggers OpsEnvironment sync.
+// This is used by main.go to run periodic background sync.
+func RunOpsEnvSync() error {
+	return syncOpsEnvFromJira()
+}
+
+// StartPeriodicOpsEnvSync starts background periodic sync for ops environments (every 6 hours)
+func StartPeriodicOpsEnvSync(interval time.Duration) {
+	go func() {
+		// Initial delay to let the server and Jira cache warm up first
+		time.Sleep(2 * time.Minute)
+
+		// Do initial sync
+		logger.Log.Info("Starting initial OpsEnvironment sync...")
+		if err := syncOpsEnvFromJira(); err != nil {
+			logger.Log.Warnf("Initial OpsEnvironment sync failed (will retry next cycle): %v", err)
+		} else {
+			logger.Log.Info("Initial OpsEnvironment sync completed")
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			logger.Log.Info("Running periodic OpsEnvironment sync...")
+			if err := syncOpsEnvFromJira(); err != nil {
+				logger.Log.Warnf("Periodic OpsEnvironment sync failed: %v", err)
+			} else {
+				logger.Log.Info("Periodic OpsEnvironment sync completed")
+			}
+		}
+	}()
+}
+
 // GetRegions handles GET /api/ops-env/regions
 func (h *OpsEnvHandler) GetRegions(c *gin.Context) {
 	var regions []string
@@ -244,6 +278,66 @@ func (h *OpsEnvHandler) GetRegions(c *gin.Context) {
 		Pluck("ops_region", &regions)
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": regions})
+}
+
+// DiagnoseOpsEnv handles GET /api/ops-env/diagnose
+// Returns diagnostic information to help troubleshoot sync issues
+func (h *OpsEnvHandler) DiagnoseOpsEnv(c *gin.Context) {
+	diag := gin.H{}
+
+	// 1. Check database table record count
+	var totalRecords int64
+	repository.DB.Model(&model.OpsEnvironment{}).Count(&totalRecords)
+	diag["db_total_records"] = totalRecords
+
+	// 2. Check last sync time
+	var lastSynced model.OpsEnvironment
+	err := repository.DB.Order("synced_at DESC").First(&lastSynced).Error
+	if err != nil {
+		diag["last_sync_time"] = nil
+		diag["last_sync_error"] = "no records found or query error"
+	} else {
+		diag["last_sync_time"] = lastSynced.SyncedAt
+		diag["last_sync_env_key"] = lastSynced.EnvDetailKey
+	}
+
+	// 3. Check Jira configuration status
+	jiraServer, jiraUser, jiraToken, cfgErr := getJiraConfigForOpsEnv()
+	if cfgErr != nil {
+		diag["jira_config_status"] = "MISSING"
+		diag["jira_config_error"] = cfgErr.Error()
+	} else {
+		diag["jira_config_status"] = "OK"
+		diag["jira_server"] = jiraServer
+		diag["jira_user"] = jiraUser
+		diag["jira_token_len"] = len(jiraToken)
+	}
+
+	// 4. Test Jira connectivity (quick test)
+	if cfgErr == nil {
+		testJQL := `project = CSE and issuetype = 环境详细信息`
+		_, _, _, testErr := jiraSearch(jiraServer, jiraUser, jiraToken, testJQL, "summary", "", 1)
+		if testErr != nil {
+			diag["jira_connectivity"] = "FAILED"
+			diag["jira_test_error"] = testErr.Error()
+		} else {
+			diag["jira_connectivity"] = "OK"
+		}
+	}
+
+	// 5. Status distribution
+	type StatusCount struct {
+		Status string `json:"status"`
+		Count  int64  `json:"count"`
+	}
+	var statusCounts []StatusCount
+	repository.DB.Model(&model.OpsEnvironment{}).
+		Select("status, count(*) as count").
+		Group("status").
+		Find(&statusCounts)
+	diag["status_distribution"] = statusCounts
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": diag})
 }
 
 // ─── Jira REST API integration ────────────────────────────────────────────────
@@ -267,16 +361,49 @@ type jiraFieldValue struct {
 	Name  string `json:"name"`
 }
 
+// getJiraConfigForOpsEnv reads Jira settings from SystemSetting table first, then falls back to environment variables.
+// This matches the approach used in jira_service.go to ensure web-UI configured credentials are used.
+func getJiraConfigForOpsEnv() (server, username, token string, err error) {
+	// Try reading from database SystemSetting table first (set via admin UI)
+	var setting model.SystemSetting
+
+	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_server").First(&setting).Error; e == nil && setting.Value != "" {
+		server = setting.Value
+	}
+	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_username").First(&setting).Error; e == nil && setting.Value != "" {
+		username = setting.Value
+	}
+	if e := repository.DB.Where("category = ? AND `key` = ?", "jira", "jira_password").First(&setting).Error; e == nil && setting.Value != "" {
+		token = setting.Value
+	}
+
+	// Fallback to environment variables
+	if server == "" {
+		cfg := config.Load()
+		server = cfg.Jira.Server
+	}
+	if username == "" {
+		cfg := config.Load()
+		username = cfg.Jira.Username
+	}
+	if token == "" {
+		cfg := config.Load()
+		token = cfg.Jira.APIToken
+	}
+
+	if server == "" || username == "" || token == "" {
+		return "", "", "", fmt.Errorf("Jira configuration missing (check SystemSettings or env vars): server=%q, user=%q, token_len=%d",
+			server, username, len(token))
+	}
+	server = strings.TrimRight(server, "/")
+	return server, username, token, nil
+}
+
 // syncOpsEnvFromJira fetches environments from Jira and updates the database
 func syncOpsEnvFromJira() error {
-	cfg := config.Load()
-	jiraServer := cfg.Jira.Server
-	jiraUser := cfg.Jira.Username
-	jiraToken := cfg.Jira.APIToken
-
-	if jiraServer == "" || jiraUser == "" || jiraToken == "" {
-		return fmt.Errorf("Jira configuration missing: server=%s, user=%s, token_len=%d",
-			jiraServer, jiraUser, len(jiraToken))
+	jiraServer, jiraUser, jiraToken, err := getJiraConfigForOpsEnv()
+	if err != nil {
+		return err
 	}
 
 	logger.Log.Infof("Starting OpsEnvironment sync from Jira %s ...", jiraServer)
