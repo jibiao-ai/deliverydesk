@@ -462,6 +462,12 @@ func (s *TotpService) GetAdminUsers() ([]map[string]interface{}, error) {
 	return result, nil
 }
 
+// QuickGenerateTotp is a public wrapper around generateTotpPass for use by handlers
+// that need direct TOTP generation without going through the application/audit flow.
+func (s *TotpService) QuickGenerateTotp(customer, project, version, totpType string) (string, string, error) {
+	return s.generateTotpPass(customer, project, version, totpType)
+}
+
 // generateOTP generates a 6-digit TOTP code using the given base32 secret
 func generateOTP(secret string) (string, error) {
 	secret = strings.ToUpper(strings.TrimSpace(secret))

@@ -361,6 +361,9 @@ func seedDefaultData(db *gorm.DB) {
 	// Seed 运维专家 agent (idempotent — only if it doesn't exist yet)
 	seedOpsExpertAgent(db)
 
+	// Seed 双因子申请智能体 agent (idempotent — only if it doesn't exist yet)
+	seedTotpAgent(db)
+
 	// Seed website links from Excel data
 	var catCount int64
 	db.Model(&model.WebsiteCategory{}).Count(&catCount)
@@ -534,37 +537,63 @@ func seedCommunitySkills(db *gorm.DB) {
 // seedOpsSkills seeds operations skills (双因子申请, 过保维保查询)
 func seedOpsSkills(db *gorm.DB) {
 	opsDefs := []struct {
-		Name        string
-		Description string
-		Category    string
-		ToolDefs    string
+		Name         string
+		Description  string
+		Category     string
+		ToolDefs     string
+		SystemPrompt string
 	}{
 		{
 			Name:        "双因子申请",
 			Description: "双因子认证管理技能 - 支持调用【双因子管理】能力，输入一个 Case 号自动查询并返回 Roller 双因子验证码和动态密码（OTP）。适用于运维环境登录认证场景。",
 			Category:    "totp-query",
 			ToolDefs:    `[{"name":"totp_query_by_case","description":"根据Case号查询双因子密码，返回Roller双因子和动态OTP密码","parameters":{"case_number":"CSE案例编号"}},{"name":"totp_generate_otp","description":"生成当前时刻的Roller动态密码(OTP)","parameters":{}},{"name":"totp_list_recent","description":"列出最近的双因子申请记录","parameters":{"limit":"返回数量，默认10"}}]`,
+			SystemPrompt: `你是「双因子申请」智能体，专门帮助用户快速获取运维环境的双因子认证密码。
+
+## 核心功能
+当用户输入一个 Case 号（如 ECSL2-50579、ECSDESK-1234 等格式），系统会自动：
+1. 从 Jira 查询该 Case 对应的客户名称和项目名称
+2. 调用 TOTP 系统生成 Roller 双因子验证码（OTP，30秒有效）
+3. 调用 TOTP 服务器生成动态密码
+
+## 使用方式
+直接输入 Case 号即可，例如：
+- ECSL2-50579
+- ECSDESK-12345
+
+系统会自动返回查询结果，包括 Roller OTP 和动态密码。
+
+## 注意事项
+- Roller OTP 有效期为 30 秒，请尽快使用
+- 动态密码由 TOTP 服务器实时生成
+- 如果查询失败，请确认 Case 号格式正确且存在于 Jira 系统中`,
 		},
 		{
 			Name:        "过保维保查询",
 			Description: "运维环境维保信息查询技能 - 支持调用【运维环境】接口，查询客户或项目的维保信息。可返回 CSE 编号、项目名称、客户名称、节点数、维保到期时间、当前状态、SLA 等级等关键信息。支持按客户名、项目名模糊搜索。",
 			Category:    "ops-env-warranty",
 			ToolDefs:    `[{"name":"ops_env_query","description":"查询运维环境维保信息，支持按客户名或项目名搜索","parameters":{"search":"客户名称或项目名称关键字","status":"状态过滤: in_progress/done/discarded/all"}},{"name":"ops_env_expiring","description":"查询即将到期的维保环境（按维保结束日期排序）","parameters":{"days":"未来N天内到期，默认30"}},{"name":"ops_env_stats","description":"获取运维环境统计概览（状态分布、区域分布、节点总数）","parameters":{}}]`,
+			SystemPrompt: "",
 		},
 	}
 	for _, def := range opsDefs {
 		var existing model.Skill
 		if err := db.Where("category = ?", def.Category).First(&existing).Error; err != nil {
 			skill := model.Skill{
-				Name:        def.Name,
-				Description: def.Description,
-				Type:        "ops",
-				Category:    def.Category,
-				ToolDefs:    def.ToolDefs,
-				IsActive:    true,
+				Name:         def.Name,
+				Description:  def.Description,
+				Type:         "ops",
+				Category:     def.Category,
+				ToolDefs:     def.ToolDefs,
+				SystemPrompt: def.SystemPrompt,
+				IsActive:     true,
 			}
 			db.Create(&skill)
 			logger.Log.Infof("Ops skill '%s' seeded", def.Name)
+		} else if existing.SystemPrompt == "" && def.SystemPrompt != "" {
+			// Update existing skill with SystemPrompt if it was missing
+			db.Model(&existing).Update("system_prompt", def.SystemPrompt)
+			logger.Log.Infof("Ops skill '%s' SystemPrompt updated", def.Name)
 		}
 	}
 }
@@ -706,6 +735,53 @@ func seedOpsExpertAgent(db *gorm.DB) {
 		}
 	}
 	logger.Log.Info("运维专家 agent seeded with k8s/openstack/sre skills")
+}
+
+func seedTotpAgent(db *gorm.DB) {
+	var existing model.Agent
+	if err := db.Where("name = ?", "双因子申请智能体").First(&existing).Error; err == nil {
+		// Agent already exists — ensure it has the totp-query skill linked
+		var totpSkill model.Skill
+		if err := db.Where("category = ?", "totp-query").First(&totpSkill).Error; err == nil {
+			var link model.AgentSkill
+			if err := db.Where("agent_id = ? AND skill_id = ?", existing.ID, totpSkill.ID).First(&link).Error; err != nil {
+				db.Create(&model.AgentSkill{AgentID: existing.ID, SkillID: totpSkill.ID})
+				logger.Log.Info("双因子申请智能体: linked totp-query skill")
+			}
+		}
+		return
+	}
+
+	agent := model.Agent{
+		Name:        "双因子申请智能体",
+		Description: "输入 Case 号（如 ECSL2-50579），自动查询并返回 Roller 双因子验证码和动态密码。",
+		SystemPrompt: `你是「双因子申请」智能体，帮助运维人员快速获取双因子认证密码。
+
+用户只需输入一个 Case 号（如 ECSL2-50579、ECSDESK-1234），系统会自动：
+1. 从 Jira 查询该 Case 对应的客户和项目
+2. 生成 Roller 双因子验证码（OTP，30秒有效期）
+3. 生成动态密码
+
+请直接输入 Case 号开始查询。`,
+		Model:       "",
+		Temperature: 0.2,
+		MaxTokens:   4096,
+		IsActive:    true,
+		IsPublished: true,
+		IronRules:   false,
+		CreatedBy:   1,
+	}
+	if err := db.Create(&agent).Error; err != nil {
+		logger.Log.Warnf("Failed to seed 双因子申请智能体: %v", err)
+		return
+	}
+
+	// Link to totp-query skill
+	var totpSkill model.Skill
+	if err := db.Where("category = ?", "totp-query").First(&totpSkill).Error; err == nil {
+		db.Create(&model.AgentSkill{AgentID: agent.ID, SkillID: totpSkill.ID})
+	}
+	logger.Log.Info("双因子申请智能体 seeded with totp-query skill")
 }
 
 func opsExpertSystemPrompt() string {

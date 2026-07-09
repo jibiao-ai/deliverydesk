@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -547,6 +548,15 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 		aiConfig.Model = modelName
 	}
 
+	// Check if agent has ops skills with tool execution capability (e.g., totp-query)
+	// This handles skills that have ToolDefs but NO document chunks (skipped by RAG)
+	if hasOpsToolSkill(agent, "totp-query") {
+		toolResult := s.executeTotpToolCall(userContent)
+		if toolResult != "" {
+			return toolResult
+		}
+	}
+
 	// Check if agent has delivery skills with indexed documents - use RAG
 	if agent.IronRules || hasIndexedSkills(agent) {
 		ragResult := s.runSkillRAG(agent, aiConfig, userContent)
@@ -569,6 +579,91 @@ func hasIndexedSkills(agent model.Agent) bool {
 		}
 	}
 	return false
+}
+
+// ==================== Tool Execution for Ops Skills ====================
+
+// caseNumberRegex matches common CSE/ECSL case number patterns
+var caseNumberRegex = regexp.MustCompile(`(?i)(ECSL\d?-\d+|ECSDESK-\d+|ECS[A-Z]*-\d+|CSE-\d+|CASE-\d+)`)
+
+// hasOpsToolSkill checks if the agent has an ops skill with totp-query category
+func hasOpsToolSkill(agent model.Agent, category string) bool {
+	for _, as := range agent.AgentSkills {
+		if as.Skill.IsActive && as.Skill.Category == category && as.Skill.ToolDefs != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// executeTotpToolCall handles the "totp-query" skill execution.
+// When a case number is detected in the user message and the agent has the totp-query skill,
+// this function calls the TOTP service to generate Roller OTP and dynamic password,
+// then returns a formatted result string that can be directly sent to the user.
+func (s *ChatService) executeTotpToolCall(userContent string) string {
+	// Extract case number from user message
+	matches := caseNumberRegex.FindStringSubmatch(userContent)
+	if len(matches) == 0 {
+		return ""
+	}
+	caseNumber := strings.ToUpper(matches[1])
+	logger.Log.Infof("ToolExec: detected case number '%s' in message, executing TOTP query", caseNumber)
+
+	totpSvc := NewTotpService()
+
+	// Step 1: Look up issue from Jira
+	issueInfo, err := totpSvc.CheckIssueFromJira(caseNumber)
+	if err != nil {
+		logger.Log.Warnf("ToolExec: Jira lookup failed for %s: %v", caseNumber, err)
+		return fmt.Sprintf("## 🔐 双因子查询结果\n\n**Case号**: %s\n\n❌ **查询失败**: %s\n\n> 请检查Case号是否正确，或联系管理员确认Jira连接状态。", caseNumber, err.Error())
+	}
+
+	customer := issueInfo["customer"]
+	project := issueInfo["project"]
+	summary := issueInfo["summary"]
+
+	if customer == "" || project == "" {
+		return fmt.Sprintf("## 🔐 双因子查询结果\n\n**Case号**: %s\n**摘要**: %s\n\n❌ **无法生成密码**: 未从该Case中解析到客户名称和项目名称。\n\n> 请确认该Case号关联了正确的客户和项目信息。", caseNumber, summary)
+	}
+
+	// Step 2: Generate Roller OTP
+	rollerPass, rollerTs, rollerErr := totpSvc.QuickGenerateTotp(customer, project, "V5", "roller")
+
+	// Step 3: Generate dynamic password
+	dynamicPass, dynamicTs, dynamicErr := totpSvc.QuickGenerateTotp(customer, project, "V5", "dynamic")
+
+	// Build formatted response
+	var sb strings.Builder
+	sb.WriteString("## 🔐 双因子查询结果\n\n")
+	sb.WriteString(fmt.Sprintf("| 字段 | 值 |\n|------|------|\n"))
+	sb.WriteString(fmt.Sprintf("| **Case号** | %s |\n", caseNumber))
+	if summary != "" {
+		sb.WriteString(fmt.Sprintf("| **摘要** | %s |\n", summary))
+	}
+	sb.WriteString(fmt.Sprintf("| **客户** | %s |\n", customer))
+	sb.WriteString(fmt.Sprintf("| **项目** | %s |\n", project))
+	sb.WriteString("\n")
+
+	sb.WriteString("### 🎯 Roller 双因子 (OTP)\n\n")
+	if rollerErr == nil {
+		sb.WriteString(fmt.Sprintf("```\n%s\n```\n", rollerPass))
+		sb.WriteString(fmt.Sprintf("> 生成时间: %s | 有效期30秒，请尽快使用\n\n", rollerTs))
+	} else {
+		sb.WriteString(fmt.Sprintf("❌ 生成失败: %s\n\n", rollerErr.Error()))
+	}
+
+	sb.WriteString("### 🔑 动态密码\n\n")
+	if dynamicErr == nil {
+		sb.WriteString(fmt.Sprintf("```\n%s\n```\n", dynamicPass))
+		sb.WriteString(fmt.Sprintf("> 生成时间: %s\n\n", dynamicTs))
+	} else {
+		sb.WriteString(fmt.Sprintf("❌ 生成失败: %s\n\n", dynamicErr.Error()))
+	}
+
+	sb.WriteString("---\n*由「双因子申请」技能自动生成*")
+
+	logger.Log.Infof("ToolExec: TOTP query successful for case %s (customer=%s, project=%s)", caseNumber, customer, project)
+	return sb.String()
 }
 
 func (s *ChatService) runSkillRAG(agent model.Agent, aiConfig skill.AIConfig, question string) string {
@@ -703,6 +798,18 @@ func (s *ChatService) SendMessageStream(ctx context.Context, convID, userID uint
 		modelNameStr = provider.Model
 	} else {
 		aiConfig.Model = modelNameStr
+	}
+
+	// Tool execution check for ops skills (e.g., totp-query) - before RAG
+	if hasOpsToolSkill(conv.Agent, "totp-query") {
+		toolResult := s.executeTotpToolCall(content)
+		if toolResult != "" {
+			onToken(toolResult)
+			asstMsg := model.Message{ConversationID: convID, Role: "assistant", Content: toolResult}
+			repository.DB.Create(&asstMsg)
+			repository.DB.Model(&conv).Update("updated_at", time.Now())
+			return &userMsg, &asstMsg, nil
+		}
 	}
 
 	// RAG check - if RAG produces a result, stream it all at once

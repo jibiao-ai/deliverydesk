@@ -160,6 +160,7 @@ func main() {
 			auth.POST("/totp/apply", totpH.CreateTotpApplication)
 			auth.GET("/totp/my-applications", totpH.ListMyApplications)
 			auth.GET("/totp/check-issue", totpH.CheckIssue)
+			auth.GET("/totp/quick-query", totpH.QuickQueryTotp)
 			auth.GET("/totp/jira-cache", totpH.ListJiraCache)
 			auth.GET("/totp/admins", totpH.GetAdminList)
 
