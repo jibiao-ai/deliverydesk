@@ -598,6 +598,7 @@ export default function OpsEnvironmentPage() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-gray-200/50">
+                <th className="text-left py-2 px-2 font-semibold text-gray-600">CSE编号</th>
                 <th className="text-left py-2 px-2 font-semibold text-gray-600">客户名称</th>
                 <th className="text-left py-2 px-2 font-semibold text-gray-600">项目名称</th>
                 <th className="text-left py-2 px-2 font-semibold text-gray-600">CSE</th>
@@ -612,15 +613,16 @@ export default function OpsEnvironmentPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-400">
+                <tr><td colSpan={11} className="text-center py-10 text-gray-400">
                   <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />加载中...
                 </td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-400">
+                <tr><td colSpan={11} className="text-center py-10 text-gray-400">
                   <Server className="w-6 h-6 mx-auto mb-2 text-gray-300" />暂无数据，请点击「同步Jira」拉取数据
                 </td></tr>
               ) : items.map((item) => (
                 <tr key={item.id} className="border-b border-gray-100/50 hover:bg-white/50 transition-colors">
+                  <td className="py-2 px-2 font-mono text-indigo-600 text-[11px]" title={item.cse_key}>{item.cse_key || '-'}</td>
                   <td className="py-2 px-2 font-medium text-gray-800 max-w-[130px] truncate" title={item.customer_name}>{item.customer_name || '-'}</td>
                   <td className="py-2 px-2 text-gray-700 max-w-[150px] truncate" title={item.project_name}>{item.project_name || '-'}</td>
                   <td className="py-2 px-2 text-gray-600 max-w-[120px] truncate" title={item.cse_name}>{item.cse_name || '-'}</td>

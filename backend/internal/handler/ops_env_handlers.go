@@ -45,6 +45,9 @@ func (h *OpsEnvHandler) ListOpsEnvironments(c *gin.Context) {
 
 	query := repository.DB.Model(&model.OpsEnvironment{})
 
+	// Always exclude POC environments from listing
+	query = query.Where("env_type != ? AND env_type != ?", "POC", "poc")
+
 	// Filter by status
 	switch status {
 	case "in_progress":
@@ -95,12 +98,16 @@ func (h *OpsEnvHandler) ListOpsEnvironments(c *gin.Context) {
 // GetOpsEnvStats handles GET /api/ops-env/stats
 // Returns status counts and region distribution
 func (h *OpsEnvHandler) GetOpsEnvStats(c *gin.Context) {
+	// Base condition: exclude POC environments
+	noPOC := "env_type != 'POC' AND env_type != 'poc'"
+
 	type StatusCount struct {
 		Status string `json:"status"`
 		Count  int64  `json:"count"`
 	}
 	var statusCounts []StatusCount
 	repository.DB.Model(&model.OpsEnvironment{}).
+		Where(noPOC).
 		Select("status, count(*) as count").
 		Group("status").
 		Find(&statusCounts)
@@ -111,6 +118,7 @@ func (h *OpsEnvHandler) GetOpsEnvStats(c *gin.Context) {
 	}
 	var regionCounts []RegionCount
 	repository.DB.Model(&model.OpsEnvironment{}).
+		Where(noPOC).
 		Select("ops_region as region, count(*) as count").
 		Where("ops_region != ''").
 		Group("ops_region").
@@ -123,6 +131,7 @@ func (h *OpsEnvHandler) GetOpsEnvStats(c *gin.Context) {
 	}
 	var nodeSum NodeSum
 	repository.DB.Model(&model.OpsEnvironment{}).
+		Where(noPOC).
 		Select("COALESCE(SUM(node_count), 0) as total").
 		Find(&nodeSum)
 
@@ -145,6 +154,7 @@ func (h *OpsEnvHandler) GetOpsEnvTopCustomers(c *gin.Context) {
 	}
 	var topCustomers []CustomerCount
 	repository.DB.Model(&model.OpsEnvironment{}).
+		Where("env_type != 'POC' AND env_type != 'poc'").
 		Select("customer_name, count(*) as count").
 		Where("customer_name != ''").
 		Group("customer_name").
@@ -166,6 +176,7 @@ func (h *OpsEnvHandler) GetOpsEnvTopNodes(c *gin.Context) {
 	}
 	var topNodes []NodeTop
 	repository.DB.Model(&model.OpsEnvironment{}).
+		Where("env_type != 'POC' AND env_type != 'poc'").
 		Select("customer_name, project_name, cse_name, node_count").
 		Where("node_count > 0").
 		Order("node_count DESC").
@@ -513,6 +524,12 @@ func processEnvIssue(envIssue jiraIssue, server, user, token string, now *time.T
 		version = extractVersionName(cseFields["customfield_11196"])
 	}
 	envType := extractString(cseFields["customfield_11220"])
+
+	// Filter out POC environments
+	if strings.EqualFold(envType, "POC") || strings.EqualFold(envType, "poc") {
+		return fmt.Errorf("skip POC environment (env_type=%s)", envType)
+	}
+
 	cpuArch := extractStringArrayFirst(cseFields["customfield_11299"])
 	projectNum := extractString(cseFields["customfield_11287"])
 	deployTime := extractString(cseFields["created"])
