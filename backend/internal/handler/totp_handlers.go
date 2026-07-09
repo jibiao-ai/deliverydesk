@@ -289,3 +289,70 @@ func (h *TotpHandler) GetAdminList(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": admins})
 }
+
+// QuickQueryTotp handles GET /api/totp/quick-query?issue=ECSL2-50579
+// This is the core handler that makes the "双因子申请" skill functional:
+// It takes a case number, looks up the customer/project from Jira, then generates
+// both Roller OTP and dynamic password, returning everything in one response.
+func (h *TotpHandler) QuickQueryTotp(c *gin.Context) {
+	issue := c.Query("issue")
+	if issue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "issue参数不能为空，请提供Case号（如 ECSL2-50579）"})
+		return
+	}
+
+	// Step 1: Look up issue from Jira to get customer/project info
+	issueInfo, err := h.svc.CheckIssueFromJira(issue)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    -1,
+			"message": "Case号查询失败: " + err.Error(),
+			"issue":   issue,
+		})
+		return
+	}
+
+	customer := issueInfo["customer"]
+	project := issueInfo["project"]
+	summary := issueInfo["summary"]
+
+	if customer == "" || project == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    -1,
+			"message": "未能从Case号中解析到客户名和项目名",
+			"issue":   issue,
+			"data":    issueInfo,
+		})
+		return
+	}
+
+	// Step 2: Generate Roller OTP (always available, uses local HMAC-SHA1)
+	rollerPass, rollerTs, rollerErr := h.svc.QuickGenerateTotp(customer, project, "V5", "roller")
+
+	// Step 3: Generate dynamic password (calls external TOTP server)
+	dynamicPass, dynamicTs, dynamicErr := h.svc.QuickGenerateTotp(customer, project, "V5", "dynamic")
+
+	// Build response
+	result := gin.H{
+		"issue":    issue,
+		"summary":  summary,
+		"customer": customer,
+		"project":  project,
+	}
+
+	if rollerErr == nil {
+		result["roller_otp"] = rollerPass
+		result["roller_timestamp"] = rollerTs
+	} else {
+		result["roller_otp_error"] = rollerErr.Error()
+	}
+
+	if dynamicErr == nil {
+		result["dynamic_password"] = dynamicPass
+		result["dynamic_timestamp"] = dynamicTs
+	} else {
+		result["dynamic_password_error"] = dynamicErr.Error()
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result})
+}
