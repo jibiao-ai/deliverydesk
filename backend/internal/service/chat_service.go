@@ -557,6 +557,14 @@ func (s *ChatService) getAIResponse(agent model.Agent, userContent string, convI
 		}
 	}
 
+	// Check if agent has ops-env-warranty skill for warranty/maintenance queries
+	if hasOpsToolSkill(agent, "ops-env-warranty") {
+		toolResult := s.executeOpsEnvToolCall(userContent)
+		if toolResult != "" {
+			return toolResult
+		}
+	}
+
 	// Check if agent has delivery skills with indexed documents - use RAG
 	if agent.IronRules || hasIndexedSkills(agent) {
 		ragResult := s.runSkillRAG(agent, aiConfig, userContent)
@@ -627,10 +635,10 @@ func (s *ChatService) executeTotpToolCall(userContent string) string {
 	}
 
 	// Step 2: Generate Roller OTP
-	rollerPass, rollerTs, rollerErr := totpSvc.QuickGenerateTotp(customer, project, "V5", "roller")
+	rollerPass, rollerTs, rollerErr := totpSvc.QuickGenerateTotp(customer, project, "", "roller")
 
-	// Step 3: Generate dynamic password
-	dynamicPass, dynamicTs, dynamicErr := totpSvc.QuickGenerateTotp(customer, project, "V5", "dynamic")
+	// Step 3: Generate dynamic password (tries V5, V6, V611 automatically)
+	dynamicPass, dynamicTs, dynamicErr := totpSvc.QuickGenerateTotp(customer, project, "", "dynamic")
 
 	// Build formatted response
 	var sb strings.Builder
@@ -664,6 +672,200 @@ func (s *ChatService) executeTotpToolCall(userContent string) string {
 
 	logger.Log.Infof("ToolExec: TOTP query successful for case %s (customer=%s, project=%s)", caseNumber, customer, project)
 	return sb.String()
+}
+
+// executeOpsEnvToolCall handles the "ops-env-warranty" skill execution.
+// When the user's message appears to be querying warranty/maintenance info for a customer,
+// project, or CSE number, this function queries the OpsEnvironment database and returns
+// a formatted result with CSE number, node count, maintain dates, SLA, etc.
+func (s *ChatService) executeOpsEnvToolCall(userContent string) string {
+	// Extract search keyword from user message
+	// Strategy: detect CSE keys directly, or use the entire message as search keyword
+	// after removing common query prefixes
+	searchKeyword := extractOpsEnvSearchKeyword(userContent)
+	if searchKeyword == "" {
+		return ""
+	}
+
+	logger.Log.Infof("ToolExec: OpsEnv warranty query detected, keyword='%s'", searchKeyword)
+
+	// Query the database directly (same logic as ListOpsEnvironments handler)
+	var items []model.OpsEnvironment
+	query := repository.DB.Model(&model.OpsEnvironment{}).
+		Where("env_type != ? AND env_type != ?", "POC", "poc").
+		Where("customer_name LIKE ? OR project_name LIKE ? OR cse_name LIKE ? OR cse_key LIKE ?",
+			"%"+searchKeyword+"%", "%"+searchKeyword+"%", "%"+searchKeyword+"%", "%"+searchKeyword+"%")
+
+	var total int64
+	query.Count(&total)
+
+	if total == 0 {
+		return fmt.Sprintf("## 🔍 运维环境维保查询\n\n**查询关键字**: %s\n\n❌ 未找到匹配的运维环境记录。\n\n> 请尝试使用客户名称、项目名称或CSE编号进行查询。", searchKeyword)
+	}
+
+	// Limit to 20 results to avoid overwhelming output
+	limit := 20
+	if total < int64(limit) {
+		limit = int(total)
+	}
+	err := query.Order("maintain_end ASC").Limit(limit).Find(&items).Error
+	if err != nil {
+		logger.Log.Warnf("ToolExec: OpsEnv DB query failed: %v", err)
+		return fmt.Sprintf("## 🔍 运维环境维保查询\n\n**查询关键字**: %s\n\n❌ 数据库查询失败: %s", searchKeyword, err.Error())
+	}
+
+	// Build formatted Markdown table response
+	var sb strings.Builder
+	sb.WriteString("## 🔍 运维环境维保查询结果\n\n")
+	sb.WriteString(fmt.Sprintf("**查询关键字**: %s | **匹配数量**: %d 条", searchKeyword, total))
+	if total > int64(limit) {
+		sb.WriteString(fmt.Sprintf("（显示前 %d 条）", limit))
+	}
+	sb.WriteString("\n\n")
+
+	// Table header
+	sb.WriteString("| CSE编号 | 客户 | 项目 | 节点数 | 维保开始 | 维保结束 | 状态 | SLA | 运维区域 |\n")
+	sb.WriteString("|---------|------|------|--------|----------|----------|------|-----|----------|\n")
+
+	for _, item := range items {
+		// Format status with emoji
+		statusEmoji := "🟢"
+		switch {
+		case strings.Contains(item.Status, "Discarded") || strings.Contains(item.Status, "弃用"):
+			statusEmoji = "⚫"
+		case strings.Contains(item.Status, "Done") || strings.Contains(item.Status, "完成"):
+			statusEmoji = "🔵"
+		case strings.Contains(item.Status, "Progress") || strings.Contains(item.Status, "进行"):
+			statusEmoji = "🟢"
+		}
+
+		// Check if warranty is expiring soon (within 90 days)
+		maintainEnd := item.MaintainEnd
+		if maintainEnd != "" {
+			if t, err := time.Parse("2006-01-02", maintainEnd); err == nil {
+				daysLeft := int(time.Until(t).Hours() / 24)
+				if daysLeft < 0 {
+					maintainEnd = fmt.Sprintf("⚠️ **已过期** %s", item.MaintainEnd)
+				} else if daysLeft <= 90 {
+					maintainEnd = fmt.Sprintf("⏰ %s (%d天)", item.MaintainEnd, daysLeft)
+				}
+			}
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %d | %s | %s | %s %s | %s | %s |\n",
+			item.CSEKey,
+			truncStr(item.CustomerName, 12),
+			truncStr(item.ProjectName, 15),
+			item.NodeCount,
+			item.MaintainStart,
+			maintainEnd,
+			statusEmoji, item.Status,
+			item.SLA,
+			item.OpsRegion,
+		))
+	}
+
+	// Add summary stats
+	sb.WriteString("\n---\n")
+	var totalNodes int
+	var expiredCount, expiringCount, activeCount int
+	now := time.Now()
+	for _, item := range items {
+		totalNodes += item.NodeCount
+		if item.MaintainEnd != "" {
+			if t, err := time.Parse("2006-01-02", item.MaintainEnd); err == nil {
+				daysLeft := int(t.Sub(now).Hours() / 24)
+				if daysLeft < 0 {
+					expiredCount++
+				} else if daysLeft <= 90 {
+					expiringCount++
+				} else {
+					activeCount++
+				}
+			}
+		}
+	}
+	sb.WriteString(fmt.Sprintf("**汇总**: 共 %d 个环境 | 总节点数 %d | ", limit, totalNodes))
+	if expiredCount > 0 {
+		sb.WriteString(fmt.Sprintf("⚠️ 已过保 %d | ", expiredCount))
+	}
+	if expiringCount > 0 {
+		sb.WriteString(fmt.Sprintf("⏰ 90天内到期 %d | ", expiringCount))
+	}
+	sb.WriteString(fmt.Sprintf("🟢 正常 %d", activeCount))
+	sb.WriteString("\n\n*由「过保维保查询」技能自动生成*")
+
+	logger.Log.Infof("ToolExec: OpsEnv query returned %d results for keyword '%s'", len(items), searchKeyword)
+	return sb.String()
+}
+
+// extractOpsEnvSearchKeyword extracts a meaningful search keyword from the user message.
+// It handles:
+// 1. Direct CSE keys (CSE-1234)
+// 2. Customer/project names after stripping common query prefixes
+// 3. Returns empty string if the message doesn't look like an ops-env query
+func extractOpsEnvSearchKeyword(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return ""
+	}
+
+	// Pattern 1: Direct CSE key reference
+	cseRegex := regexp.MustCompile(`(?i)(CSE-\d+)`)
+	if matches := cseRegex.FindStringSubmatch(msg); len(matches) > 0 {
+		return strings.ToUpper(matches[1])
+	}
+
+	// Pattern 2: Strip common query prefixes to extract keyword
+	// Common patterns: "查一下XX的维保", "XX客户维保信息", "查询XX", etc.
+	prefixes := []string{
+		"查一下", "查询", "帮我查", "查", "搜索", "搜",
+		"看一下", "看看", "找一下", "找",
+		"请查询", "请查", "帮我查询", "帮查",
+	}
+	suffixes := []string{
+		"的维保信息", "的维保", "的过保信息", "的过保", "维保信息",
+		"的环境", "环境信息", "的节点", "节点信息",
+		"过保了吗", "过保没", "过保情况", "维保情况",
+		"的信息", "信息", "情况",
+	}
+
+	cleaned := msg
+	for _, p := range prefixes {
+		cleaned = strings.TrimPrefix(cleaned, p)
+	}
+	for _, s := range suffixes {
+		cleaned = strings.TrimSuffix(cleaned, s)
+	}
+	cleaned = strings.TrimSpace(cleaned)
+
+	// If cleaned is the same as original (no prefix/suffix stripped) and it's too long,
+	// it might not be a warranty query — skip it
+	if cleaned == msg && len([]rune(cleaned)) > 20 {
+		return ""
+	}
+
+	// If cleaned is empty after stripping, the user just typed "维保信息" etc. — skip
+	if cleaned == "" {
+		return ""
+	}
+
+	// Final check: ensure the keyword is reasonable (not too short for single char, not too long)
+	runeLen := len([]rune(cleaned))
+	if runeLen < 1 || runeLen > 30 {
+		return ""
+	}
+
+	return cleaned
+}
+
+// truncStr truncates a string to maxLen runes with ellipsis
+func truncStr(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "…"
 }
 
 func (s *ChatService) runSkillRAG(agent model.Agent, aiConfig skill.AIConfig, question string) string {
@@ -803,6 +1005,18 @@ func (s *ChatService) SendMessageStream(ctx context.Context, convID, userID uint
 	// Tool execution check for ops skills (e.g., totp-query) - before RAG
 	if hasOpsToolSkill(conv.Agent, "totp-query") {
 		toolResult := s.executeTotpToolCall(content)
+		if toolResult != "" {
+			onToken(toolResult)
+			asstMsg := model.Message{ConversationID: convID, Role: "assistant", Content: toolResult}
+			repository.DB.Create(&asstMsg)
+			repository.DB.Model(&conv).Update("updated_at", time.Now())
+			return &userMsg, &asstMsg, nil
+		}
+	}
+
+	// Tool execution check for ops-env-warranty skill - before RAG
+	if hasOpsToolSkill(conv.Agent, "ops-env-warranty") {
+		toolResult := s.executeOpsEnvToolCall(content)
 		if toolResult != "" {
 			onToken(toolResult)
 			asstMsg := model.Message{ConversationID: convID, Role: "assistant", Content: toolResult}

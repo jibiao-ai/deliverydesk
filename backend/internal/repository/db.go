@@ -364,6 +364,9 @@ func seedDefaultData(db *gorm.DB) {
 	// Seed 双因子申请智能体 agent (idempotent — only if it doesn't exist yet)
 	seedTotpAgent(db)
 
+	// Seed 过保维保查询智能体 agent (idempotent — only if it doesn't exist yet)
+	seedOpsEnvWarrantyAgent(db)
+
 	// Seed website links from Excel data
 	var catCount int64
 	db.Model(&model.WebsiteCategory{}).Count(&catCount)
@@ -573,7 +576,23 @@ func seedOpsSkills(db *gorm.DB) {
 			Description: "运维环境维保信息查询技能 - 支持调用【运维环境】接口，查询客户或项目的维保信息。可返回 CSE 编号、项目名称、客户名称、节点数、维保到期时间、当前状态、SLA 等级等关键信息。支持按客户名、项目名模糊搜索。",
 			Category:    "ops-env-warranty",
 			ToolDefs:    `[{"name":"ops_env_query","description":"查询运维环境维保信息，支持按客户名或项目名搜索","parameters":{"search":"客户名称或项目名称关键字","status":"状态过滤: in_progress/done/discarded/all"}},{"name":"ops_env_expiring","description":"查询即将到期的维保环境（按维保结束日期排序）","parameters":{"days":"未来N天内到期，默认30"}},{"name":"ops_env_stats","description":"获取运维环境统计概览（状态分布、区域分布、节点总数）","parameters":{}}]`,
-			SystemPrompt: "",
+			SystemPrompt: `你是「过保维保查询」智能体，帮助运维人员快速查询客户环境的维保状态。
+
+## 核心功能
+输入客户名称、项目名称或 CSE 编号，系统自动查询运维环境数据库并返回：
+- CSE 编号、客户名、项目名
+- 节点数量
+- 维保开始/结束时间（过期标红告警）
+- 当前状态（进行中/已完成/已弃用）
+- SLA 等级、运维区域
+
+## 使用方式
+直接输入查询关键字即可，例如：
+- 客户名称：中国移动、招商银行
+- 项目名称：私有云项目
+- CSE 编号：CSE-1234
+
+系统会自动模糊匹配并返回维保信息表格。`,
 		},
 	}
 	for _, def := range opsDefs {
@@ -782,6 +801,54 @@ func seedTotpAgent(db *gorm.DB) {
 		db.Create(&model.AgentSkill{AgentID: agent.ID, SkillID: totpSkill.ID})
 	}
 	logger.Log.Info("双因子申请智能体 seeded with totp-query skill")
+}
+
+func seedOpsEnvWarrantyAgent(db *gorm.DB) {
+	var existing model.Agent
+	if err := db.Where("name = ?", "过保维保查询智能体").First(&existing).Error; err == nil {
+		// Agent already exists — ensure it has the ops-env-warranty skill linked
+		var opsSkill model.Skill
+		if err := db.Where("category = ?", "ops-env-warranty").First(&opsSkill).Error; err == nil {
+			var link model.AgentSkill
+			if err := db.Where("agent_id = ? AND skill_id = ?", existing.ID, opsSkill.ID).First(&link).Error; err != nil {
+				db.Create(&model.AgentSkill{AgentID: existing.ID, SkillID: opsSkill.ID})
+				logger.Log.Info("过保维保查询智能体: linked ops-env-warranty skill")
+			}
+		}
+		return
+	}
+
+	agent := model.Agent{
+		Name:        "过保维保查询智能体",
+		Description: "输入客户名称、项目名称或CSE编号，自动查询并返回运维环境维保信息（节点数、维保到期、SLA等）。",
+		SystemPrompt: `你是「过保维保查询」智能体，帮助运维人员快速查询客户环境的维保状态。
+
+用户输入客户名称、项目名称或 CSE 编号，系统会自动查询运维环境数据库并返回维保信息表格，包括：
+- CSE 编号、客户名、项目名
+- 节点数量
+- 维保开始/结束时间（过期告警、即将到期提醒）
+- 当前状态、SLA 等级、运维区域
+
+请直接输入要查询的关键字开始。`,
+		Model:       "",
+		Temperature: 0.2,
+		MaxTokens:   4096,
+		IsActive:    true,
+		IsPublished: true,
+		IronRules:   false,
+		CreatedBy:   1,
+	}
+	if err := db.Create(&agent).Error; err != nil {
+		logger.Log.Warnf("Failed to seed 过保维保查询智能体: %v", err)
+		return
+	}
+
+	// Link to ops-env-warranty skill
+	var opsSkill model.Skill
+	if err := db.Where("category = ?", "ops-env-warranty").First(&opsSkill).Error; err == nil {
+		db.Create(&model.AgentSkill{AgentID: agent.ID, SkillID: opsSkill.ID})
+	}
+	logger.Log.Info("过保维保查询智能体 seeded with ops-env-warranty skill")
 }
 
 func opsExpertSystemPrompt() string {
