@@ -179,9 +179,10 @@ func main() {
 			auth.POST("/projects/sync", projectH.SyncProjects)
 
 		// Ops Environment routes
-		auth.GET("/ops-env/list", opsEnvH.ListOpsEnvironments)
-		auth.GET("/ops-env/stats", opsEnvH.GetOpsEnvStats)
-		auth.GET("/ops-env/calendar", opsEnvH.GetOpsEnvCalendar)
+			auth.GET("/ops-env/list", opsEnvH.ListOpsEnvironments)
+			auth.GET("/ops-env/stats", opsEnvH.GetOpsEnvStats)
+			auth.GET("/ops-env/quick-query", opsEnvH.QuickQueryOpsEnv)
+			auth.GET("/ops-env/calendar", opsEnvH.GetOpsEnvCalendar)
 		auth.GET("/ops-env/regions", opsEnvH.GetRegions)
 		auth.GET("/ops-env/diagnose", opsEnvH.DiagnoseOpsEnv)
 		auth.GET("/ops-env/top-customers", opsEnvH.GetOpsEnvTopCustomers)

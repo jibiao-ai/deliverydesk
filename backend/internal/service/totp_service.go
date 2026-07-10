@@ -216,11 +216,34 @@ func (s *TotpService) generateTotpPass(customer, project, version, totpType stri
 	}
 
 	// For standard TOTP (动态密码), call the external TOTP server
-	pass, err := s.callTotpServer(customer, project, version)
-	if err != nil {
-		return "", "", fmt.Errorf("动态密码生成失败: %v", err)
+	// If a specific version is given, try it first; on failure, try all versions
+	versionsToTry := []string{"V5", "V6", "V611"}
+	if version != "" {
+		// Put the specified version first, then try others
+		versionsToTry = []string{version}
+		for _, v := range []string{"V5", "V6", "V611"} {
+			if !strings.EqualFold(v, version) {
+				versionsToTry = append(versionsToTry, v)
+			}
+		}
 	}
-	return pass, timestamp, nil
+
+	var lastErr error
+	for _, ver := range versionsToTry {
+		pass, err := s.callTotpServer(customer, project, ver)
+		if err == nil {
+			logger.Log.Infof("Dynamic password generated successfully with version %s for %s/%s", ver, customer, project)
+			return pass, timestamp, nil
+		}
+		lastErr = err
+		// If error is not "未查询到" (license not found), it's a real error — don't retry
+		if !strings.Contains(err.Error(), "未查询到") {
+			break
+		}
+		logger.Log.Debugf("TOTP version %s failed for %s/%s: %v, trying next version...", ver, customer, project, err)
+	}
+
+	return "", "", fmt.Errorf("动态密码生成失败: %v (已尝试版本: %s)", lastErr, strings.Join(versionsToTry, ", "))
 }
 
 // callTotpServer calls the external TOTP server to generate a dynamic password (动态密码)

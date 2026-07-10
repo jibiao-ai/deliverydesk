@@ -6,7 +6,7 @@ import {
 import {
   Server, RefreshCw, Search, ChevronLeft, ChevronRight, Monitor,
   Shield, AlertTriangle, XCircle, Activity, Layers, MapPin, Cpu,
-  Calendar, CalendarDays, BarChart3, Users, HardDrive, TrendingUp,
+  Calendar, CalendarDays, BarChart3, Users, HardDrive, TrendingUp, Truck,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
@@ -50,7 +50,7 @@ function StatusBadge({ status }) {
     '已完成': { label: '过保', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: AlertTriangle },
     'Discarded': { label: '已弃用', color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle },
     '已弃用': { label: '已弃用', color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle },
-    '待办': { label: '待办', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Activity },
+    '待办': { label: '代建转运', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Truck },
   };
   const cfg = cfg_map[status] || { label: status || '未知', color: 'bg-gray-100 text-gray-600 border-gray-200', icon: Activity };
   const Icon = cfg.icon;
@@ -369,15 +369,17 @@ export default function OpsEnvironmentPage() {
     { value: 'in_progress', label: '维保中', icon: Shield },
     { value: 'done', label: '过保', icon: AlertTriangle },
     { value: 'discarded', label: '已弃用', icon: XCircle },
+    { value: 'pending', label: '代建转运', icon: Truck },
   ];
 
   // Compute status counts from stats
   const statusCountMap = useMemo(() => {
-    const m = { all: 0, in_progress: 0, done: 0, discarded: 0 };
+    const m = { all: 0, in_progress: 0, done: 0, discarded: 0, pending: 0 };
     (stats.status_counts || []).forEach(s => {
       if (s.status === 'In Progress' || s.status === '正在进行') m.in_progress = (m.in_progress || 0) + s.count;
       else if (s.status === 'Done' || s.status === '已完成') m.done = (m.done || 0) + s.count;
       else if (s.status === 'Discarded' || s.status === '已弃用') m.discarded = (m.discarded || 0) + s.count;
+      else if (s.status === '待办') m.pending = (m.pending || 0) + s.count;
       m.all += s.count;
     });
     return m;
@@ -432,7 +434,7 @@ export default function OpsEnvironmentPage() {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3" style={{ background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 50%, #f0fdf4 100%)' }}>
       {/* ── Top Stats Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <GlassCard icon={Monitor} title="环境总数" subtitle="所有运维环境">
           <p className="text-xl font-bold text-gray-800">{statusCountMap.all}</p>
         </GlassCard>
@@ -444,6 +446,9 @@ export default function OpsEnvironmentPage() {
         </GlassCard>
         <GlassCard icon={XCircle} title="已弃用" subtitle="环境已弃用">
           <p className="text-xl font-bold text-red-600">{statusCountMap.discarded}</p>
+        </GlassCard>
+        <GlassCard icon={Truck} title="代建转运" subtitle="待办环境">
+          <p className="text-xl font-bold text-blue-600">{statusCountMap.pending}</p>
         </GlassCard>
         <GlassCard icon={HardDrive} title="总节点数" subtitle="所有环境节点">
           <p className="text-xl font-bold text-indigo-600">{stats.total_nodes?.toLocaleString() || 0}</p>

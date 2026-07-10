@@ -637,13 +637,13 @@ func jiraSearchAll(server, user, token, jql, fields string) ([]jiraIssue, error)
 // opsEnvHTTPClient is a shared HTTP client with extended timeout and TLS skip for Jira API calls.
 // Reusing a single client enables TCP connection pooling across requests.
 var opsEnvHTTPClient = &http.Client{
-	Timeout: 180 * time.Second,
+	Timeout: 300 * time.Second,
 	Transport: &http.Transport{
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 		MaxIdleConns:          20,
 		MaxIdleConnsPerHost:   20,
 		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: 120 * time.Second,
+		ResponseHeaderTimeout: 240 * time.Second,
 	},
 }
 
@@ -660,58 +660,111 @@ func jiraSearch(server, user, token, jql, fields, nextPageToken string, maxResul
 		apiURL += "&nextPageToken=" + url.QueryEscape(nextPageToken)
 	}
 
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return nil, "", true, err
-	}
-	req.SetBasicAuth(user, token)
-	req.Header.Set("Accept", "application/json")
+	// Retry up to 3 times on timeout/transient errors
+	maxRetries := 3
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt*10) * time.Second
+			logger.Log.Warnf("OpsEnv jiraSearch retry %d/%d after %v (previous error: %v)", attempt+1, maxRetries, backoff, lastErr)
+			time.Sleep(backoff)
+		}
 
-	resp, err := opsEnvHTTPClient.Do(req)
-	if err != nil {
-		return nil, "", true, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			return nil, "", true, err
+		}
+		req.SetBasicAuth(user, token)
+		req.Header.Set("Accept", "application/json")
 
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, "", true, fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+		resp, err := opsEnvHTTPClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			// Retry on timeout or connection errors
+			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection") ||
+				strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "reset") {
+				continue
+			}
+			return nil, "", true, lastErr
+		}
+
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+			continue // retry on rate limit or server errors
+		}
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, "", true, fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+		}
+
+		var result jiraSearchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, "", true, fmt.Errorf("decode response: %w", err)
+		}
+		resp.Body.Close()
+		return result.Issues, result.NextPageToken, result.IsLast, nil
 	}
 
-	var result jiraSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, "", true, fmt.Errorf("decode response: %w", err)
-	}
-	return result.Issues, result.NextPageToken, result.IsLast, nil
+	return nil, "", true, lastErr
 }
 
 func jiraGetIssue(server, user, token, issueKey, fields string) (*jiraIssue, error) {
 	apiURL := fmt.Sprintf("%s/rest/api/3/issue/%s?fields=%s",
 		server, issueKey, fields)
 
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.SetBasicAuth(user, token)
-	req.Header.Set("Accept", "application/json")
+	// Retry up to 3 times on timeout/transient errors
+	maxRetries := 3
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt*5) * time.Second)
+		}
 
-	resp, err := opsEnvHTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.SetBasicAuth(user, token)
+		req.Header.Set("Accept", "application/json")
 
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+		resp, err := opsEnvHTTPClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection") ||
+				strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "reset") {
+				continue
+			}
+			return nil, lastErr
+		}
+
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("Jira API returned %d: %s", resp.StatusCode, string(body[:int(math.Min(float64(len(body)), 500))]))
+		}
+
+		var issue jiraIssue
+		if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode issue: %w", err)
+		}
+		resp.Body.Close()
+		return &issue, nil
 	}
 
-	var issue jiraIssue
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
-		return nil, fmt.Errorf("decode issue: %w", err)
-	}
-	return &issue, nil
+	return nil, lastErr
 }
 
 // ─── Field extraction helpers ─────────────────────────────────────────────────
@@ -842,4 +895,55 @@ func sumNodeFields(fields map[string]json.RawMessage) int {
 		}
 	}
 	return total
+}
+
+// QuickQueryOpsEnv handles GET /api/ops-env/quick-query?search=XXX
+// This is the API endpoint for the "过保维保查询" skill to enable natural-language
+// warranty queries via chat. Supports search by customer name, project name, or CSE key.
+func (h *OpsEnvHandler) QuickQueryOpsEnv(c *gin.Context) {
+	search := c.Query("search")
+	if search == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "search参数不能为空，请提供客户名称、项目名称或CSE编号"})
+		return
+	}
+
+	status := c.DefaultQuery("status", "")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if limit < 1 || limit > 50 {
+		limit = 20
+	}
+
+	query := repository.DB.Model(&model.OpsEnvironment{}).
+		Where("env_type != ? AND env_type != ?", "POC", "poc").
+		Where("customer_name LIKE ? OR project_name LIKE ? OR cse_name LIKE ? OR cse_key LIKE ?",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
+
+	// Optional status filter
+	switch status {
+	case "in_progress":
+		query = query.Where("status IN (?, ?)", "正在进行", "In Progress")
+	case "done":
+		query = query.Where("status IN (?, ?)", "已完成", "Done")
+	case "discarded":
+		query = query.Where("status IN (?, ?)", "已弃用", "Discarded")
+	}
+
+	var total int64
+	query.Count(&total)
+
+	var items []model.OpsEnvironment
+	err := query.Order("maintain_end ASC").Limit(limit).Find(&items).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"items":  items,
+			"total":  total,
+			"search": search,
+		},
+	})
 }

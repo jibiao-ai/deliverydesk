@@ -327,10 +327,10 @@ func (h *TotpHandler) QuickQueryTotp(c *gin.Context) {
 	}
 
 	// Step 2: Generate Roller OTP (always available, uses local HMAC-SHA1)
-	rollerPass, rollerTs, rollerErr := h.svc.QuickGenerateTotp(customer, project, "V5", "roller")
+	rollerPass, rollerTs, rollerErr := h.svc.QuickGenerateTotp(customer, project, "", "roller")
 
-	// Step 3: Generate dynamic password (calls external TOTP server)
-	dynamicPass, dynamicTs, dynamicErr := h.svc.QuickGenerateTotp(customer, project, "V5", "dynamic")
+	// Step 3: Generate dynamic password (tries V5, V6, V611 automatically)
+	dynamicPass, dynamicTs, dynamicErr := h.svc.QuickGenerateTotp(customer, project, "", "dynamic")
 
 	// Build response
 	result := gin.H{
