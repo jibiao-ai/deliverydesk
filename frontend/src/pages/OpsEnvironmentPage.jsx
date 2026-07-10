@@ -50,7 +50,7 @@ function StatusBadge({ status }) {
     '已完成': { label: '过保', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: AlertTriangle },
     'Discarded': { label: '已弃用', color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle },
     '已弃用': { label: '已弃用', color: 'bg-red-100 text-red-700 border-red-200', icon: XCircle },
-    '待办': { label: '代建转运', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Truck },
+    '待办': { label: '待建转运', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Truck },
   };
   const cfg = cfg_map[status] || { label: status || '未知', color: 'bg-gray-100 text-gray-600 border-gray-200', icon: Activity };
   const Icon = cfg.icon;
@@ -369,7 +369,7 @@ export default function OpsEnvironmentPage() {
     { value: 'in_progress', label: '维保中', icon: Shield },
     { value: 'done', label: '过保', icon: AlertTriangle },
     { value: 'discarded', label: '已弃用', icon: XCircle },
-    { value: 'pending', label: '代建转运', icon: Truck },
+    { value: 'pending', label: '待建转运', icon: Truck },
   ];
 
   // Compute status counts from stats
@@ -447,7 +447,7 @@ export default function OpsEnvironmentPage() {
         <GlassCard icon={XCircle} title="已弃用" subtitle="环境已弃用">
           <p className="text-xl font-bold text-red-600">{statusCountMap.discarded}</p>
         </GlassCard>
-        <GlassCard icon={Truck} title="代建转运" subtitle="待办环境">
+        <GlassCard icon={Truck} title="待建转运" subtitle="待办环境">
           <p className="text-xl font-bold text-blue-600">{statusCountMap.pending}</p>
         </GlassCard>
         <GlassCard icon={HardDrive} title="总节点数" subtitle="所有环境节点">
