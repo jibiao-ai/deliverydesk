@@ -11,6 +11,7 @@ import {
   PackageCheck,
 } from 'lucide-react';
 import useStore from '../store/useStore';
+import FullscreenButton from '../components/FullscreenButton';
 import toast from 'react-hot-toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -701,8 +702,10 @@ export default function ProjectManagePage() {
     );
   }
 
+  const pageRef = useRef(null);
+
   return (
-    <div className="h-full overflow-y-auto p-5 space-y-4" style={{ scrollbarWidth: 'thin' }}>
+    <div ref={pageRef} className="h-full overflow-y-auto p-5 space-y-4 bg-gradient-to-br from-slate-50 to-purple-50/30" style={{ scrollbarWidth: 'thin' }}>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -724,6 +727,7 @@ export default function ProjectManagePage() {
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
             {syncing ? '同步中' : '同步'}
           </button>
+          <FullscreenButton containerRef={pageRef} />
         </div>
       </div>
 

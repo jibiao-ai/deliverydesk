@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -9,6 +9,7 @@ import {
   Calendar, CalendarDays, BarChart3, Users, HardDrive, TrendingUp, Truck,
 } from 'lucide-react';
 import useStore from '../store/useStore';
+import FullscreenButton from '../components/FullscreenButton';
 import toast from 'react-hot-toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -431,8 +432,10 @@ export default function OpsEnvironmentPage() {
     }));
   }, [topCustomers]);
 
+  const pageRef = useRef(null);
+
   return (
-    <div className="h-full overflow-y-auto p-4 space-y-3" style={{ background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 50%, #f0fdf4 100%)' }}>
+    <div ref={pageRef} className="h-full overflow-y-auto p-4 space-y-3" style={{ background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 50%, #f0fdf4 100%)' }}>
       {/* ── Top Stats Cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <GlassCard icon={Monitor} title="环境总数" subtitle="所有运维环境">
@@ -594,6 +597,7 @@ export default function OpsEnvironmentPage() {
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
             同步Jira
           </button>
+          <FullscreenButton containerRef={pageRef} />
         </div>
       </div>
 

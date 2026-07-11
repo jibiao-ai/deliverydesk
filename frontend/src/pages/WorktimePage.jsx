@@ -6,6 +6,7 @@ import {
   Activity, Timer, Target, AlertCircle, FileSpreadsheet, CalendarRange
 } from 'lucide-react';
 import { getWorktimeStats, getWorktimeUsers, addWorktimeUser, removeWorktimeUser } from '../services/api';
+import FullscreenButton from '../components/FullscreenButton';
 import toast from 'react-hot-toast';
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -616,8 +617,10 @@ export default function WorktimePage() {
     !searchTerm || u.name.includes(searchTerm)
   ) || [];
 
+  const pageRef = useRef(null);
+
   return (
-    <div className="h-full overflow-y-auto p-6" style={{ scrollbarWidth: 'thin' }}>
+    <div ref={pageRef} className="h-full overflow-y-auto p-6 bg-gradient-to-br from-slate-50 to-indigo-50/30" style={{ scrollbarWidth: 'thin' }}>
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
@@ -646,6 +649,7 @@ export default function WorktimePage() {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </button>
+            <FullscreenButton containerRef={pageRef} />
           </div>
         </div>
 
