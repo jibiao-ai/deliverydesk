@@ -694,6 +694,8 @@ export default function ProjectManagePage() {
     return '月历';
   }, [period, customRange]);
 
+  const pageRef = useRef(null);
+
   if (loading && !stats) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -701,8 +703,6 @@ export default function ProjectManagePage() {
       </div>
     );
   }
-
-  const pageRef = useRef(null);
 
   return (
     <div ref={pageRef} className="h-full overflow-y-auto p-5 space-y-4 bg-gradient-to-br from-slate-50 to-purple-50/30" style={{ scrollbarWidth: 'thin' }}>
