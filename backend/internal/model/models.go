@@ -350,3 +350,19 @@ type OpsEnvironment struct {
 	DiscardedAt     *time.Time     `json:"discarded_at"`                                  // 弃用时间
 	SyncedAt        *time.Time     `json:"synced_at"`                                     // 最后同步时间
 }
+
+// KBHistory records knowledge base generation history
+type KBHistory struct {
+	ID            uint           `gorm:"primarykey" json:"id"`
+	CreatedAt     time.Time      `json:"created_at"`
+	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	UserID        uint           `gorm:"index" json:"user_id"`
+	Username      string         `gorm:"size:128" json:"username"`
+	IssueKey      string         `gorm:"size:64;index" json:"issue_key"`
+	Title         string         `gorm:"size:512" json:"title"`
+	ConfluenceURL string         `gorm:"size:1024" json:"confluence_url"` // target parent page URL
+	PageURL       string         `gorm:"size:1024" json:"page_url"`      // created page URL
+	PageID        string         `gorm:"size:64" json:"page_id"`
+	Customer      string         `gorm:"size:256" json:"customer"`
+	Status        string         `gorm:"size:32" json:"status"` // success / failed
+}

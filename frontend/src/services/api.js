@@ -215,6 +215,7 @@ export const updateSettings = (data) => api.put('/settings', data);
 // Knowledge Base (Jira → Confluence)
 export const previewKB = (data) => api.post('/kb/preview', data, { timeout: 300000 });
 export const publishKB = (data) => api.post('/kb/publish', data, { timeout: 300000 });
+export const getKBHistory = (params) => api.get('/kb/history', { params });
 
 // Worktime Management
 export const getWorktimeStats = (params) => api.get('/worktime/stats', { params });
