@@ -194,7 +194,7 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 
 	// 4c. Process timeline
 	timelineRaw := formatTimelineRaw(events)
-	processPrompt := fmt.Sprintf(`你是资深技术支持工程师，擅长将冗长的工单处理记录收敛为清晰的时间线。
+	processPrompt := fmt.Sprintf(`你是资深技术支持工程师，擅长将冗长的工单处理记录收敛为清晰的时间线和行动总结。
 将工单的评论与状态变更记录收敛为「时间线 + 处理内容汇总」两部分。
 输入（按时间升序）：
 %s
@@ -203,8 +203,10 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 规则：
 - timeline 按时间升序，content 控制在 60 字以内，去重合并同主题
 - 状态变更也要纳入
+- summary 必须包含：(1)问题定位过程和关键发现 (2)采取的具体解决动作（命令、配置变更等要明确写出）(3)最终验证结果
+- summary 中每一步动作要写清楚具体做了什么，不能用模糊描述如"进行了排查""做了处理"，要写明确的操作如"将PV从Cinder切回NFS-CSI""执行了flock测试命令验证NFS锁机制"
 - 只输出 JSON`, timelineRaw)
-	processResp := callLLM(aiBaseURL, aiKey, aiModel, "你是资深技术支持工程师，输出严格遵守用户要求。", processPrompt)
+	processResp := callLLM(aiBaseURL, aiKey, aiModel, "你是资深技术支持工程师，输出严格遵守用户要求。所有结论和动作必须具体、明确，禁止使用模糊表述。", processPrompt)
 	processResp = cleanCodeBlock(processResp)
 
 	var processData struct {
@@ -218,16 +220,21 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 	}
 
 	// 4d. Summary & suggestions
-	summaryPrompt := fmt.Sprintf(`你是资深技术支持工程师，擅长从工单处理记录中提炼技术结论。
-基于工单处理记录，汇总问题本身的技术结论、最终结果与改进建议。
+	summaryPrompt := fmt.Sprintf(`你是资深技术支持工程师，擅长从工单处理记录中提炼精准的技术结论。
+基于工单处理记录，汇总问题的根因分析、解决方案和改进建议。
 输入：
 - 工单：%s，状态：%s，解决结果：%s
 - 处理内容汇总：%s
 - 工单描述：%s
 输出要求（严格 JSON）：
-{"tech_conclusion": "技术结论（200-400字）", "result": "结果（100-200字）", "suggestions": ["建议1","建议2","建议3"]}
-规则：tech_conclusion 必须基于输入记录中的实际证据，不得臆造。只输出 JSON。`, key, status, resolution, processData.Summary, descText)
-	summaryResp := callLLM(aiBaseURL, aiKey, aiModel, "你是资深技术支持工程师，输出严格遵守用户要求。", summaryPrompt)
+{"tech_conclusion": "技术结论（200-400字）", "result": "最终结果（100-200字）", "suggestions": ["建议1","建议2","建议3"]}
+规则：
+- tech_conclusion 必须包含：(1)问题根因（精确到组件/配置/版本）(2)解决方案（具体的操作步骤或配置变更）(3)影响范围评估
+- tech_conclusion 禁止使用"经过排查发现""通过分析得知"等空话，直接写"根因是XXX""解决方案为XXX"
+- result 必须写明问题是否彻底解决、验证方式、当前运行状态
+- suggestions 每条必须是可执行的具体动作，而非泛泛的"加强监控"，要写成"在Prometheus中增加NFS存储延迟和可用性的告警规则"这样的明确建议
+- 只输出 JSON`, key, status, resolution, processData.Summary, descText)
+	summaryResp := callLLM(aiBaseURL, aiKey, aiModel, "你是资深技术支持工程师，输出严格遵守用户要求。所有结论必须精确到具体技术细节，禁止泛泛而谈。", summaryPrompt)
 	summaryResp = cleanCodeBlock(summaryResp)
 
 	var summaryData struct {
@@ -789,6 +796,7 @@ func formatTimelineRaw(events []TimelineEv) string {
 }
 
 func extractCustomer(fields map[string]interface{}, fallback string) string {
+	// 1. Check custom fields with customer-related names
 	keywords := []string{"客户", "customer", "组织", "organization", "company", "租户", "tenant", "账号", "account"}
 	for k, v := range fields {
 		kl := strings.ToLower(k)
@@ -801,16 +809,46 @@ func extractCustomer(fields map[string]interface{}, fallback string) string {
 			}
 		}
 	}
-	// Try to extract from summary
+
+	// 2. Try to extract from summary (title)
+	// Common patterns in EasyStack Jira:
+	//   "中国邮政储蓄银行-廊坊2023ES测试云1(CSE-4595)-容器平台部署时使用nfs存储时，prometheus pod无法正常启动"
+	//   Customer name is everything before the (CSE-XXXX) or (ECSL-XXXX) pattern
 	summary := displayValue(fields["summary"])
 	if summary != "" {
-		// Pattern: "XX客户-" or "XX-"
-		re := regexp.MustCompile(`^([^-]+)-`)
-		m := re.FindStringSubmatch(summary)
-		if len(m) >= 2 && len(m[1]) > 2 && len(m[1]) < 20 {
-			return m[1]
+		// Pattern 1: Extract everything before (CSE-XXXX) or (ECSL2-XXXX) etc.
+		reCSE := regexp.MustCompile(`^(.+?)\s*\([A-Z][A-Z0-9]*-\d+\)`)
+		if m := reCSE.FindStringSubmatch(summary); len(m) >= 2 {
+			customer := strings.TrimRight(m[1], "- ")
+			if len(customer) >= 2 {
+				return customer
+			}
+		}
+
+		// Pattern 2: "客户名-问题描述" where problem description starts with Chinese tech keywords
+		reTech := regexp.MustCompile(`^(.+?)[-—]\s*(?:容器|云平台|虚拟|网络|存储|集群|节点|服务|部署|升级|扩容|备份|监控|告警|迁移|安装)`)
+		if m := reTech.FindStringSubmatch(summary); len(m) >= 2 {
+			customer := strings.TrimRight(m[1], "- ")
+			if len(customer) >= 2 {
+				return customer
+			}
+		}
+
+		// Pattern 3: Simple first segment before "-" (original logic, relaxed length)
+		re := regexp.MustCompile(`^([^(（]+)-`)
+		if m := re.FindStringSubmatch(summary); len(m) >= 2 && len(m[1]) >= 2 {
+			return strings.TrimSpace(m[1])
 		}
 	}
+
+	// 3. Check "客户名称" field specifically (some Jira instances use this)
+	if cf, ok := fields["customfield_10601"]; ok {
+		val := displayValue(cf)
+		if val != "" {
+			return val
+		}
+	}
+
 	if fallback != "" {
 		return fallback
 	}
