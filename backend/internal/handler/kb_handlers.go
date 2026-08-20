@@ -243,7 +243,7 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 		Suggestions    []string `json:"suggestions"`
 	}
 	if err := json.Unmarshal([]byte(summaryResp), &summaryData); err != nil {
-		logger.Log.Warnf("KB: LLM summary JSON parse error: %v", err)
+		logger.Log.Warnf("KB: LLM summary JSON parse error: %v, raw response (first 500 chars): %s", err, summaryResp[:kbMin(len(summaryResp), 500)])
 		summaryData.TechConclusion = "（LLM 解析失败，请重试）"
 		summaryData.Result = ""
 		summaryData.Suggestions = []string{}
@@ -703,7 +703,7 @@ func callLLM(baseURL, apiKey, model, system, user string) string {
 			{"role": "user", "content": user},
 		},
 		"temperature": 0.3,
-		"max_tokens":  4000,
+		"max_tokens":  8000,
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
@@ -730,12 +730,18 @@ func callLLM(baseURL, apiKey, model, system, user string) string {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
+		logger.Log.Warnf("KB LLM response parse failed or empty choices, body: %s", string(body[:kbMin(len(body), 300)]))
 		return ""
 	}
-	return result.Choices[0].Message.Content
+	content := result.Choices[0].Message.Content
+	if content == "" {
+		logger.Log.Warnf("KB LLM returned empty content, finish_reason=%s, body: %s", result.Choices[0].FinishReason, string(body[:kbMin(len(body), 500)]))
+	}
+	return content
 }
 
 // =============== Helper: data extraction ===============
