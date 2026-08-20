@@ -193,6 +193,7 @@ func main() {
 		// Knowledge Base (Jira → Confluence) routes
 		auth.POST("/kb/preview", kbH.PreviewKB)
 		auth.POST("/kb/publish", kbH.PublishKB)
+		auth.GET("/kb/history", kbH.ListKBHistory)
 
 			// Admin routes
 			admin := auth.Group("")

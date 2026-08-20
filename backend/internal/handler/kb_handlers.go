@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -331,6 +332,24 @@ func (h *KBHandler) PublishKB(c *gin.Context) {
 		}()
 	}
 
+	// Save history record
+	userID := c.GetUint("user_id")
+	username := c.GetString("username")
+	history := model.KBHistory{
+		UserID:        userID,
+		Username:      username,
+		IssueKey:      strings.TrimSpace(req.IssueKey),
+		Title:         req.Content.Title,
+		ConfluenceURL: req.ConfluenceURL,
+		PageURL:       pageURL,
+		PageID:        pageID,
+		Customer:      req.Content.Customer,
+		Status:        "success",
+	}
+	if err := repository.DB.Create(&history).Error; err != nil {
+		logger.Log.Warnf("[KB] Failed to save history record: %v", err)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": KBGenerateResponse{
@@ -339,6 +358,42 @@ func (h *KBHandler) PublishKB(c *gin.Context) {
 			PageID:  pageID,
 		},
 		"message": "知识库页面已发布",
+	})
+}
+
+// ListKBHistory handles GET /api/kb/history — returns paginated history
+func (h *KBHandler) ListKBHistory(c *gin.Context) {
+	page := 1
+	pageSize := 6
+	if p := c.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if ps := c.Query("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			pageSize = v
+		}
+		if pageSize > 50 {
+			pageSize = 50
+		}
+	}
+
+	var total int64
+	repository.DB.Model(&model.KBHistory{}).Count(&total)
+
+	var records []model.KBHistory
+	offset := (page - 1) * pageSize
+	repository.DB.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&records)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"records":   records,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+		},
 	})
 }
 

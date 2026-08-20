@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { BookOpen, Send, Eye, ExternalLink, Loader2, AlertTriangle, CheckCircle2, Copy, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BookOpen, Send, Eye, ExternalLink, Loader2, AlertTriangle, CheckCircle2, Copy, RefreshCw, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { previewKB, publishKB } from '../services/api';
+import { previewKB, publishKB, getKBHistory } from '../services/api';
 
 export default function KnowledgeBasePage() {
   const [issueKey, setIssueKey] = useState('');
@@ -15,6 +15,29 @@ export default function KnowledgeBasePage() {
   const [publishResult, setPublishResult] = useState(null);
   const [showCredentials, setShowCredentials] = useState(false);
   const [step, setStep] = useState(1); // 1: input, 2: preview, 3: published
+
+  // History state
+  const [history, setHistory] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPageSize = 6;
+
+  const loadHistory = useCallback(async (page = 1) => {
+    try {
+      const res = await getKBHistory({ page, page_size: historyPageSize });
+      if (res?.code === 0 && res.data) {
+        setHistory(res.data.records || []);
+        setHistoryTotal(res.data.total || 0);
+        setHistoryPage(res.data.page || 1);
+      }
+    } catch (e) {
+      // silent fail
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHistory(1);
+  }, [loadHistory]);
 
   // Parse issue key from URL or direct input
   const parseIssueInput = (input) => {
@@ -80,6 +103,7 @@ export default function KnowledgeBasePage() {
         setPublishResult(res.data);
         setStep(3);
         toast.success('知识库页面已发布到 Confluence！');
+        loadHistory(1); // Refresh history after publish
       } else {
         toast.error(res?.message || '发布失败');
       }
@@ -402,6 +426,126 @@ export default function KnowledgeBasePage() {
             </div>
           </div>
         )}
+
+        {/* History Section */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-gray-500" />
+              <h3 className="text-sm font-semibold text-gray-700">生成历史</h3>
+              <span className="text-xs text-gray-400">共 {historyTotal} 条</span>
+            </div>
+            <button
+              onClick={() => loadHistory(historyPage)}
+              className="text-xs text-gray-500 hover:text-primary-600 flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" /> 刷新
+            </button>
+          </div>
+
+          {history.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">暂无生成记录</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 px-2 text-xs font-medium text-gray-500 w-[140px]">时间</th>
+                      <th className="text-left py-2 px-2 text-xs font-medium text-gray-500 w-[100px]">工单号</th>
+                      <th className="text-left py-2 px-2 text-xs font-medium text-gray-500">标题</th>
+                      <th className="text-left py-2 px-2 text-xs font-medium text-gray-500 w-[80px]">状态</th>
+                      <th className="text-left py-2 px-2 text-xs font-medium text-gray-500 w-[60px]">链接</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((item) => (
+                      <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        <td className="py-2.5 px-2 text-xs text-gray-500 whitespace-nowrap">
+                          {new Date(item.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <span className="text-xs font-mono text-indigo-600">{item.issue_key}</span>
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <span className="text-xs text-gray-700 line-clamp-1" title={item.title}>
+                            {item.title || '-'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            item.status === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                          }`}>
+                            {item.status === 'success' ? '成功' : '失败'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-2">
+                          {item.page_url ? (
+                            <a
+                              href={item.page_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-indigo-500 hover:text-indigo-700"
+                              title="打开 Confluence 页面"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {historyTotal > historyPageSize && (
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-3">
+                  <span className="text-xs text-gray-400">
+                    第 {historyPage} / {Math.ceil(historyTotal / historyPageSize)} 页
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => loadHistory(historyPage - 1)}
+                      disabled={historyPage <= 1}
+                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4 text-gray-600" />
+                    </button>
+                    {Array.from({ length: Math.ceil(historyTotal / historyPageSize) }, (_, i) => i + 1)
+                      .filter(p => Math.abs(p - historyPage) <= 2 || p === 1 || p === Math.ceil(historyTotal / historyPageSize))
+                      .map((p, idx, arr) => (
+                        <React.Fragment key={p}>
+                          {idx > 0 && arr[idx - 1] !== p - 1 && (
+                            <span className="text-xs text-gray-300 px-1">...</span>
+                          )}
+                          <button
+                            onClick={() => loadHistory(p)}
+                            className={`w-7 h-7 rounded text-xs font-medium ${
+                              p === historyPage
+                                ? 'bg-primary-600 text-white'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                    <button
+                      onClick={() => loadHistory(historyPage + 1)}
+                      disabled={historyPage >= Math.ceil(historyTotal / historyPageSize)}
+                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="w-4 h-4 text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
