@@ -68,6 +68,7 @@ func main() {
 	projectH := handler.NewProjectHandler()
 	opsEnvH := handler.NewOpsEnvHandler()
 	kbH := handler.NewKBHandler()
+	wbsH := &handler.WBSHandler{}
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -194,6 +195,14 @@ func main() {
 		auth.POST("/kb/preview", kbH.PreviewKB)
 		auth.POST("/kb/publish", kbH.PublishKB)
 		auth.GET("/kb/history", kbH.ListKBHistory)
+
+		// WBS Service routes
+		auth.GET("/wbs/catalog", wbsH.GetCatalog)
+		auth.POST("/wbs/orders", wbsH.SaveOrder)
+		auth.GET("/wbs/orders", wbsH.ListOrders)
+		auth.GET("/wbs/orders/:id", wbsH.GetOrder)
+		auth.GET("/wbs/orders/:id/export", wbsH.ExportExcel)
+		auth.DELETE("/wbs/orders/:id", wbsH.DeleteOrder)
 
 			// Admin routes
 			admin := auth.Group("")

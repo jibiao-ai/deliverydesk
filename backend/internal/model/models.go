@@ -351,6 +351,44 @@ type OpsEnvironment struct {
 	SyncedAt        *time.Time     `json:"synced_at"`                                     // 最后同步时间
 }
 
+// WBSOrder represents a WBS service order
+type WBSOrder struct {
+	ID              uint           `gorm:"primarykey" json:"id"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	UserID          string         `gorm:"size:64;index" json:"user_id"`
+	Username        string         `gorm:"size:128" json:"username"`
+	OpportunityName string         `gorm:"size:512" json:"opportunity_name"` // 商机名称
+	OpportunityNo   string         `gorm:"size:128;index" json:"opportunity_no"`   // 商机号
+	CustomerName    string         `gorm:"size:256" json:"customer_name"`    // 客户名称
+	Agent           string         `gorm:"size:256" json:"agent"`            // 代理商
+	DeployLocation  string         `gorm:"size:256" json:"deploy_location"`  // 部署地点
+	Sales           string         `gorm:"size:128" json:"sales"`            // 销售
+	PreSales        string         `gorm:"size:128" json:"pre_sales"`        // 售前
+	ProjectManager  string         `gorm:"size:256" json:"project_manager"`  // 项目经理邮箱
+	ProductCount    int            `json:"product_count"`                    // 产品项数
+	ServiceCount    int            `json:"service_count"`                    // 服务项数
+	Status          string         `gorm:"size:32;default:draft" json:"status"` // draft/submitted
+	Remarks         string         `gorm:"type:text" json:"remarks"`
+}
+
+// WBSOrderItem represents a line item in a WBS order
+type WBSOrderItem struct {
+	ID       uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time     `json:"created_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	OrderID  uint           `gorm:"index;not null" json:"order_id"`
+	ItemType string         `gorm:"size:32" json:"item_type"`  // product / service
+	ItemID   string         `gorm:"size:64" json:"item_id"`    // catalog item ID
+	Name     string         `gorm:"size:512" json:"name"`      // 产品/服务名称
+	Code     string         `gorm:"size:64" json:"code"`       // 产品/服务编码
+	Quantity int            `json:"quantity"`
+	Unit     string         `gorm:"size:32" json:"unit"`
+	Category string         `gorm:"size:128" json:"category"`  // 产品大类/服务类别
+	Arch     string         `gorm:"size:32" json:"arch"`       // X86/Arm (products only)
+}
+
 // KBHistory records knowledge base generation history
 type KBHistory struct {
 	ID            uint           `gorm:"primarykey" json:"id"`
