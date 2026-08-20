@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key, Clock, FolderKanban, Monitor,
+  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key, Clock, FolderKanban, Monitor, BookOpen,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { useNavigate } from 'react-router-dom';
@@ -14,6 +14,7 @@ const userMenuGroups = [
       { id: 'websites', label: '公司系统', icon: Globe },
       { id: 'chat', label: '即时对话', icon: MessageSquare },
       { id: 'totp', label: '双因子管理', icon: Key },
+      { id: 'kb', label: '知识库生成', icon: BookOpen },
     ],
   },
 ];

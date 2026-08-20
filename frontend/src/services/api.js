@@ -212,6 +212,10 @@ export const getTotpAdmins = () => api.get('/totp/admins');
 export const getSettings = (params) => api.get('/settings', { params });
 export const updateSettings = (data) => api.put('/settings', data);
 
+// Knowledge Base (Jira → Confluence)
+export const previewKB = (data) => api.post('/kb/preview', data, { timeout: 300000 });
+export const publishKB = (data) => api.post('/kb/publish', data, { timeout: 300000 });
+
 // Worktime Management
 export const getWorktimeStats = (params) => api.get('/worktime/stats', { params });
 export const getWorktimeUsers = () => api.get('/worktime/users');

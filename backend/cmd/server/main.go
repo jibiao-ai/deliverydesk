@@ -67,6 +67,7 @@ func main() {
 	worktimeH := handler.NewWorktimeHandler()
 	projectH := handler.NewProjectHandler()
 	opsEnvH := handler.NewOpsEnvHandler()
+	kbH := handler.NewKBHandler()
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -188,6 +189,10 @@ func main() {
 		auth.GET("/ops-env/top-customers", opsEnvH.GetOpsEnvTopCustomers)
 		auth.GET("/ops-env/top-nodes", opsEnvH.GetOpsEnvTopNodes)
 		auth.POST("/ops-env/sync", opsEnvH.SyncOpsEnvironments)
+
+		// Knowledge Base (Jira → Confluence) routes
+		auth.POST("/kb/preview", kbH.PreviewKB)
+		auth.POST("/kb/publish", kbH.PublishKB)
 
 			// Admin routes
 			admin := auth.Group("")

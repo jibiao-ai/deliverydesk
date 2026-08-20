@@ -14,6 +14,7 @@ import WorktimePage from '../pages/WorktimePage';
 import ProjectManagePage from '../pages/ProjectManagePage';
 import OpsEnvironmentPage from '../pages/OpsEnvironmentPage';
 import SettingsPage from '../pages/SettingsPage';
+import KnowledgeBasePage from '../pages/KnowledgeBasePage';
 import useStore from '../store/useStore';
 import { Bell } from 'lucide-react';
 
@@ -32,6 +33,7 @@ const pageComponents = {
   projects: ProjectManagePage,
   'ops-env': OpsEnvironmentPage,
   settings: SettingsPage,
+  kb: KnowledgeBasePage,
 };
 
 const PAGE_META = {
@@ -49,6 +51,7 @@ const PAGE_META = {
   projects:         { title: '项目管理',   subtitle: 'Redmine 项目立项数据统计看板' },
   'ops-env':        { title: '运维环境',   subtitle: 'Jira 运维环境状态与弃用追踪' },
   settings:         { title: '系统设置',   subtitle: '管理集成配置和服务参数' },
+  kb:               { title: '知识库生成', subtitle: 'Jira 工单 → Confluence 知识库（AI 润色）' },
 };
 
 const THEMES = [
