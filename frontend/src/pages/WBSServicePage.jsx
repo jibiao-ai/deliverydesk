@@ -69,20 +69,20 @@ function GlassSelect({ value, onChange, options, placeholder, className = '' }) 
   );
 }
 
-// === Service category cards for step-by-step selection ===
+// === Service category metadata for step-by-step selection ===
 const SERVICE_CATEGORIES_META = [
-  { id: '安装部署服务', label: '安装部署服务', icon: '🔧', color: 'from-blue-500 to-indigo-600', desc: '标准安装、扩容服务包' },
-  { id: '标准维保服务', label: '标准维保服务', icon: '🛡️', color: 'from-green-500 to-emerald-600', desc: 'A/B类产品维保、EOS升级' },
-  { id: 'EOS升级订阅', label: 'EOS升级订阅', icon: '⬆️', color: 'from-purple-500 to-violet-600', desc: 'EOS版本大版本升级' },
-  { id: '增值运维服务', label: '增值运维服务', icon: '📊', color: 'from-orange-500 to-amber-600', desc: 'S1/S2/S3增值运维' },
-  { id: '产品高级服务', label: '产品高级服务', icon: '⭐', color: 'from-pink-500 to-rose-600', desc: '巡检、安全加固、镜像制作等' },
-  { id: '服务人天', label: '服务人天', icon: '👷', color: 'from-cyan-500 to-teal-600', desc: '远程/现场/高级工程师人天' },
-  { id: '培训服务', label: '培训服务', icon: '🎓', color: 'from-yellow-500 to-orange-500', desc: 'CKA/COA认证培训' },
+  { id: '安装部署服务', label: '安装部署服务', desc: '标准安装、扩容服务包' },
+  { id: '标准维保服务', label: '标准维保服务', desc: 'A/B类产品维保、EOS升级' },
+  { id: 'EOS升级订阅', label: 'EOS升级订阅', desc: 'EOS版本大版本升级' },
+  { id: '增值运维服务', label: '增值运维服务', desc: 'S1/S2/S3增值运维' },
+  { id: '产品高级服务', label: '产品高级服务', desc: '巡检、安全加固、镜像制作等' },
+  { id: '服务人天', label: '服务人天', desc: '远程/现场/高级工程师人天' },
+  { id: '培训服务', label: '培训服务', desc: 'CKA/COA认证培训' },
 ];
 
 const PRODUCT_CATEGORIES_META = [
-  { id: '云基础设施ECF解决方案', label: '云基础设施ECF', icon: '☁️', color: 'from-blue-500 to-cyan-600', desc: 'ECF V6 云基础设施平台' },
-  { id: '云平台增值软件及服务', label: '云平台增值软件', icon: '🧩', color: 'from-violet-500 to-purple-600', desc: '多云管理、增值软件服务' },
+  { id: '云基础设施ECF解决方案', label: '云基础设施ECF', desc: 'ECF V6 云基础设施平台' },
+  { id: '云平台增值软件及服务', label: '云平台增值软件', desc: '多云管理、增值软件服务' },
 ];
 
 export default function WBSServicePage() {
@@ -467,9 +467,9 @@ export default function WBSServicePage() {
                 </div>
               </div>
 
-              {/* Category selection cards */}
+              {/* Category horizontal wizard tabs */}
               {!productCategory && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-wrap items-center gap-3">
                   {PRODUCT_CATEGORIES_META.map(cat => {
                     const count = catalog.products.filter(p => p.category === cat.id).length;
                     const selected = Object.entries(selectedProducts).filter(([id, qty]) => qty > 0 && catalog.products.find(p => p.id === id)?.category === cat.id).length;
@@ -477,17 +477,21 @@ export default function WBSServicePage() {
                       <button
                         key={cat.id}
                         onClick={() => setProductCategory(cat.id)}
-                        className="group relative p-5 rounded-2xl border border-gray-100/80 bg-white/60 backdrop-blur-md hover:bg-white/90 hover:shadow-lg transition-all text-left overflow-hidden"
+                        className={`flex items-center gap-3 px-5 py-3 rounded-xl border transition-all text-left ${
+                          selected > 0
+                            ? 'border-primary-200 bg-primary-50/60 hover:bg-primary-50'
+                            : 'border-gray-200/80 bg-white/70 backdrop-blur-sm hover:bg-white hover:border-primary-300 hover:shadow-sm'
+                        }`}
                       >
-                        <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${cat.color} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
-                        <div className="text-3xl mb-3">{cat.icon}</div>
-                        <div className="font-semibold text-gray-800 mb-1">{cat.label}</div>
-                        <div className="text-xs text-gray-500 mb-3">{cat.desc}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs bg-gray-100/80 px-2 py-0.5 rounded-lg text-gray-500">{count} 项可选</span>
-                          {selected > 0 && <span className="text-xs bg-green-100/80 px-2 py-0.5 rounded-lg text-green-700 font-medium">{selected} 已选</span>}
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm text-gray-800">{cat.label}</span>
+                          <span className="text-[11px] text-gray-400 mt-0.5">{cat.desc}</span>
                         </div>
-                        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300 group-hover:text-primary-500 transition-colors" />
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <span className="text-[11px] bg-gray-100/80 px-2 py-0.5 rounded-md text-gray-500">{count} 项</span>
+                          {selected > 0 && <span className="text-[11px] bg-green-100 px-2 py-0.5 rounded-md text-green-700 font-medium">{selected} 已选</span>}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-300 ml-1" />
                       </button>
                     );
                   })}
@@ -583,9 +587,9 @@ export default function WBSServicePage() {
                 </div>
               </div>
 
-              {/* Service category selection cards */}
+              {/* Service category horizontal wizard tabs */}
               {!serviceCategory && (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="flex flex-wrap items-stretch gap-2.5">
                   {SERVICE_CATEGORIES_META.map(cat => {
                     const count = catalog.services.filter(s => s.category === cat.id).length;
                     const selected = Object.entries(selectedServices).filter(([id, qty]) => qty > 0 && catalog.services.find(s => s.id === id)?.category === cat.id).length;
@@ -594,16 +598,21 @@ export default function WBSServicePage() {
                       <button
                         key={cat.id}
                         onClick={() => setServiceCategory(cat.id)}
-                        className="group relative p-4 rounded-2xl border border-gray-100/80 bg-white/60 backdrop-blur-md hover:bg-white/90 hover:shadow-lg transition-all text-left overflow-hidden"
+                        className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border transition-all text-left ${
+                          selected > 0
+                            ? 'border-purple-200 bg-purple-50/60 hover:bg-purple-50'
+                            : 'border-gray-200/80 bg-white/70 backdrop-blur-sm hover:bg-white hover:border-purple-300 hover:shadow-sm'
+                        }`}
                       >
-                        <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${cat.color} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
-                        <div className="text-2xl mb-2">{cat.icon}</div>
-                        <div className="font-semibold text-gray-800 text-sm mb-0.5">{cat.label}</div>
-                        <div className="text-[11px] text-gray-400 mb-2">{cat.desc}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] bg-gray-100/80 px-1.5 py-0.5 rounded text-gray-500">{count} 项</span>
-                          {selected > 0 && <span className="text-[10px] bg-green-100/80 px-1.5 py-0.5 rounded text-green-700 font-medium">{selected} 已选</span>}
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm text-gray-800">{cat.label}</span>
+                          <span className="text-[11px] text-gray-400 mt-0.5">{cat.desc}</span>
                         </div>
+                        <div className="flex items-center gap-1.5 ml-1">
+                          <span className="text-[11px] bg-gray-100/80 px-1.5 py-0.5 rounded-md text-gray-500">{count} 项</span>
+                          {selected > 0 && <span className="text-[11px] bg-green-100 px-1.5 py-0.5 rounded-md text-green-700 font-medium">{selected} 已选</span>}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-300" />
                       </button>
                     );
                   })}
