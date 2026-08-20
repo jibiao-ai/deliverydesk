@@ -112,7 +112,7 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 
 	server, user, token := h.resolveJiraCredentials(req.JiraServer, req.JiraUser, req.JiraToken)
 	if user == "" || token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "缺少 Jira 认证信息，请在系统设置中配置或在请求中提供"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "缺少 Jira 认证信息，请前往「系统设置 → Jira 配置」中设置 jira_server / jira_username / jira_password"})
 		return
 	}
 
@@ -289,7 +289,7 @@ func (h *KBHandler) PublishKB(c *gin.Context) {
 
 	server, user, token := h.resolveJiraCredentials(req.JiraServer, req.JiraUser, req.JiraToken)
 	if user == "" || token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "缺少认证信息"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "缺少 Jira/Confluence 认证信息，请前往「系统设置 → Jira 配置」中设置"})
 		return
 	}
 
