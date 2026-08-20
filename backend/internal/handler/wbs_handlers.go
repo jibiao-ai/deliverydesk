@@ -252,11 +252,16 @@ func (h *WBSHandler) SaveOrder(c *gin.Context) {
 		Username:        fmt.Sprintf("%v", username),
 		OpportunityName: req.Opportunity.OpportunityName,
 		OpportunityNo:   req.Opportunity.OpportunityNo,
+		SalesOrder:      req.Opportunity.SalesOrder,
+		ContractNo:      req.Opportunity.ContractNo,
 		CustomerName:    req.Opportunity.CustomerName,
 		Agent:           req.Opportunity.Agent,
 		DeployLocation:  req.Opportunity.DeployLocation,
+		SalesDirector:   req.Opportunity.SalesDirector,
+		SalesVP:         req.Opportunity.SalesVP,
 		Sales:           req.Opportunity.Sales,
 		PreSales:        req.Opportunity.PreSales,
+		DeliveryLeader:  req.Opportunity.DeliveryLeader,
 		ProjectManager:  req.Opportunity.ProjectManager,
 		ProductCount:    len(req.Products),
 		ServiceCount:    len(req.Services),
@@ -340,6 +345,7 @@ func (h *WBSHandler) GetOrder(c *gin.Context) {
 }
 
 // ExportExcel generates and returns an Excel file for the WBS order
+// following the standard WBS template structure with all sheets
 func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	id := c.Param("id")
 	var order model.WBSOrder
@@ -351,74 +357,391 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	var items []model.WBSOrderItem
 	repository.DB.Where("order_id = ?", order.ID).Find(&items)
 
-	// Generate Excel
+	// Separate products and services
+	var productItems, serviceItems []model.WBSOrderItem
+	for _, item := range items {
+		if item.ItemType == "product" {
+			productItems = append(productItems, item)
+		} else {
+			serviceItems = append(serviceItems, item)
+		}
+	}
+
+	// Generate Excel matching template structure
 	f := excelize.NewFile()
 	defer f.Close()
 
-	// Sheet 1: 商机信息
-	sheet1 := "商机信息"
-	f.SetSheetName("Sheet1", sheet1)
-	f.SetCellValue(sheet1, "A1", "基础信息")
-	f.SetCellValue(sheet1, "A3", "商机名称")
-	f.SetCellValue(sheet1, "B3", order.OpportunityName)
-	f.SetCellValue(sheet1, "A4", "商机号")
-	f.SetCellValue(sheet1, "B4", order.OpportunityNo)
-	f.SetCellValue(sheet1, "A5", "客户名称")
-	f.SetCellValue(sheet1, "B5", order.CustomerName)
-	f.SetCellValue(sheet1, "A6", "代理商")
-	f.SetCellValue(sheet1, "B6", order.Agent)
-	f.SetCellValue(sheet1, "A7", "部署地点")
-	f.SetCellValue(sheet1, "B7", order.DeployLocation)
-	f.SetCellValue(sheet1, "A8", "销售")
-	f.SetCellValue(sheet1, "B8", order.Sales)
-	f.SetCellValue(sheet1, "A9", "售前")
-	f.SetCellValue(sheet1, "B9", order.PreSales)
-	f.SetCellValue(sheet1, "A10", "项目经理邮箱")
-	f.SetCellValue(sheet1, "B10", order.ProjectManager)
+	// --- Common styles ---
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 11},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#DAEEF3"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "999999"}, {Type: "right", Style: 1, Color: "999999"}, {Type: "top", Style: 1, Color: "999999"}, {Type: "bottom", Style: 1, Color: "999999"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
+	})
+	titleStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 14},
+		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center"},
+	})
+	labelStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#F2F2F2"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "CCCCCC"}, {Type: "right", Style: 1, Color: "CCCCCC"}, {Type: "top", Style: 1, Color: "CCCCCC"}, {Type: "bottom", Style: 1, Color: "CCCCCC"}},
+		Alignment: &excelize.Alignment{Vertical: "center"},
+	})
+	valueStyle, _ := f.NewStyle(&excelize.Style{
+		Font:   &excelize.Font{Size: 10},
+		Border: []excelize.Border{{Type: "left", Style: 1, Color: "CCCCCC"}, {Type: "right", Style: 1, Color: "CCCCCC"}, {Type: "top", Style: 1, Color: "CCCCCC"}, {Type: "bottom", Style: 1, Color: "CCCCCC"}},
+	})
+	hintStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Size: 9, Color: "808080", Italic: true},
+	})
+	dataStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "CCCCCC"}, {Type: "right", Style: 1, Color: "CCCCCC"}, {Type: "top", Style: 1, Color: "CCCCCC"}, {Type: "bottom", Style: 1, Color: "CCCCCC"}},
+		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+	})
 
-	// Sheet 2: Order 汇总
-	sheet2 := "Order汇总"
-	f.NewSheet(sheet2)
+	// ========== Sheet 1: 0-商机 ==========
+	sheet0 := "0-商机"
+	f.SetSheetName("Sheet1", sheet0)
+	f.SetColWidth(sheet0, "A", "A", 22)
+	f.SetColWidth(sheet0, "B", "B", 40)
+	f.SetColWidth(sheet0, "C", "C", 40)
 
-	// Header
-	headers := []string{"类型", "产品大类", "产品名称", "产品编码", "数量", "单位"}
-	for i, h := range headers {
-		cell := fmt.Sprintf("%c1", 'A'+i)
-		f.SetCellValue(sheet2, cell, h)
+	f.SetCellValue(sheet0, "A1", "基础信息(售前填写）")
+	f.SetCellStyle(sheet0, "A1", "A1", titleStyle)
+	f.SetCellValue(sheet0, "A2", "客户信息")
+	f.SetCellStyle(sheet0, "A2", "A2", labelStyle)
+
+	oppFields := []struct {
+		label, value, hint string
+	}{
+		{"商机名称", order.OpportunityName, "提示：CRM中的商机名称"},
+		{"商机号", order.OpportunityNo, "提示：CRM中的商机号（必填）"},
+		{"销售订单", order.SalesOrder, "提示：如果没有就不填（如果不填项目为预交付）"},
+		{"合同号", order.ContractNo, "提示：如果没有就不填（如果不填项目为预交付）"},
+		{"客户名称", order.CustomerName, "提示：CRM中商机的客户名称"},
+		{"代理商", order.Agent, "提示：请与CRM信息保持一致"},
+		{"部署地点", order.DeployLocation, ""},
+		{"销售总监", order.SalesDirector, ""},
+		{"销售VP", order.SalesVP, ""},
+		{"销售", order.Sales, ""},
+		{"售前", order.PreSales, ""},
+		{"区域交付leader邮箱", order.DeliveryLeader, "提示：要填写区域交付leader邮箱（必填）"},
+		{"项目经理邮箱", order.ProjectManager, "提示：要填写项目经理邮箱（必填）"},
+	}
+	for i, field := range oppFields {
+		row := i + 3
+		f.SetCellValue(sheet0, fmt.Sprintf("A%d", row), field.label)
+		f.SetCellStyle(sheet0, fmt.Sprintf("A%d", row), fmt.Sprintf("A%d", row), labelStyle)
+		f.SetCellValue(sheet0, fmt.Sprintf("B%d", row), field.value)
+		f.SetCellStyle(sheet0, fmt.Sprintf("B%d", row), fmt.Sprintf("B%d", row), valueStyle)
+		if field.hint != "" {
+			f.SetCellValue(sheet0, fmt.Sprintf("C%d", row), field.hint)
+			f.SetCellStyle(sheet0, fmt.Sprintf("C%d", row), fmt.Sprintf("C%d", row), hintStyle)
+		}
 	}
 
-	// Style the header
-	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"#E2EFDA"}, Pattern: 1},
-	})
-	f.SetCellStyle(sheet2, "A1", "F1", headerStyle)
+	// ========== Sheet 2: 4-order页面(自有产品汇总) ==========
+	sheetProd := "4-order页面(自有产品汇总)"
+	f.NewSheet(sheetProd)
+	prodHeaders := []string{"产品大类", "产品系列（发票开票名字）", "产品名称", "产品编码", "数量", "产品说明", "模块", "架构类型", "购买产品", "license授权类型", "产品类别"}
+	for i, hdr := range prodHeaders {
+		cell := fmt.Sprintf("%c1", 'A'+i)
+		f.SetCellValue(sheetProd, cell, hdr)
+		f.SetCellStyle(sheetProd, cell, cell, headerStyle)
+	}
+	f.SetColWidth(sheetProd, "A", "A", 20)
+	f.SetColWidth(sheetProd, "B", "B", 28)
+	f.SetColWidth(sheetProd, "C", "C", 45)
+	f.SetColWidth(sheetProd, "D", "D", 14)
+	f.SetColWidth(sheetProd, "E", "E", 8)
+	f.SetColWidth(sheetProd, "F", "F", 50)
+	f.SetColWidth(sheetProd, "G", "G", 12)
+	f.SetColWidth(sheetProd, "H", "H", 10)
+	f.SetColWidth(sheetProd, "I", "I", 12)
+	f.SetColWidth(sheetProd, "J", "J", 18)
+	f.SetColWidth(sheetProd, "K", "K", 10)
 
+	prodCatalog := getProductCatalog()
 	row := 2
+	for _, item := range productItems {
+		// Find catalog entry for full details
+		var catEntry *WBSProduct
+		for idx := range prodCatalog {
+			if prodCatalog[idx].ID == item.ItemID {
+				catEntry = &prodCatalog[idx]
+				break
+			}
+		}
+		f.SetCellValue(sheetProd, fmt.Sprintf("A%d", row), item.Category)
+		if catEntry != nil {
+			f.SetCellValue(sheetProd, fmt.Sprintf("B%d", row), catEntry.Series)
+		}
+		f.SetCellValue(sheetProd, fmt.Sprintf("C%d", row), item.Name)
+		f.SetCellValue(sheetProd, fmt.Sprintf("D%d", row), item.Code)
+		f.SetCellValue(sheetProd, fmt.Sprintf("E%d", row), item.Quantity)
+		if catEntry != nil {
+			f.SetCellValue(sheetProd, fmt.Sprintf("F%d", row), catEntry.Description)
+			f.SetCellValue(sheetProd, fmt.Sprintf("G%d", row), catEntry.Module)
+			f.SetCellValue(sheetProd, fmt.Sprintf("H%d", row), catEntry.Arch)
+			f.SetCellValue(sheetProd, fmt.Sprintf("I%d", row), catEntry.Product)
+			f.SetCellValue(sheetProd, fmt.Sprintf("J%d", row), catEntry.LicenseType)
+			f.SetCellValue(sheetProd, fmt.Sprintf("K%d", row), catEntry.TypeClass)
+		} else {
+			f.SetCellValue(sheetProd, fmt.Sprintf("H%d", row), item.Arch)
+		}
+		// Apply data style
+		for col := 'A'; col <= 'K'; col++ {
+			f.SetCellStyle(sheetProd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+		}
+		row++
+	}
+
+	// ========== Sheet 3: 服务汇总 ==========
+	sheetSvc := "服务汇总"
+	f.NewSheet(sheetSvc)
+	svcHeaders := []string{"服务类别", "服务名称", "服务编码", "数量", "单位", "服务说明"}
+	for i, hdr := range svcHeaders {
+		cell := fmt.Sprintf("%c1", 'A'+i)
+		f.SetCellValue(sheetSvc, cell, hdr)
+		f.SetCellStyle(sheetSvc, cell, cell, headerStyle)
+	}
+	f.SetColWidth(sheetSvc, "A", "A", 16)
+	f.SetColWidth(sheetSvc, "B", "B", 45)
+	f.SetColWidth(sheetSvc, "C", "C", 14)
+	f.SetColWidth(sheetSvc, "D", "D", 8)
+	f.SetColWidth(sheetSvc, "E", "E", 10)
+	f.SetColWidth(sheetSvc, "F", "F", 60)
+
+	svcCatalog := getServiceCatalog()
+	row = 2
+	for _, item := range serviceItems {
+		var catEntry *WBSService
+		for idx := range svcCatalog {
+			if svcCatalog[idx].ID == item.ItemID {
+				catEntry = &svcCatalog[idx]
+				break
+			}
+		}
+		f.SetCellValue(sheetSvc, fmt.Sprintf("A%d", row), item.Category)
+		f.SetCellValue(sheetSvc, fmt.Sprintf("B%d", row), item.Name)
+		f.SetCellValue(sheetSvc, fmt.Sprintf("C%d", row), item.Code)
+		f.SetCellValue(sheetSvc, fmt.Sprintf("D%d", row), item.Quantity)
+		f.SetCellValue(sheetSvc, fmt.Sprintf("E%d", row), item.Unit)
+		if catEntry != nil {
+			f.SetCellValue(sheetSvc, fmt.Sprintf("F%d", row), catEntry.Description)
+		}
+		for col := 'A'; col <= 'F'; col++ {
+			f.SetCellStyle(sheetSvc, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+		}
+		row++
+	}
+
+	// ========== Sheet 4: order汇总（报价单核对页面） ==========
+	sheetOrder := "order汇总（报价单核对页面）"
+	f.NewSheet(sheetOrder)
+	orderHeaders := []string{"序号", "类型", "产品大类/服务类别", "名称", "编码", "数量", "单位", "架构", "备注"}
+	for i, hdr := range orderHeaders {
+		cell := fmt.Sprintf("%c1", 'A'+i)
+		f.SetCellValue(sheetOrder, cell, hdr)
+		f.SetCellStyle(sheetOrder, cell, cell, headerStyle)
+	}
+	f.SetColWidth(sheetOrder, "A", "A", 6)
+	f.SetColWidth(sheetOrder, "B", "B", 8)
+	f.SetColWidth(sheetOrder, "C", "C", 22)
+	f.SetColWidth(sheetOrder, "D", "D", 45)
+	f.SetColWidth(sheetOrder, "E", "E", 14)
+	f.SetColWidth(sheetOrder, "F", "F", 8)
+	f.SetColWidth(sheetOrder, "G", "G", 10)
+	f.SetColWidth(sheetOrder, "H", "H", 8)
+	f.SetColWidth(sheetOrder, "I", "I", 20)
+
+	row = 2
+	seq := 1
 	for _, item := range items {
 		itemType := "产品"
 		if item.ItemType == "service" {
 			itemType = "服务"
 		}
-		f.SetCellValue(sheet2, fmt.Sprintf("A%d", row), itemType)
-		f.SetCellValue(sheet2, fmt.Sprintf("B%d", row), item.Category)
-		f.SetCellValue(sheet2, fmt.Sprintf("C%d", row), item.Name)
-		f.SetCellValue(sheet2, fmt.Sprintf("D%d", row), item.Code)
-		f.SetCellValue(sheet2, fmt.Sprintf("E%d", row), item.Quantity)
-		f.SetCellValue(sheet2, fmt.Sprintf("F%d", row), item.Unit)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("A%d", row), seq)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("B%d", row), itemType)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("C%d", row), item.Category)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("D%d", row), item.Name)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("E%d", row), item.Code)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("F%d", row), item.Quantity)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("G%d", row), item.Unit)
+		f.SetCellValue(sheetOrder, fmt.Sprintf("H%d", row), item.Arch)
+		for col := 'A'; col <= 'I'; col++ {
+			f.SetCellStyle(sheetOrder, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+		}
+		row++
+		seq++
+	}
+
+	// ========== Sheet 5: 6-order页面(立项信息) ==========
+	sheetProject := "6-order页面(立项信息)"
+	f.NewSheet(sheetProject)
+	f.SetCellValue(sheetProject, "A1", "项目信息")
+	f.SetCellStyle(sheetProject, "A1", "A1", titleStyle)
+
+	projHeaders := []string{"销售总监", "销售VP", "项目经理邮箱", "区域交付leader邮箱"}
+	for i, hdr := range projHeaders {
+		cell := fmt.Sprintf("%c2", 'A'+i)
+		f.SetCellValue(sheetProject, cell, hdr)
+		f.SetCellStyle(sheetProject, cell, cell, headerStyle)
+	}
+	f.SetCellValue(sheetProject, "A3", order.SalesDirector)
+	f.SetCellValue(sheetProject, "B3", order.SalesVP)
+	f.SetCellValue(sheetProject, "C3", order.ProjectManager)
+	f.SetCellValue(sheetProject, "D3", order.DeliveryLeader)
+	for col := 'A'; col <= 'D'; col++ {
+		f.SetCellStyle(sheetProject, fmt.Sprintf("%c3", col), fmt.Sprintf("%c3", col), dataStyle)
+	}
+
+	f.SetColWidth(sheetProject, "A", "A", 14)
+	f.SetColWidth(sheetProject, "B", "B", 14)
+	f.SetColWidth(sheetProject, "C", "C", 25)
+	f.SetColWidth(sheetProject, "D", "D", 28)
+
+	// Environment info header
+	f.SetCellValue(sheetProject, "A5", "环境信息")
+	f.SetCellStyle(sheetProject, "A5", "A5", titleStyle)
+	envHeaders := []string{"环境名称", "状态", "购买产品", "维保年限", "SLA", "license授权类型", "license架构类型"}
+	for i, hdr := range envHeaders {
+		cell := fmt.Sprintf("%c6", 'A'+i)
+		f.SetCellValue(sheetProject, cell, hdr)
+		f.SetCellStyle(sheetProject, cell, cell, headerStyle)
+	}
+	// Default env row
+	f.SetCellValue(sheetProject, "A7", "第1套环境")
+	f.SetCellValue(sheetProject, "B7", "新建")
+	f.SetCellValue(sheetProject, "C7", "ECF V611")
+	f.SetCellValue(sheetProject, "D7", "1")
+	f.SetCellValue(sheetProject, "E7", "7x24")
+	f.SetCellValue(sheetProject, "F7", "正式（软件永久许可）")
+	f.SetCellValue(sheetProject, "G7", "X86")
+	for col := 'A'; col <= 'G'; col++ {
+		f.SetCellStyle(sheetProject, fmt.Sprintf("%c7", col), fmt.Sprintf("%c7", col), dataStyle)
+	}
+
+	// ========== Sheet 6: 5-order页面(自有产品按环境) ==========
+	sheetProdEnv := "5-order页面(自有产品按环境）"
+	f.NewSheet(sheetProdEnv)
+	f.SetCellValue(sheetProdEnv, "A1", "第1套环境")
+	f.SetCellStyle(sheetProdEnv, "A1", "A1", titleStyle)
+
+	envOrderHeaders := []string{"状态", "购买产品", "维保年限", "SLA", "license授权类型", "license架构类型"}
+	for i, hdr := range envOrderHeaders {
+		cell := fmt.Sprintf("%c2", 'A'+i)
+		f.SetCellValue(sheetProdEnv, cell, hdr)
+		f.SetCellStyle(sheetProdEnv, cell, cell, headerStyle)
+	}
+	f.SetCellValue(sheetProdEnv, "A3", "新建")
+	f.SetCellValue(sheetProdEnv, "B3", "ECF V611")
+	f.SetCellValue(sheetProdEnv, "C3", "1")
+	f.SetCellValue(sheetProdEnv, "D3", "7x24")
+	f.SetCellValue(sheetProdEnv, "E3", "正式（软件永久许可）")
+	f.SetCellValue(sheetProdEnv, "F3", "X86")
+	for col := 'A'; col <= 'F'; col++ {
+		f.SetCellStyle(sheetProdEnv, fmt.Sprintf("%c3", col), fmt.Sprintf("%c3", col), dataStyle)
+	}
+
+	prodEnvHeaders := []string{"产品大类", "产品系列", "产品名称", "产品编码", "数量", "产品说明"}
+	for i, hdr := range prodEnvHeaders {
+		cell := fmt.Sprintf("%c5", 'A'+i)
+		f.SetCellValue(sheetProdEnv, cell, hdr)
+		f.SetCellStyle(sheetProdEnv, cell, cell, headerStyle)
+	}
+	f.SetColWidth(sheetProdEnv, "A", "A", 20)
+	f.SetColWidth(sheetProdEnv, "B", "B", 28)
+	f.SetColWidth(sheetProdEnv, "C", "C", 45)
+	f.SetColWidth(sheetProdEnv, "D", "D", 14)
+	f.SetColWidth(sheetProdEnv, "E", "E", 8)
+	f.SetColWidth(sheetProdEnv, "F", "F", 50)
+
+	row = 6
+	for _, item := range productItems {
+		var catEntry *WBSProduct
+		for idx := range prodCatalog {
+			if prodCatalog[idx].ID == item.ItemID {
+				catEntry = &prodCatalog[idx]
+				break
+			}
+		}
+		f.SetCellValue(sheetProdEnv, fmt.Sprintf("A%d", row), item.Category)
+		if catEntry != nil {
+			f.SetCellValue(sheetProdEnv, fmt.Sprintf("B%d", row), catEntry.Series)
+		}
+		f.SetCellValue(sheetProdEnv, fmt.Sprintf("C%d", row), item.Name)
+		f.SetCellValue(sheetProdEnv, fmt.Sprintf("D%d", row), item.Code)
+		f.SetCellValue(sheetProdEnv, fmt.Sprintf("E%d", row), item.Quantity)
+		if catEntry != nil {
+			f.SetCellValue(sheetProdEnv, fmt.Sprintf("F%d", row), catEntry.Description)
+		}
+		for col := 'A'; col <= 'F'; col++ {
+			f.SetCellStyle(sheetProdEnv, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+		}
 		row++
 	}
 
-	// Set column widths
-	f.SetColWidth(sheet2, "A", "A", 8)
-	f.SetColWidth(sheet2, "B", "B", 25)
-	f.SetColWidth(sheet2, "C", "C", 45)
-	f.SetColWidth(sheet2, "D", "D", 15)
-	f.SetColWidth(sheet2, "E", "E", 8)
-	f.SetColWidth(sheet2, "F", "F", 10)
+	// ========== Sheet 7: order模板 ==========
+	sheetTmpl := "order模板"
+	f.NewSheet(sheetTmpl)
+	f.SetCellValue(sheetTmpl, "A1", "第1套环境")
+	f.SetCellStyle(sheetTmpl, "A1", "A1", titleStyle)
 
-	// Set active sheet
-	idx, _ := f.GetSheetIndex(sheet2)
+	tmplHeaders := []string{"状态", "购买产品", "维保年限", "SLA", "license授权类型", "license架构类型"}
+	for i, hdr := range tmplHeaders {
+		cell := fmt.Sprintf("%c2", 'A'+i)
+		f.SetCellValue(sheetTmpl, cell, hdr)
+		f.SetCellStyle(sheetTmpl, cell, cell, headerStyle)
+	}
+	f.SetCellValue(sheetTmpl, "A3", "新建")
+	f.SetCellValue(sheetTmpl, "B3", "ECF V611")
+	f.SetCellValue(sheetTmpl, "C3", "1")
+	f.SetCellValue(sheetTmpl, "D3", "7x24")
+	f.SetCellValue(sheetTmpl, "E3", "正式（软件永久许可）")
+	f.SetCellValue(sheetTmpl, "F3", "X86")
+	for col := 'A'; col <= 'F'; col++ {
+		f.SetCellStyle(sheetTmpl, fmt.Sprintf("%c3", col), fmt.Sprintf("%c3", col), dataStyle)
+	}
+
+	tmplItemHeaders := []string{"产品大类", "产品系列", "产品名称", "产品编码", "数量", "产品说明"}
+	for i, hdr := range tmplItemHeaders {
+		cell := fmt.Sprintf("%c4", 'A'+i)
+		f.SetCellValue(sheetTmpl, cell, hdr)
+		f.SetCellStyle(sheetTmpl, cell, cell, headerStyle)
+	}
+	f.SetColWidth(sheetTmpl, "A", "A", 20)
+	f.SetColWidth(sheetTmpl, "B", "B", 28)
+	f.SetColWidth(sheetTmpl, "C", "C", 45)
+	f.SetColWidth(sheetTmpl, "D", "D", 14)
+	f.SetColWidth(sheetTmpl, "E", "E", 8)
+	f.SetColWidth(sheetTmpl, "F", "F", 50)
+
+	// ========== Sheet 8: 整体模板 ==========
+	sheetOverall := "整体模板"
+	f.NewSheet(sheetOverall)
+	f.SetCellValue(sheetOverall, "A1", "通用")
+	f.SetCellValue(sheetOverall, "B1", "请填写人自行核对硬件兼容性及规格信息")
+	f.SetCellStyle(sheetOverall, "A1", "A1", labelStyle)
+	f.SetColWidth(sheetOverall, "A", "A", 8)
+	f.SetColWidth(sheetOverall, "B", "B", 50)
+
+	// Drop-down reference data
+	f.SetCellValue(sheetOverall, "U1", "购买产品")
+	f.SetCellValue(sheetOverall, "U2", "ECF V611")
+	f.SetCellValue(sheetOverall, "U3", "ECNF V611")
+	f.SetCellValue(sheetOverall, "W1", "license授权类型")
+	f.SetCellValue(sheetOverall, "W2", "正式（软件永久许可）")
+	f.SetCellValue(sheetOverall, "W3", "正式（软件订阅）")
+	f.SetCellValue(sheetOverall, "Y1", "license架构类型")
+	f.SetCellValue(sheetOverall, "Y2", "X86")
+	f.SetCellValue(sheetOverall, "Y3", "Arm")
+
+	// Set active sheet to order summary
+	idx, _ := f.GetSheetIndex(sheetOrder)
 	f.SetActiveSheet(idx)
 
 	// Write to response

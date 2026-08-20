@@ -359,17 +359,22 @@ type WBSOrder struct {
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 	UserID          string         `gorm:"size:64;index" json:"user_id"`
 	Username        string         `gorm:"size:128" json:"username"`
-	OpportunityName string         `gorm:"size:512" json:"opportunity_name"` // 商机名称
-	OpportunityNo   string         `gorm:"size:128;index" json:"opportunity_no"`   // 商机号
-	CustomerName    string         `gorm:"size:256" json:"customer_name"`    // 客户名称
-	Agent           string         `gorm:"size:256" json:"agent"`            // 代理商
-	DeployLocation  string         `gorm:"size:256" json:"deploy_location"`  // 部署地点
-	Sales           string         `gorm:"size:128" json:"sales"`            // 销售
-	PreSales        string         `gorm:"size:128" json:"pre_sales"`        // 售前
-	ProjectManager  string         `gorm:"size:256" json:"project_manager"`  // 项目经理邮箱
-	ProductCount    int            `json:"product_count"`                    // 产品项数
-	ServiceCount    int            `json:"service_count"`                    // 服务项数
-	Status          string         `gorm:"size:32;default:draft" json:"status"` // draft/submitted
+	OpportunityName string         `gorm:"size:512" json:"opportunity_name"`    // 商机名称
+	OpportunityNo   string         `gorm:"size:128;index" json:"opportunity_no"` // 商机号
+	SalesOrder      string         `gorm:"size:128" json:"sales_order"`          // 销售订单
+	ContractNo      string         `gorm:"size:128" json:"contract_no"`          // 合同号
+	CustomerName    string         `gorm:"size:256" json:"customer_name"`        // 客户名称
+	Agent           string         `gorm:"size:256" json:"agent"`                // 代理商
+	DeployLocation  string         `gorm:"size:256" json:"deploy_location"`      // 部署地点
+	SalesDirector   string         `gorm:"size:128" json:"sales_director"`       // 销售总监
+	SalesVP         string         `gorm:"size:128" json:"sales_vp"`             // 销售VP
+	Sales           string         `gorm:"size:128" json:"sales"`                // 销售
+	PreSales        string         `gorm:"size:128" json:"pre_sales"`            // 售前
+	DeliveryLeader  string         `gorm:"size:256" json:"delivery_leader"`      // 区域交付leader邮箱
+	ProjectManager  string         `gorm:"size:256" json:"project_manager"`      // 项目经理邮箱
+	ProductCount    int            `json:"product_count"`                         // 产品项数
+	ServiceCount    int            `json:"service_count"`                         // 服务项数
+	Status          string         `gorm:"size:32;default:draft" json:"status"`   // draft/submitted
 	Remarks         string         `gorm:"type:text" json:"remarks"`
 }
 
