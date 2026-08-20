@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jibiao-ai/deliverydesk/internal/config"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/pkg/logger"
@@ -116,9 +117,11 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 	}
 
 	// 1. Fetch Jira data
-	issue, comments, changelog, err := fetchJiraData(server, req.IssueKey, user, token)
+	issueKey := strings.TrimSpace(req.IssueKey)
+	issue, comments, changelog, err := fetchJiraData(server, issueKey, user, token)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "获取 Jira 工单失败: " + err.Error()})
+		errMsg := fmt.Sprintf("获取 Jira 工单失败 (工单号: %s, 服务器: %s): %s", issueKey, server, err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": errMsg})
 		return
 	}
 
@@ -335,24 +338,41 @@ func (h *KBHandler) PublishKB(c *gin.Context) {
 // =============== Helper: Jira data fetching ===============
 
 func fetchJiraData(server, issueKey, user, token string) (*kbJiraIssue, []jiraComment, []jiraChangelog, error) {
-	// Fetch issue
-	issueURL := fmt.Sprintf("%s/rest/api/3/issue/%s?expand=renderedFields", server, issueKey)
+	// Normalize inputs
+	server = strings.TrimRight(strings.TrimSpace(server), "/")
+	issueKey = strings.TrimSpace(issueKey)
+
+	// Try API v3 first, fall back to v2 on 404
+	apiVersion := "3"
+	issueURL := fmt.Sprintf("%s/rest/api/%s/issue/%s?expand=renderedFields", server, apiVersion, issueKey)
+	logger.Log.Infof("[KB] Fetching Jira issue: %s (user: %s)", issueURL, user)
 	issueBody, err := jiraHTTP("GET", issueURL, user, token, nil)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("issue: %w", err)
+		// If v3 returns 404, try v2
+		if strings.Contains(err.Error(), "404") {
+			logger.Log.Infof("[KB] API v3 returned 404, trying v2...")
+			apiVersion = "2"
+			issueURL = fmt.Sprintf("%s/rest/api/%s/issue/%s?expand=renderedFields", server, apiVersion, issueKey)
+			issueBody, err = jiraHTTP("GET", issueURL, user, token, nil)
+		}
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("issue [%s]: %w", issueURL, err)
+		}
 	}
 	var issue kbJiraIssue
 	if err := json.Unmarshal(issueBody, &issue); err != nil {
 		return nil, nil, nil, fmt.Errorf("parse issue: %w", err)
 	}
+	logger.Log.Infof("[KB] Issue fetched OK: %s (using API v%s)", issue.Key, apiVersion)
 
-	// Fetch comments
+	// Fetch comments (using same API version that worked for the issue)
 	comments := []jiraComment{}
 	startAt := 0
 	for {
-		commURL := fmt.Sprintf("%s/rest/api/3/issue/%s/comment?startAt=%d&maxResults=100&expand=renderedBody", server, issueKey, startAt)
+		commURL := fmt.Sprintf("%s/rest/api/%s/issue/%s/comment?startAt=%d&maxResults=100&expand=renderedBody", server, apiVersion, issueKey, startAt)
 		body, err := jiraHTTP("GET", commURL, user, token, nil)
 		if err != nil {
+			logger.Log.Warnf("[KB] Fetch comments failed at startAt=%d: %v", startAt, err)
 			break
 		}
 		var resp struct {
@@ -368,14 +388,16 @@ func fetchJiraData(server, issueKey, user, token string) (*kbJiraIssue, []jiraCo
 		}
 		startAt += len(resp.Comments)
 	}
+	logger.Log.Infof("[KB] Fetched %d comments", len(comments))
 
-	// Fetch changelog
+	// Fetch changelog (using same API version)
 	changelogs := []jiraChangelog{}
 	startAt = 0
 	for {
-		clURL := fmt.Sprintf("%s/rest/api/3/issue/%s/changelog?startAt=%d&maxResults=100", server, issueKey, startAt)
+		clURL := fmt.Sprintf("%s/rest/api/%s/issue/%s/changelog?startAt=%d&maxResults=100", server, apiVersion, issueKey, startAt)
 		body, err := jiraHTTP("GET", clURL, user, token, nil)
 		if err != nil {
+			logger.Log.Warnf("[KB] Fetch changelog failed at startAt=%d: %v", startAt, err)
 			break
 		}
 		var resp struct {
@@ -391,6 +413,7 @@ func fetchJiraData(server, issueKey, user, token string) (*kbJiraIssue, []jiraCo
 		}
 		startAt += len(resp.Values)
 	}
+	logger.Log.Infof("[KB] Fetched %d changelog entries", len(changelogs))
 
 	return &issue, comments, changelogs, nil
 }
@@ -487,7 +510,8 @@ func createConfluencePage(server, spaceID, parentID, title, body, user, token st
 
 // uploadJiraAttachments downloads from Jira and uploads to Confluence page
 func (h *KBHandler) uploadJiraAttachments(server, issueKey, pageID, user, token string) {
-	// Fetch issue to get attachments list
+	// Fetch issue to get attachments list (try v3, fallback v2)
+	server = strings.TrimRight(strings.TrimSpace(server), "/")
 	issueURL := fmt.Sprintf("%s/rest/api/3/issue/%s?fields=attachment", server, issueKey)
 	body, err := jiraHTTP("GET", issueURL, user, token, nil)
 	if err != nil {
@@ -571,11 +595,11 @@ func uploadAttachmentToConfluence(server, pageID, filepath_, filename, user, tok
 // =============== Helper: credential resolution ===============
 
 func (h *KBHandler) resolveJiraCredentials(reqServer, reqUser, reqToken string) (string, string, string) {
-	server := reqServer
-	user := reqUser
-	token := reqToken
+	server := strings.TrimSpace(reqServer)
+	user := strings.TrimSpace(reqUser)
+	token := strings.TrimSpace(reqToken)
 
-	// Fall back to system settings
+	// Fall back to system settings (using same keys as ops_env_handlers.go for consistency)
 	if server == "" || user == "" || token == "" {
 		var settings []model.SystemSetting
 		repository.DB.Where("category = ?", "jira").Find(&settings)
@@ -589,7 +613,7 @@ func (h *KBHandler) resolveJiraCredentials(reqServer, reqUser, reqToken string) 
 				if user == "" {
 					user = s.Value
 				}
-			case "jira_token", "jira_api_token":
+			case "jira_password", "jira_token", "jira_api_token":
 				if token == "" {
 					token = s.Value
 				}
@@ -597,9 +621,26 @@ func (h *KBHandler) resolveJiraCredentials(reqServer, reqUser, reqToken string) 
 		}
 	}
 
+	// Fallback to environment/config (same as ops_env_handlers.go)
+	if server == "" || user == "" || token == "" {
+		cfg := config.Load()
+		if server == "" {
+			server = cfg.Jira.Server
+		}
+		if user == "" {
+			user = cfg.Jira.Username
+		}
+		if token == "" {
+			token = cfg.Jira.APIToken
+		}
+	}
+
 	if server == "" {
 		server = "https://easystack.atlassian.net"
 	}
+	server = strings.TrimRight(server, "/")
+
+	logger.Log.Debugf("[KB] Resolved Jira credentials: server=%q, user=%q, token_len=%d", server, user, len(token))
 	return server, user, token
 }
 
