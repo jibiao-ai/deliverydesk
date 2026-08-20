@@ -604,18 +604,19 @@ func (h *KBHandler) resolveJiraCredentials(reqServer, reqUser, reqToken string) 
 		var settings []model.SystemSetting
 		repository.DB.Where("category = ?", "jira").Find(&settings)
 		for _, s := range settings {
+			val := strings.TrimSpace(s.Value)
 			switch s.Key {
 			case "jira_server":
 				if server == "" {
-					server = s.Value
+					server = val
 				}
 			case "jira_username":
 				if user == "" {
-					user = s.Value
+					user = val
 				}
 			case "jira_password", "jira_token", "jira_api_token":
 				if token == "" {
-					token = s.Value
+					token = val
 				}
 			}
 		}
