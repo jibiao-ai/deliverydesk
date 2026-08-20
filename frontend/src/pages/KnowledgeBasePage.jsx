@@ -23,11 +23,6 @@ export default function KnowledgeBasePage() {
     const urlMatch = trimmed.match(/\/browse\/([A-Z0-9]+-\d+)/i);
     if (urlMatch) {
       setIssueKey(urlMatch[1]);
-      // Also extract server if not set
-      const serverMatch = trimmed.match(/^(https?:\/\/[^/]+)/);
-      if (serverMatch && !jiraServer) {
-        setJiraServer(serverMatch[1]);
-      }
     } else {
       setIssueKey(trimmed);
     }
@@ -173,13 +168,16 @@ export default function KnowledgeBasePage() {
             <div>
               <button
                 onClick={() => setShowCredentials(!showCredentials)}
-                className="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                className="text-sm text-gray-500 hover:text-gray-700 font-medium flex items-center gap-1"
               >
                 {showCredentials ? '收起' : '展开'} Jira/Confluence 认证配置
-                <span className="text-xs text-gray-400">（留空则使用系统设置中的配置）</span>
               </button>
+              <p className="text-xs text-gray-400 mt-0.5">默认使用「系统设置 → Jira 配置」中的认证信息，无需手动填写</p>
               {showCredentials && (
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="sm:col-span-2 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded">
+                    ⚠️ 此处仅用于临时覆盖，留空则自动使用系统设置中的 Jira 配置。一般情况下无需填写。
+                  </p>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Jira 服务器</label>
                     <input
