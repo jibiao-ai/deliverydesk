@@ -974,9 +974,35 @@ func cleanCodeBlock(s string) string {
 
 // =============== Helper: HTML rendering ===============
 
+// sanitizeDescHTML cleans Jira rendered description HTML for embedding into the
+// Confluence KB page body. It:
+// 1. Removes any <h1> tags (which duplicate the page title)
+// 2. Downgrades <h2>/<h3> headings to <h4> to avoid conflicting with the KB structure
+// 3. Strips any leading title-like text that matches the KB title pattern
+func sanitizeDescHTML(raw string) string {
+	// Remove <h1>...</h1> tags entirely (content included) — these duplicate the page title
+	reH1 := regexp.MustCompile(`(?i)<h1[^>]*>.*?</h1>`)
+	cleaned := reH1.ReplaceAllString(raw, "")
+
+	// Downgrade <h2> to <h4> and <h3> to <h5> to avoid conflicting with KB structure
+	reH2Open := regexp.MustCompile(`(?i)<h2([^>]*)>`)
+	reH2Close := regexp.MustCompile(`(?i)</h2>`)
+	cleaned = reH2Open.ReplaceAllString(cleaned, "<h4$1>")
+	cleaned = reH2Close.ReplaceAllString(cleaned, "</h4>")
+
+	reH3Open := regexp.MustCompile(`(?i)<h3([^>]*)>`)
+	reH3Close := regexp.MustCompile(`(?i)</h3>`)
+	cleaned = reH3Open.ReplaceAllString(cleaned, "<h5$1>")
+	cleaned = reH3Close.ReplaceAllString(cleaned, "</h5>")
+
+	// Trim leading/trailing whitespace
+	cleaned = strings.TrimSpace(cleaned)
+	return cleaned
+}
+
 func renderStorageHTML(content *KBContentGenerated, descHTML string) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("<h1>%s</h1>", html.EscapeString(content.Title)))
+	// Note: Do NOT add <h1>title</h1> here — Confluence already displays the page title as the heading.
 
 	b.WriteString("<h2>一、问题背景</h2>")
 	b.WriteString(fmt.Sprintf("<p>%s</p>", html.EscapeString(content.Background)))
@@ -989,7 +1015,7 @@ func renderStorageHTML(content *KBContentGenerated, descHTML string) string {
 
 	b.WriteString("<h2>四、问题现象</h2>")
 	if descHTML != "" {
-		b.WriteString(descHTML)
+		b.WriteString(sanitizeDescHTML(descHTML))
 	} else {
 		b.WriteString("<p>（无描述）</p>")
 	}

@@ -15,6 +15,7 @@ import ProjectManagePage from '../pages/ProjectManagePage';
 import OpsEnvironmentPage from '../pages/OpsEnvironmentPage';
 import SettingsPage from '../pages/SettingsPage';
 import KnowledgeBasePage from '../pages/KnowledgeBasePage';
+import WBSServicePage from '../pages/WBSServicePage';
 import useStore from '../store/useStore';
 import { Bell } from 'lucide-react';
 
@@ -34,6 +35,7 @@ const pageComponents = {
   'ops-env': OpsEnvironmentPage,
   settings: SettingsPage,
   kb: KnowledgeBasePage,
+  wbs: WBSServicePage,
 };
 
 const PAGE_META = {
@@ -52,6 +54,7 @@ const PAGE_META = {
   'ops-env':        { title: '运维环境',   subtitle: 'Jira 运维环境状态与弃用追踪' },
   settings:         { title: '系统设置',   subtitle: '管理集成配置和服务参数' },
   kb:               { title: '知识库生成', subtitle: 'Jira 工单 → Confluence 知识库（AI 润色）' },
+  wbs:              { title: 'WBS服务', subtitle: '项目工作任务分解与产品服务报价汇总' },
 };
 
 const THEMES = [

@@ -13,6 +13,12 @@ func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			// Fallback: check query parameter "token" (for file download links)
+			if qToken := c.Query("token"); qToken != "" {
+				authHeader = "Bearer " + qToken
+			}
+		}
+		if authHeader == "" {
 			response.Unauthorized(c, "missing authorization header")
 			c.Abort()
 			return

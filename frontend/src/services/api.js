@@ -217,6 +217,14 @@ export const previewKB = (data) => api.post('/kb/preview', data, { timeout: 3000
 export const publishKB = (data) => api.post('/kb/publish', data, { timeout: 300000 });
 export const getKBHistory = (params) => api.get('/kb/history', { params });
 
+// WBS Service
+export const getWBSCatalog = () => api.get('/wbs/catalog');
+export const saveWBSOrder = (data) => api.post('/wbs/orders', data);
+export const listWBSOrders = (params) => api.get('/wbs/orders', { params });
+export const getWBSOrder = (id) => api.get(`/wbs/orders/${id}`);
+export const deleteWBSOrder = (id) => api.delete(`/wbs/orders/${id}`);
+export const exportWBSOrder = (id) => `/api/wbs/orders/${id}/export`;
+
 // Worktime Management
 export const getWorktimeStats = (params) => api.get('/worktime/stats', { params });
 export const getWorktimeUsers = () => api.get('/worktime/users');
