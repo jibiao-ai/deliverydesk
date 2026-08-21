@@ -46,6 +46,7 @@ type KBGenerateResponse struct {
 	PageID      string              `json:"page_id"`
 	Preview     string              `json:"preview"`      // HTML preview (for dry-run)
 	Content     *KBContentGenerated `json:"content"`      // structured content
+	DescHTML    string              `json:"desc_html"`    // original Jira description HTML (for publish)
 }
 
 type KBPreviewRequest struct {
@@ -272,9 +273,10 @@ func (h *KBHandler) PreviewKB(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": KBGenerateResponse{
-			Title:   title,
-			Preview: previewHTML,
-			Content: content,
+			Title:    title,
+			Preview:  previewHTML,
+			Content:  content,
+			DescHTML: descHTML,
 		},
 	})
 }
@@ -977,12 +979,18 @@ func cleanCodeBlock(s string) string {
 // sanitizeDescHTML cleans Jira rendered description HTML for embedding into the
 // Confluence KB page body. It:
 // 1. Removes any <h1> tags (which duplicate the page title)
-// 2. Downgrades <h2>/<h3> headings to <h4> to avoid conflicting with the KB structure
-// 3. Strips any leading title-like text that matches the KB title pattern
+// 2. Removes any KB-structure headings (一～七、xxx) to prevent section duplication
+// 3. Downgrades <h2>/<h3> headings to <h4> to avoid conflicting with the KB structure
+// 4. Strips any leading title-like text that matches the KB title pattern
 func sanitizeDescHTML(raw string) string {
 	// Remove <h1>...</h1> tags entirely (content included) — these duplicate the page title
 	reH1 := regexp.MustCompile(`(?i)<h1[^>]*>.*?</h1>`)
 	cleaned := reH1.ReplaceAllString(raw, "")
+
+	// Remove any h2/h3 headings that look like KB section titles (e.g. "一、问题背景", "五、解决过程")
+	// This guards against the case where the full KB preview was accidentally passed as descHTML
+	reKBSection := regexp.MustCompile(`(?i)<h[23][^>]*>\s*[一二三四五六七八九十]+、[^<]*</h[23]>`)
+	cleaned = reKBSection.ReplaceAllString(cleaned, "")
 
 	// Downgrade <h2> to <h4> and <h3> to <h5> to avoid conflicting with KB structure
 	reH2Open := regexp.MustCompile(`(?i)<h2([^>]*)>`)
