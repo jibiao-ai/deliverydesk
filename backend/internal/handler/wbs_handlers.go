@@ -419,7 +419,7 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	versionFilter := ""
 	if len(envs) > 0 {
 		pv := envs[0].ProductVersion
-		if strings.Contains(pv, "V612") {
+		if strings.Contains(pv, "V621") {
 			versionFilter = "V621"
 		} else if strings.Contains(pv, "V611") {
 			versionFilter = "V611"
@@ -932,8 +932,8 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 
 	// Drop-down reference data
 	f.SetCellValue(sheetOverall, "U1", "购买产品")
-	f.SetCellValue(sheetOverall, "U2", "ECF V612")
-	f.SetCellValue(sheetOverall, "U3", "ECNF V612")
+	f.SetCellValue(sheetOverall, "U2", "ECF V621")
+	f.SetCellValue(sheetOverall, "U3", "ECNF V621")
 	f.SetCellValue(sheetOverall, "U4", "ECF V611")
 	f.SetCellValue(sheetOverall, "U5", "ECNF V611")
 	f.SetCellValue(sheetOverall, "W1", "license授权类型")
@@ -961,7 +961,7 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	tmplFields := []string{
 		"环境名称: 第N套环境",
 		"状态: 新建/扩容/纯服务/升级",
-		"购买产品: ECF V612 / ECNF V612 / ECF V611 / ECNF V611",
+		"购买产品: ECF V621 / ECNF V621 / ECF V611 / ECNF V611",
 		"维保年限: N年",
 		"SLA: 7x24 / 5x9",
 		"license授权类型: 正式（软件永久许可）/正式（软件订阅）/预交付/POC",
