@@ -69,21 +69,18 @@ function GlassSelect({ value, onChange, options, placeholder, className = '' }) 
   );
 }
 
-// === Service category cards for step-by-step selection ===
+// === Service category metadata for step-by-step selection ===
 const SERVICE_CATEGORIES_META = [
-  { id: '安装部署服务', label: '安装部署服务', icon: '🔧', color: 'from-blue-500 to-indigo-600', desc: '标准安装、扩容服务包' },
-  { id: '标准维保服务', label: '标准维保服务', icon: '🛡️', color: 'from-green-500 to-emerald-600', desc: 'A/B类产品维保、EOS升级' },
-  { id: 'EOS升级订阅', label: 'EOS升级订阅', icon: '⬆️', color: 'from-purple-500 to-violet-600', desc: 'EOS版本大版本升级' },
-  { id: '增值运维服务', label: '增值运维服务', icon: '📊', color: 'from-orange-500 to-amber-600', desc: 'S1/S2/S3增值运维' },
-  { id: '产品高级服务', label: '产品高级服务', icon: '⭐', color: 'from-pink-500 to-rose-600', desc: '巡检、安全加固、镜像制作等' },
-  { id: '服务人天', label: '服务人天', icon: '👷', color: 'from-cyan-500 to-teal-600', desc: '远程/现场/高级工程师人天' },
-  { id: '培训服务', label: '培训服务', icon: '🎓', color: 'from-yellow-500 to-orange-500', desc: 'CKA/COA认证培训' },
+  { id: '安装部署服务', label: '安装部署服务', desc: '标准安装、扩容服务包' },
+  { id: '标准维保服务', label: '标准维保服务', desc: 'A/B类产品维保、EOS升级' },
+  { id: 'EOS升级订阅', label: 'EOS升级订阅', desc: 'EOS版本大版本升级' },
+  { id: '增值运维服务', label: '增值运维服务', desc: 'S1/S2/S3增值运维' },
+  { id: '产品高级服务', label: '产品高级服务', desc: '巡检、安全加固、镜像制作等' },
+  { id: '服务人天', label: '服务人天', desc: '远程/现场/高级工程师人天' },
+  { id: '培训服务', label: '培训服务', desc: 'CKA/COA认证培训' },
 ];
 
-const PRODUCT_CATEGORIES_META = [
-  { id: '云基础设施ECF解决方案', label: '云基础设施ECF', icon: '☁️', color: 'from-blue-500 to-cyan-600', desc: 'ECF V6 云基础设施平台' },
-  { id: '云平台增值软件及服务', label: '云平台增值软件', icon: '🧩', color: 'from-violet-500 to-purple-600', desc: '多云管理、增值软件服务' },
-];
+// Product categories will be derived dynamically from catalog data
 
 export default function WBSServicePage() {
   const [mode, setMode] = useState('list'); // list | create
@@ -105,6 +102,20 @@ export default function WBSServicePage() {
   const [serviceCategory, setServiceCategory] = useState(null);
   const [filterArch, setFilterArch] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [hoverTooltip, setHoverTooltip] = useState({ visible: false, content: '', title: '', x: 0, y: 0 });
+
+  // Derive product categories dynamically from catalog data
+  const productCategoriesMeta = React.useMemo(() => {
+    const cats = [];
+    const seen = new Set();
+    for (const p of catalog.products) {
+      if (!seen.has(p.category)) {
+        seen.add(p.category);
+        cats.push({ id: p.category, label: p.category.replace(/解决方案$/, '').replace(/^云基础设施/, 'ECF ') || p.category });
+      }
+    }
+    return cats.length > 0 ? cats : [{ id: '云基础设施ECF解决方案', label: '云基础设施ECF' }];
+  }, [catalog.products]);
 
   const PAGE_SIZE = 10;
 
@@ -449,219 +460,215 @@ export default function WBSServicePage() {
             </div>
           )}
 
-          {/* Step 1: Products - category-first wizard */}
+          {/* Step 1: Products - top tab navigation */}
           {step === 1 && (
             <div>
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-semibold flex items-center gap-2">
                   <Package className="w-5 h-5 text-primary-600" />
-                  {productCategory ? '选择产品' : '选择产品大类'}
+                  选择产品
                 </h3>
-                <div className="flex items-center gap-3">
-                  {productCategory && (
-                    <button onClick={() => { setProductCategory(null); setSearchTerm(''); }} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-50/80 transition-colors">
-                      <ChevronLeft className="w-3 h-3" /> 返回大类选择
-                    </button>
-                  )}
-                  <span className="text-sm text-primary-600 font-medium bg-primary-50/80 px-3 py-1 rounded-xl">已选 {selectedProductCount} 项</span>
-                </div>
+                <span className="text-sm text-primary-600 font-medium bg-primary-50/80 px-3 py-1 rounded-xl">已选 {selectedProductCount} 项</span>
               </div>
 
-              {/* Category selection cards */}
-              {!productCategory && (
-                <div className="grid grid-cols-2 gap-4">
-                  {PRODUCT_CATEGORIES_META.map(cat => {
-                    const count = catalog.products.filter(p => p.category === cat.id).length;
-                    const selected = Object.entries(selectedProducts).filter(([id, qty]) => qty > 0 && catalog.products.find(p => p.id === id)?.category === cat.id).length;
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => setProductCategory(cat.id)}
-                        className="group relative p-5 rounded-2xl border border-gray-100/80 bg-white/60 backdrop-blur-md hover:bg-white/90 hover:shadow-lg transition-all text-left overflow-hidden"
-                      >
-                        <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${cat.color} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
-                        <div className="text-3xl mb-3">{cat.icon}</div>
-                        <div className="font-semibold text-gray-800 mb-1">{cat.label}</div>
-                        <div className="text-xs text-gray-500 mb-3">{cat.desc}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs bg-gray-100/80 px-2 py-0.5 rounded-lg text-gray-500">{count} 项可选</span>
-                          {selected > 0 && <span className="text-xs bg-green-100/80 px-2 py-0.5 rounded-lg text-green-700 font-medium">{selected} 已选</span>}
-                        </div>
-                        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300 group-hover:text-primary-500 transition-colors" />
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              {/* Category top navigation tabs */}
+              <div className="flex items-center gap-1 mb-4 border-b border-gray-100">
+                {productCategoriesMeta.map(cat => {
+                  const activeCat = productCategory || productCategoriesMeta[0].id;
+                  const selected = Object.entries(selectedProducts).filter(([id, qty]) => qty > 0 && catalog.products.find(p => p.id === id)?.category === cat.id).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setProductCategory(cat.id); setSearchTerm(''); }}
+                      className={`relative px-4 py-2.5 text-sm font-medium transition-all ${
+                        activeCat === cat.id
+                          ? 'text-primary-700'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <span>{cat.label}</span>
+                      {selected > 0 && <span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{selected}</span>}
+                      {activeCat === cat.id && <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary-600 rounded-full" />}
+                    </button>
+                  );
+                })}
+              </div>
 
-              {/* Product list within category */}
-              {productCategory && (
-                <div>
-                  {/* Filters */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="relative flex-1 max-w-sm">
-                      <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
-                      <input
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 backdrop-blur-md border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-300"
-                        placeholder="搜索产品名称或编码..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                      />
-                    </div>
-                    <GlassSelect
-                      value={filterArch}
-                      onChange={setFilterArch}
-                      options={[{ value: 'all', label: '全部架构' }, { value: 'X86', label: 'X86' }, { value: 'Arm', label: 'Arm' }]}
-                      placeholder="架构"
-                      className="w-36"
-                    />
-                  </div>
-                  {/* Product cards */}
-                  <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                    {catalog.products
-                      .filter(p => p.category === productCategory)
-                      .filter(p => !searchTerm || p.name.includes(searchTerm) || p.code.includes(searchTerm))
-                      .filter(p => filterArch === 'all' || p.arch === filterArch)
-                      .map(p => (
-                        <div key={p.id} className={`flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
-                          selectedProducts[p.id] > 0
-                            ? 'border-primary-200 bg-primary-50/50 shadow-sm'
-                            : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
-                        }`}>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className="font-medium text-sm text-gray-800 truncate">{p.name}</span>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${p.arch === 'X86' ? 'bg-blue-100/80 text-blue-700' : 'bg-purple-100/80 text-purple-700'}`}>{p.arch}</span>
-                              {p.type_class && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">{p.type_class}</span>}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-gray-400">
-                              <span className="font-mono">{p.code}</span>
-                              <span>·</span>
-                              <span>{p.unit}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setSelectedProducts(prev => ({ ...prev, [p.id]: Math.max(0, (prev[p.id] || 0) - 1) }))}
-                              className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors text-lg font-light"
-                            >−</button>
-                            <input
-                              type="number"
-                              min="0"
-                              className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 backdrop-blur-sm focus:ring-2 focus:ring-primary-200"
-                              value={selectedProducts[p.id] || 0}
-                              onChange={e => setSelectedProducts(prev => ({ ...prev, [p.id]: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
-                            <button
-                              onClick={() => setSelectedProducts(prev => ({ ...prev, [p.id]: (prev[p.id] || 0) + 1 }))}
-                              className="w-7 h-7 rounded-lg border border-primary-200/80 bg-primary-50/80 flex items-center justify-center text-primary-600 hover:bg-primary-100 transition-colors text-lg font-light"
-                            >+</button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
+              {/* Filters */}
+              <div className="flex items-center gap-3 mb-3">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
+                  <input
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 backdrop-blur-md border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-300"
+                    placeholder="搜索产品名称或编码..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                  />
                 </div>
-              )}
+                <GlassSelect
+                  value={filterArch}
+                  onChange={setFilterArch}
+                  options={[{ value: 'all', label: '全部架构' }, { value: 'X86', label: 'X86' }, { value: 'Arm', label: 'Arm' }]}
+                  placeholder="架构"
+                  className="w-36"
+                />
+              </div>
+
+              {/* Product list */}
+              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                {catalog.products
+                  .filter(p => p.category === (productCategory || productCategoriesMeta[0].id))
+                  .filter(p => !searchTerm || p.name.includes(searchTerm) || p.code.includes(searchTerm))
+                  .filter(p => filterArch === 'all' || p.arch === filterArch)
+                  .map(p => (
+                    <div
+                      key={p.id}
+                      className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
+                        selectedProducts[p.id] > 0
+                          ? 'border-primary-200 bg-primary-50/50 shadow-sm'
+                          : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
+                      }`}
+                      onMouseEnter={e => {
+                        if (p.description) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoverTooltip({ visible: true, content: p.description, title: '产品说明', x: rect.left + 16, y: rect.bottom + 4 });
+                        }
+                      }}
+                      onMouseLeave={() => setHoverTooltip(prev => ({ ...prev, visible: false }))}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-medium text-sm text-gray-800 truncate">{p.name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${p.arch === 'X86' ? 'bg-blue-100/80 text-blue-700' : 'bg-purple-100/80 text-purple-700'}`}>{p.arch}</span>
+                          {p.type_class && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">{p.type_class}</span>}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-400">
+                          <span className="font-mono">{p.code}</span>
+                          <span>·</span>
+                          <span>{p.unit}</span>
+                          {p.description && <span className="text-primary-400 cursor-help" title="悬停查看产品说明">💡</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedProducts(prev => ({ ...prev, [p.id]: Math.max(0, (prev[p.id] || 0) - 1) }))}
+                          className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors text-lg font-light"
+                        >−</button>
+                        <input
+                          type="number"
+                          min="0"
+                          className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 backdrop-blur-sm focus:ring-2 focus:ring-primary-200"
+                          value={selectedProducts[p.id] || 0}
+                          onChange={e => setSelectedProducts(prev => ({ ...prev, [p.id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                        />
+                        <button
+                          onClick={() => setSelectedProducts(prev => ({ ...prev, [p.id]: (prev[p.id] || 0) + 1 }))}
+                          className="w-7 h-7 rounded-lg border border-primary-200/80 bg-primary-50/80 flex items-center justify-center text-primary-600 hover:bg-primary-100 transition-colors text-lg font-light"
+                        >+</button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
 
-          {/* Step 2: Services - category-first wizard */}
+          {/* Step 2: Services - top tab navigation */}
           {step === 2 && (
             <div>
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-semibold flex items-center gap-2">
                   <Wrench className="w-5 h-5 text-primary-600" />
-                  {serviceCategory ? SERVICE_CATEGORIES_META.find(c => c.id === serviceCategory)?.label : '选择服务类型'}
+                  选择服务
                 </h3>
-                <div className="flex items-center gap-3">
-                  {serviceCategory && (
-                    <button onClick={() => { setServiceCategory(null); setSearchTerm(''); }} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary-50/80 transition-colors">
-                      <ChevronLeft className="w-3 h-3" /> 返回类型选择
-                    </button>
-                  )}
-                  <span className="text-sm text-purple-600 font-medium bg-purple-50/80 px-3 py-1 rounded-xl">已选 {selectedServiceCount} 项</span>
-                </div>
+                <span className="text-sm text-purple-600 font-medium bg-purple-50/80 px-3 py-1 rounded-xl">已选 {selectedServiceCount} 项</span>
               </div>
 
-              {/* Service category selection cards */}
-              {!serviceCategory && (
-                <div className="grid grid-cols-3 gap-3">
-                  {SERVICE_CATEGORIES_META.map(cat => {
-                    const count = catalog.services.filter(s => s.category === cat.id).length;
-                    const selected = Object.entries(selectedServices).filter(([id, qty]) => qty > 0 && catalog.services.find(s => s.id === id)?.category === cat.id).length;
-                    if (count === 0) return null;
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => setServiceCategory(cat.id)}
-                        className="group relative p-4 rounded-2xl border border-gray-100/80 bg-white/60 backdrop-blur-md hover:bg-white/90 hover:shadow-lg transition-all text-left overflow-hidden"
-                      >
-                        <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${cat.color} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
-                        <div className="text-2xl mb-2">{cat.icon}</div>
-                        <div className="font-semibold text-gray-800 text-sm mb-0.5">{cat.label}</div>
-                        <div className="text-[11px] text-gray-400 mb-2">{cat.desc}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] bg-gray-100/80 px-1.5 py-0.5 rounded text-gray-500">{count} 项</span>
-                          {selected > 0 && <span className="text-[10px] bg-green-100/80 px-1.5 py-0.5 rounded text-green-700 font-medium">{selected} 已选</span>}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              {/* Service category top navigation tabs */}
+              <div className="flex items-center gap-0.5 mb-4 border-b border-gray-100 overflow-x-auto">
+                {SERVICE_CATEGORIES_META.map(cat => {
+                  const count = catalog.services.filter(s => s.category === cat.id).length;
+                  if (count === 0) return null;
+                  const activeCat = serviceCategory || SERVICE_CATEGORIES_META[0].id;
+                  const selected = Object.entries(selectedServices).filter(([id, qty]) => qty > 0 && catalog.services.find(s => s.id === id)?.category === cat.id).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setServiceCategory(cat.id); setSearchTerm(''); }}
+                      className={`relative whitespace-nowrap px-3.5 py-2.5 text-xs font-medium transition-all ${
+                        activeCat === cat.id
+                          ? 'text-purple-700'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <span>{cat.label}</span>
+                      {selected > 0 && <span className="ml-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{selected}</span>}
+                      {activeCat === cat.id && <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 rounded-full" />}
+                    </button>
+                  );
+                })}
+              </div>
 
-              {/* Service list within category */}
-              {serviceCategory && (
-                <div>
-                  <div className="relative max-w-sm mb-4">
-                    <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
-                    <input
-                      className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 backdrop-blur-md border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-300"
-                      placeholder="搜索服务名称或编码..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                    {catalog.services
-                      .filter(s => s.category === serviceCategory)
-                      .filter(s => !searchTerm || s.name.includes(searchTerm) || s.code.includes(searchTerm))
-                      .map(s => (
-                        <div key={s.id} className={`flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
-                          selectedServices[s.id] > 0
-                            ? 'border-purple-200 bg-purple-50/50 shadow-sm'
-                            : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
-                        }`}>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm text-gray-800 mb-0.5 truncate">{s.name}</div>
-                            <div className="flex items-center gap-3 text-xs text-gray-400">
-                              <span className="font-mono">{s.code}</span>
-                              <span>·</span>
-                              <span>{s.unit}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setSelectedServices(prev => ({ ...prev, [s.id]: Math.max(0, (prev[s.id] || 0) - 1) }))}
-                              className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors text-lg font-light"
-                            >−</button>
-                            <input
-                              type="number"
-                              min="0"
-                              className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 backdrop-blur-sm focus:ring-2 focus:ring-purple-200"
-                              value={selectedServices[s.id] || 0}
-                              onChange={e => setSelectedServices(prev => ({ ...prev, [s.id]: Math.max(0, parseInt(e.target.value) || 0) }))}
-                            />
-                            <button
-                              onClick={() => setSelectedServices(prev => ({ ...prev, [s.id]: (prev[s.id] || 0) + 1 }))}
-                              className="w-7 h-7 rounded-lg border border-purple-200/80 bg-purple-50/80 flex items-center justify-center text-purple-600 hover:bg-purple-100 transition-colors text-lg font-light"
-                            >+</button>
-                          </div>
+              {/* Search */}
+              <div className="relative max-w-sm mb-3">
+                <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
+                <input
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 backdrop-blur-md border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-300"
+                  placeholder="搜索服务名称或编码..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              {/* Service list */}
+              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                {catalog.services
+                  .filter(s => s.category === (serviceCategory || SERVICE_CATEGORIES_META[0].id))
+                  .filter(s => !searchTerm || s.name.includes(searchTerm) || s.code.includes(searchTerm))
+                  .map(s => (
+                    <div
+                      key={s.id}
+                      className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
+                        selectedServices[s.id] > 0
+                          ? 'border-purple-200 bg-purple-50/50 shadow-sm'
+                          : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
+                      }`}
+                      onMouseEnter={e => {
+                        if (s.description) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoverTooltip({ visible: true, content: s.description, title: '服务说明', x: rect.left + 16, y: rect.bottom + 4 });
+                        }
+                      }}
+                      onMouseLeave={() => setHoverTooltip(prev => ({ ...prev, visible: false }))}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm text-gray-800 mb-0.5 truncate">{s.name}</div>
+                        <div className="flex items-center gap-3 text-xs text-gray-400">
+                          <span className="font-mono">{s.code}</span>
+                          <span>·</span>
+                          <span>{s.unit}</span>
+                          {s.description && <span className="text-purple-400 cursor-help" title="悬停查看服务说明">💡</span>}
                         </div>
-                      ))}
-                  </div>
-                </div>
-              )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedServices(prev => ({ ...prev, [s.id]: Math.max(0, (prev[s.id] || 0) - 1) }))}
+                          className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors text-lg font-light"
+                        >−</button>
+                        <input
+                          type="number"
+                          min="0"
+                          className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 backdrop-blur-sm focus:ring-2 focus:ring-purple-200"
+                          value={selectedServices[s.id] || 0}
+                          onChange={e => setSelectedServices(prev => ({ ...prev, [s.id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                        />
+                        <button
+                          onClick={() => setSelectedServices(prev => ({ ...prev, [s.id]: (prev[s.id] || 0) + 1 }))}
+                          className="w-7 h-7 rounded-lg border border-purple-200/80 bg-purple-50/80 flex items-center justify-center text-purple-600 hover:bg-purple-100 transition-colors text-lg font-light"
+                        >+</button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
 
@@ -803,6 +810,19 @@ export default function WBSServicePage() {
             )}
           </div>
         </div>
+
+        {/* Floating tooltip portal - renders outside overflow containers */}
+        {hoverTooltip.visible && (
+          <div
+            className="fixed z-[9999] pointer-events-none"
+            style={{ left: hoverTooltip.x, top: hoverTooltip.y, maxWidth: '420px' }}
+          >
+            <div className="p-3 bg-gray-900/95 backdrop-blur-md text-white text-xs rounded-xl shadow-2xl leading-relaxed border border-white/10">
+              <div className="font-medium text-white/90 mb-1 text-sm">{hoverTooltip.title}</div>
+              <div className="text-white/80">{hoverTooltip.content}</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
