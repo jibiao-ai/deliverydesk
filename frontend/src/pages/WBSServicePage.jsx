@@ -21,7 +21,7 @@ const EMPTY_OPP = {
 const EMPTY_ENV = {
   env_name: '',
   env_type: '新建',
-  product_version: 'ECF V612',
+  product_version: 'ECF V621',
   license_type: '正式（软件永久许可）',
   arch_type: 'X86',
   sla: '7x24',
@@ -30,14 +30,14 @@ const EMPTY_ENV = {
 };
 
 const ENV_TYPES = ['新建', '扩容', '纯服务', '升级'];
-const PRODUCT_VERSIONS = ['ECF V612', 'ECNF V612', 'ECF V611', 'ECNF V611'];
+const PRODUCT_VERSIONS = ['ECF V621', 'ECNF V621', 'ECF V611', 'ECNF V611'];
 const LICENSE_TYPES = ['正式（软件永久许可）', '正式（软件订阅）', '预交付', 'POC'];
 const ARCH_TYPES = ['X86', 'Arm'];
 const SLA_OPTIONS = ['7x24', '5x9'];
 
 // Map product version to catalog version for filtering
 function getVersionFilter(productVersion) {
-  if (productVersion.includes('V612')) return 'V621';
+  if (productVersion.includes('V621')) return 'V621';
   if (productVersion.includes('V611')) return 'V611';
   return '';
 }
