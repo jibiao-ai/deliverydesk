@@ -80,10 +80,7 @@ const SERVICE_CATEGORIES_META = [
   { id: '培训服务', label: '培训服务', desc: 'CKA/COA认证培训' },
 ];
 
-const PRODUCT_CATEGORIES_META = [
-  { id: '云基础设施ECF解决方案', label: '云基础设施ECF', desc: 'ECF V6 云基础设施平台' },
-  { id: '云平台增值软件及服务', label: '云平台增值软件', desc: '多云管理、增值软件服务' },
-];
+// Product categories will be derived dynamically from catalog data
 
 export default function WBSServicePage() {
   const [mode, setMode] = useState('list'); // list | create
@@ -105,6 +102,20 @@ export default function WBSServicePage() {
   const [serviceCategory, setServiceCategory] = useState(null);
   const [filterArch, setFilterArch] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [hoverTooltip, setHoverTooltip] = useState({ visible: false, content: '', title: '', x: 0, y: 0 });
+
+  // Derive product categories dynamically from catalog data
+  const productCategoriesMeta = React.useMemo(() => {
+    const cats = [];
+    const seen = new Set();
+    for (const p of catalog.products) {
+      if (!seen.has(p.category)) {
+        seen.add(p.category);
+        cats.push({ id: p.category, label: p.category.replace(/解决方案$/, '').replace(/^云基础设施/, 'ECF ') || p.category });
+      }
+    }
+    return cats.length > 0 ? cats : [{ id: '云基础设施ECF解决方案', label: '云基础设施ECF' }];
+  }, [catalog.products]);
 
   const PAGE_SIZE = 10;
 
@@ -462,9 +473,8 @@ export default function WBSServicePage() {
 
               {/* Category top navigation tabs */}
               <div className="flex items-center gap-1 mb-4 border-b border-gray-100">
-                {PRODUCT_CATEGORIES_META.map(cat => {
-                  const isActive = productCategory === cat.id || (!productCategory && cat.id === PRODUCT_CATEGORIES_META[0].id);
-                  const activeCat = productCategory || PRODUCT_CATEGORIES_META[0].id;
+                {productCategoriesMeta.map(cat => {
+                  const activeCat = productCategory || productCategoriesMeta[0].id;
                   const selected = Object.entries(selectedProducts).filter(([id, qty]) => qty > 0 && catalog.products.find(p => p.id === id)?.category === cat.id).length;
                   return (
                     <button
@@ -507,15 +517,25 @@ export default function WBSServicePage() {
               {/* Product list */}
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                 {catalog.products
-                  .filter(p => p.category === (productCategory || PRODUCT_CATEGORIES_META[0].id))
+                  .filter(p => p.category === (productCategory || productCategoriesMeta[0].id))
                   .filter(p => !searchTerm || p.name.includes(searchTerm) || p.code.includes(searchTerm))
                   .filter(p => filterArch === 'all' || p.arch === filterArch)
                   .map(p => (
-                    <div key={p.id} className={`group relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
-                      selectedProducts[p.id] > 0
-                        ? 'border-primary-200 bg-primary-50/50 shadow-sm'
-                        : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
-                    }`}>
+                    <div
+                      key={p.id}
+                      className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
+                        selectedProducts[p.id] > 0
+                          ? 'border-primary-200 bg-primary-50/50 shadow-sm'
+                          : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
+                      }`}
+                      onMouseEnter={e => {
+                        if (p.description) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoverTooltip({ visible: true, content: p.description, title: '产品说明', x: rect.left + 16, y: rect.bottom + 4 });
+                        }
+                      }}
+                      onMouseLeave={() => setHoverTooltip(prev => ({ ...prev, visible: false }))}
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <span className="font-medium text-sm text-gray-800 truncate">{p.name}</span>
@@ -526,6 +546,7 @@ export default function WBSServicePage() {
                           <span className="font-mono">{p.code}</span>
                           <span>·</span>
                           <span>{p.unit}</span>
+                          {p.description && <span className="text-primary-400 cursor-help" title="悬停查看产品说明">💡</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -545,15 +566,6 @@ export default function WBSServicePage() {
                           className="w-7 h-7 rounded-lg border border-primary-200/80 bg-primary-50/80 flex items-center justify-center text-primary-600 hover:bg-primary-100 transition-colors text-lg font-light"
                         >+</button>
                       </div>
-                      {/* Tooltip on hover */}
-                      {p.description && (
-                        <div className="absolute left-0 right-0 top-full mt-1 z-40 hidden group-hover:block">
-                          <div className="mx-4 p-3 bg-gray-900/95 backdrop-blur-md text-white text-xs rounded-xl shadow-xl leading-relaxed max-w-lg">
-                            <div className="font-medium text-white/90 mb-1">产品说明</div>
-                            {p.description}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ))}
               </div>
@@ -613,17 +625,28 @@ export default function WBSServicePage() {
                   .filter(s => s.category === (serviceCategory || SERVICE_CATEGORIES_META[0].id))
                   .filter(s => !searchTerm || s.name.includes(searchTerm) || s.code.includes(searchTerm))
                   .map(s => (
-                    <div key={s.id} className={`group relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
-                      selectedServices[s.id] > 0
-                        ? 'border-purple-200 bg-purple-50/50 shadow-sm'
-                        : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
-                    }`}>
+                    <div
+                      key={s.id}
+                      className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
+                        selectedServices[s.id] > 0
+                          ? 'border-purple-200 bg-purple-50/50 shadow-sm'
+                          : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
+                      }`}
+                      onMouseEnter={e => {
+                        if (s.description) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoverTooltip({ visible: true, content: s.description, title: '服务说明', x: rect.left + 16, y: rect.bottom + 4 });
+                        }
+                      }}
+                      onMouseLeave={() => setHoverTooltip(prev => ({ ...prev, visible: false }))}
+                    >
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm text-gray-800 mb-0.5 truncate">{s.name}</div>
                         <div className="flex items-center gap-3 text-xs text-gray-400">
                           <span className="font-mono">{s.code}</span>
                           <span>·</span>
                           <span>{s.unit}</span>
+                          {s.description && <span className="text-purple-400 cursor-help" title="悬停查看服务说明">💡</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -643,15 +666,6 @@ export default function WBSServicePage() {
                           className="w-7 h-7 rounded-lg border border-purple-200/80 bg-purple-50/80 flex items-center justify-center text-purple-600 hover:bg-purple-100 transition-colors text-lg font-light"
                         >+</button>
                       </div>
-                      {/* Tooltip on hover */}
-                      {s.description && (
-                        <div className="absolute left-0 right-0 top-full mt-1 z-40 hidden group-hover:block">
-                          <div className="mx-4 p-3 bg-gray-900/95 backdrop-blur-md text-white text-xs rounded-xl shadow-xl leading-relaxed max-w-lg">
-                            <div className="font-medium text-white/90 mb-1">服务说明</div>
-                            {s.description}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ))}
               </div>
@@ -796,6 +810,19 @@ export default function WBSServicePage() {
             )}
           </div>
         </div>
+
+        {/* Floating tooltip portal - renders outside overflow containers */}
+        {hoverTooltip.visible && (
+          <div
+            className="fixed z-[9999] pointer-events-none"
+            style={{ left: hoverTooltip.x, top: hoverTooltip.y, maxWidth: '420px' }}
+          >
+            <div className="p-3 bg-gray-900/95 backdrop-blur-md text-white text-xs rounded-xl shadow-2xl leading-relaxed border border-white/10">
+              <div className="font-medium text-white/90 mb-1 text-sm">{hoverTooltip.title}</div>
+              <div className="text-white/80">{hoverTooltip.content}</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
