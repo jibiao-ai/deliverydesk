@@ -218,7 +218,7 @@ export const publishKB = (data) => api.post('/kb/publish', data, { timeout: 3000
 export const getKBHistory = (params) => api.get('/kb/history', { params });
 
 // WBS Service
-export const getWBSCatalog = () => api.get('/wbs/catalog');
+export const getWBSCatalog = (params) => api.get('/wbs/catalog', { params });
 export const saveWBSOrder = (data) => api.post('/wbs/orders', data);
 export const listWBSOrders = (params) => api.get('/wbs/orders', { params });
 export const getWBSOrder = (id) => api.get(`/wbs/orders/${id}`);

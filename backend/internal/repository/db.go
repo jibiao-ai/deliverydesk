@@ -130,6 +130,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"OpsEnvironment":  &model.OpsEnvironment{},
 		"KBHistory":       &model.KBHistory{},
 		"WBSOrder":        &model.WBSOrder{},
+		"WBSEnvironment":  &model.WBSEnvironment{},
 		"WBSOrderItem":    &model.WBSOrderItem{},
 	}
 	migrationOrder := []string{
@@ -138,7 +139,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"WebsiteCategory", "WebsiteLink", "AIProvider", "OperationLog",
 		"TotpApplication", "SystemSetting", "JiraIssueCache", "WorktimeUser", "WorktimeCache",
 		"ProjectInfo", "OpsEnvironment", "KBHistory",
-		"WBSOrder", "WBSOrderItem",
+		"WBSOrder", "WBSEnvironment", "WBSOrderItem",
 	}
 	for _, name := range migrationOrder {
 		m := migrationModels[name]
