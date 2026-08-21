@@ -97,7 +97,7 @@ export default function KnowledgeBasePage() {
         jira_user: jiraUser || undefined,
         jira_token: jiraToken || undefined,
         issue_key: issueKey,
-        desc_html: preview.preview, // pass preview HTML as desc for attachment context
+        desc_html: preview.desc_html || '', // pass original Jira description HTML only (not full preview)
       });
       if (res?.code === 0 && res.data) {
         setPublishResult(res.data);
