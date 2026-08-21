@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileSpreadsheet, Plus, Download, Trash2, ChevronRight, ChevronLeft, Search, Package, Wrench, Building2, CheckCircle2, X, Clock, Hash, User, MapPin, ChevronDown, Check, AlertCircle, Server, Settings } from 'lucide-react';
-import { getWBSCatalog, saveWBSOrder, listWBSOrders, deleteWBSOrder } from '../services/api';
+import { FileSpreadsheet, Plus, Download, Trash2, ChevronRight, ChevronLeft, Search, Package, Wrench, Building2, CheckCircle2, X, Clock, Hash, User, MapPin, ChevronDown, Check, AlertCircle, Server, Settings, Info, Eye } from 'lucide-react';
+import { getWBSCatalog, saveWBSOrder, listWBSOrders, getWBSOrder, deleteWBSOrder } from '../services/api';
 
 // === Step definitions for the wizard ===
 const STEPS = [
@@ -42,13 +42,28 @@ function getVersionFilter(productVersion) {
   return '';
 }
 
+// Product major category tabs with sub-categories
+const PRODUCT_MAJOR_TABS = [
+  { id: '自有产品', label: '自有产品' },
+  { id: '云平台增值软件及服务', label: '云平台增值软件及服务' },
+];
+
+// Fixed sub-category tabs for 自有产品
+const OWN_PRODUCT_SUB_CATEGORIES = [
+  'ECF云基础设施产品',
+  'ECF云基础设施产品增值套件',
+  'ECNF云原生基础设施产品',
+  '云基础设施ECF解决方案',
+  '云原生基础设施ECNF解决方案',
+];
+
 // === Glassmorphism + rounded card modal ===
 function GlassModal({ open, onClose, title, children, maxWidth = 'max-w-lg' }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative ${maxWidth} w-full bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 p-6 animate-in fade-in zoom-in-95 duration-200`}>
+      <div className={`relative ${maxWidth} w-full bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 p-6 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
           <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100/80 transition-colors">
@@ -94,19 +109,35 @@ function GlassSelect({ value, onChange, options, placeholder, className = '' }) 
   );
 }
 
-// === Service category metadata for step-by-step selection ===
-const SERVICE_CATEGORIES_META = [
-  { id: '安装部署服务', label: '安装部署服务', desc: '标准安装、扩容服务包' },
-  { id: '标准维保服务', label: '标准维保服务', desc: 'A/B类产品维保、EOS升级' },
-  { id: 'EOS升级订阅', label: 'EOS升级订阅', desc: 'EOS版本大版本升级' },
-  { id: '增值运维服务', label: '增值运维服务', desc: 'S1/S2/S3增值运维' },
-  { id: '产品高级服务', label: '产品高级服务', desc: '巡检、安全加固、镜像制作等' },
-  { id: '服务人天', label: '服务人天', desc: '远程/现场/高级工程师人天' },
-  { id: '培训服务', label: '培训服务', desc: 'CKA/COA认证培训' },
-];
+// === Info popup for product description (Bug 3: click info icon instead of hover) ===
+function InfoPopup({ title, content }) {
+  const [show, setShow] = useState(false);
+  if (!content) return null;
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setShow(!show); }}
+        className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 flex items-center justify-center transition-colors"
+        title="查看产品说明"
+      >
+        <Info className="w-3 h-3" />
+      </button>
+      {show && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShow(false)} />
+          <div className="absolute z-50 left-6 top-0 w-80 p-3 bg-gray-900/95 backdrop-blur-md text-white text-xs rounded-xl shadow-2xl leading-relaxed border border-white/10">
+            <div className="font-medium text-white/90 mb-1 text-sm">{title}</div>
+            <div className="text-white/80">{content}</div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function WBSServicePage() {
-  const [mode, setMode] = useState('list'); // list | create
+  const [mode, setMode] = useState('list'); // list | create | detail
   const [step, setStep] = useState(0);
   const [catalog, setCatalog] = useState({ products: [], services: [] });
   const [opportunity, setOpportunity] = useState({ ...EMPTY_OPP });
@@ -122,13 +153,21 @@ export default function WBSServicePage() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [jumpPage, setJumpPage] = useState('');
 
+  // Detail view state (Bug 4)
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
   // Sub-step navigation for products & services
   const [productMajorCategory, setProductMajorCategory] = useState('自有产品');
-  const [productSubCategory, setProductSubCategory] = useState(null);
-  const [serviceCategory, setServiceCategory] = useState(null);
+  const [productSubCategory, setProductSubCategory] = useState(OWN_PRODUCT_SUB_CATEGORIES[0]);
+  const [serviceMajorCategory, setServiceMajorCategory] = useState('自有产品');
   const [filterArch, setFilterArch] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [hoverTooltip, setHoverTooltip] = useState({ visible: false, content: '', title: '', x: 0, y: 0 });
+
+  // Pagination state for product/service lists (Bug 1: 10 items per page)
+  const [productPage, setProductPage] = useState(1);
+  const [servicePage, setServicePage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   const PAGE_SIZE = 10;
 
@@ -147,36 +186,41 @@ export default function WBSServicePage() {
     return catalog.products.filter(p => !versionFilter || p.version === versionFilter);
   }, [catalog.products, environments, activeEnvIndex]);
 
-  // Get product sub-categories dynamically
-  const productSubCategoriesMeta = React.useMemo(() => {
-    const products = getFilteredProducts();
-    const filtered = products.filter(p => p.major_category === productMajorCategory);
+  // Get filtered services (Bug 2: services use major_category for filtering, not sub_category matching)
+  const getFilteredServices = useCallback(() => {
+    const env = environments[activeEnvIndex];
+    if (!env) return [];
+    const versionFilter = getVersionFilter(env.product_version);
+    return catalog.services.filter(s => !versionFilter || s.version === versionFilter);
+  }, [catalog.services, environments, activeEnvIndex]);
+
+  // Derive service sub-categories dynamically from actual data
+  const serviceSubCategoriesMeta = React.useMemo(() => {
+    const services = getFilteredServices();
+    const filtered = services.filter(s => s.major_category === serviceMajorCategory);
     const cats = [];
     const seen = new Set();
-    for (const p of filtered) {
-      const cat = p.sub_category;
+    for (const s of filtered) {
+      // Use series as sub-category grouping for services
+      const cat = s.series || s.sub_category;
       if (cat && !seen.has(cat)) {
         seen.add(cat);
         cats.push({ id: cat, label: cat });
       }
     }
     return cats;
-  }, [getFilteredProducts, productMajorCategory]);
+  }, [getFilteredServices, serviceMajorCategory]);
 
-  // Derive service categories dynamically
-  const serviceCategoriesMeta = React.useMemo(() => {
-    const cats = [];
-    const seen = new Set();
-    for (const s of catalog.services) {
-      const cat = s.sub_category || s.major_category;
-      if (cat && !seen.has(cat)) {
-        seen.add(cat);
-        cats.push({ id: cat, label: cat });
-      }
+  const [serviceSubCategory, setServiceSubCategory] = useState(null);
+
+  // Reset service sub-category when major category changes
+  useEffect(() => {
+    if (serviceSubCategoriesMeta.length > 0) {
+      setServiceSubCategory(serviceSubCategoriesMeta[0].id);
+    } else {
+      setServiceSubCategory(null);
     }
-    // Fallback to the predefined list if no data
-    return cats.length > 0 ? cats : SERVICE_CATEGORIES_META;
-  }, [catalog.services]);
+  }, [serviceMajorCategory, serviceSubCategoriesMeta.length]);
 
   // Load orders list
   const loadOrders = useCallback(() => {
@@ -190,6 +234,20 @@ export default function WBSServicePage() {
   }, [page]);
 
   useEffect(() => { if (mode === 'list') loadOrders(); }, [mode, loadOrders]);
+
+  // Bug 4: Load order detail
+  const handleViewDetail = async (orderId) => {
+    setDetailLoading(true);
+    setMode('detail');
+    try {
+      const res = await getWBSOrder(orderId);
+      if (res?.code === 0) {
+        setDetailData(res.data);
+      }
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const handleDeleteOrder = async (id) => {
     const res = await deleteWBSOrder(id);
@@ -249,8 +307,11 @@ export default function WBSServicePage() {
     setSelectedProducts({});
     setSelectedServices({});
     setProductMajorCategory('自有产品');
-    setProductSubCategory(null);
-    setServiceCategory(null);
+    setProductSubCategory(OWN_PRODUCT_SUB_CATEGORIES[0]);
+    setServiceMajorCategory('自有产品');
+    setServiceSubCategory(null);
+    setProductPage(1);
+    setServicePage(1);
   };
 
   // Add new environment
@@ -289,6 +350,129 @@ export default function WBSServicePage() {
     sum + Object.values(items).filter(v => v > 0).length, 0);
   const selectedServiceCount = Object.values(selectedServices).filter(v => v > 0).length;
   const totalPages = Math.ceil(totalOrders / PAGE_SIZE);
+
+  // === DETAIL MODE (Bug 4) ===
+  if (mode === 'detail') {
+    return (
+      <div className="h-full overflow-auto p-6 bg-gradient-to-br from-slate-50 to-blue-50/30">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={() => { setMode('list'); setDetailData(null); }} className="flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 transition-colors px-3 py-1.5 rounded-xl hover:bg-white/80">
+              <ChevronLeft className="w-4 h-4" /> 返回列表
+            </button>
+            <h2 className="text-lg font-bold text-gray-800">订单详情</h2>
+          </div>
+
+          {detailLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="w-8 h-8 rounded-full border-2 border-primary-200 border-t-primary-600 animate-spin" />
+            </div>
+          ) : detailData ? (
+            <div className="space-y-5">
+              {/* Opportunity Info */}
+              <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/60 shadow-xl p-6">
+                <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-primary-600" /> 商机信息
+                </h3>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  {[
+                    ['商机号', detailData.order?.opportunity_no],
+                    ['商机名称', detailData.order?.opportunity_name],
+                    ['客户名称', detailData.order?.customer_name],
+                    ['代理商', detailData.order?.agent],
+                    ['部署地点', detailData.order?.deploy_location],
+                    ['销售总监', detailData.order?.sales_director],
+                    ['销售VP', detailData.order?.sales_vp],
+                    ['销售', detailData.order?.sales],
+                    ['售前', detailData.order?.pre_sales],
+                    ['项目经理邮箱', detailData.order?.project_manager],
+                    ['交付Leader邮箱', detailData.order?.delivery_leader],
+                    ['创建时间', detailData.order?.created_at ? new Date(detailData.order.created_at).toLocaleString('zh-CN') : '-'],
+                  ].map(([label, val]) => (
+                    <div key={label}>
+                      <span className="text-gray-400 text-xs">{label}: </span>
+                      <span className="text-gray-700 font-medium">{val || '-'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Environments */}
+              {detailData.environments?.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/60 shadow-xl p-6">
+                  <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+                    <Server className="w-5 h-5 text-primary-600" /> 环境信息 ({detailData.environments.length} 套)
+                  </h3>
+                  <div className="space-y-2">
+                    {detailData.environments.map((env, idx) => (
+                      <div key={idx} className="flex items-center gap-3 text-xs bg-blue-50/50 rounded-lg p-3">
+                        <span className="font-medium text-gray-700">{env.env_name}</span>
+                        <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700">{env.env_type}</span>
+                        <span className="text-gray-600">{env.product_version}</span>
+                        <span className="text-gray-600">{env.arch_type}</span>
+                        <span className="text-gray-600">{env.license_type}</span>
+                        <span className="text-gray-600">{env.sla}</span>
+                        <span className="text-gray-600">{env.maintenance_yr}年维保</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Items */}
+              {detailData.items?.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/60 shadow-xl p-6">
+                  <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+                    <Package className="w-5 h-5 text-primary-600" /> 产品/服务明细 ({detailData.items.length} 项)
+                  </h3>
+                  <div className="border border-gray-100/80 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50/80">
+                        <tr>
+                          <th className="px-3 py-2.5 text-left font-medium text-gray-500">类型</th>
+                          <th className="px-3 py-2.5 text-left font-medium text-gray-500">名称</th>
+                          <th className="px-3 py-2.5 text-left font-medium text-gray-500">编码</th>
+                          <th className="px-3 py-2.5 text-left font-medium text-gray-500">分类</th>
+                          <th className="px-3 py-2.5 text-center font-medium text-gray-500">数量</th>
+                          <th className="px-3 py-2.5 text-center font-medium text-gray-500">单位</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailData.items.map((item, idx) => (
+                          <tr key={idx} className="border-t border-gray-50">
+                            <td className="px-3 py-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${item.item_type === 'product' ? 'bg-green-50 text-green-700' : 'bg-purple-50 text-purple-700'}`}>
+                                {item.item_type === 'product' ? '产品' : '服务'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">{item.name}</td>
+                            <td className="px-3 py-2 font-mono text-gray-500">{item.code}</td>
+                            <td className="px-3 py-2 text-gray-500">{item.sub_category || item.category}</td>
+                            <td className="px-3 py-2 text-center font-bold text-primary-600">{item.quantity}</td>
+                            <td className="px-3 py-2 text-center text-gray-500">{item.unit}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Export button */}
+              <div className="flex justify-end">
+                <button onClick={() => handleExport(detailData.order?.ID || detailData.order?.id)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 shadow-lg shadow-green-200/50 transition-all font-medium text-sm">
+                  <Download className="w-4 h-4" /> 导出Excel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-20 text-gray-400">订单数据加载失败</div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // === LIST MODE ===
   if (mode === 'list') {
@@ -349,9 +533,16 @@ export default function WBSServicePage() {
                     <p className="text-xs text-gray-300">点击"新建WBS"开始创建第一个项目订单</p>
                   </td></tr>
                 ) : orders.map((o, idx) => (
-                  <tr key={o.id} className={`border-b border-gray-50 hover:bg-primary-50/30 transition-colors ${idx % 2 === 0 ? 'bg-white/50' : 'bg-gray-50/30'}`}>
+                  <tr key={o.id || o.ID} className={`border-b border-gray-50 hover:bg-primary-50/30 transition-colors ${idx % 2 === 0 ? 'bg-white/50' : 'bg-gray-50/30'}`}>
                     <td className="px-5 py-3.5">
-                      <span className="font-mono text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg">{o.opportunity_no || '-'}</span>
+                      {/* Bug 4: Clickable opportunity_no to view detail */}
+                      <button
+                        onClick={() => handleViewDetail(o.id || o.ID)}
+                        className="font-mono text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg hover:bg-blue-100 hover:text-blue-900 transition-colors cursor-pointer"
+                        title="点击查看订单详情"
+                      >
+                        {o.opportunity_no || '-'}
+                      </button>
                     </td>
                     <td className="px-5 py-3.5 font-medium text-gray-800">{o.customer_name || '-'}</td>
                     <td className="px-5 py-3.5 max-w-[200px] truncate text-gray-600" title={o.opportunity_name}>{o.opportunity_name || '-'}</td>
@@ -365,11 +556,15 @@ export default function WBSServicePage() {
                     <td className="px-5 py-3.5 text-xs text-gray-400">{new Date(o.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="px-5 py-3.5 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => handleExport(o.id)} title="导出Excel"
+                        <button onClick={() => handleViewDetail(o.id || o.ID)} title="查看详情"
+                          className="p-2 rounded-xl hover:bg-blue-50 text-blue-600 transition-colors">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleExport(o.id || o.ID)} title="导出Excel"
                           className="p-2 rounded-xl hover:bg-green-50 text-green-600 transition-colors">
                           <Download className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setDeleteConfirm(o.id)} title="删除"
+                        <button onClick={() => setDeleteConfirm(o.id || o.ID)} title="删除"
                           className="p-2 rounded-xl hover:bg-red-50 text-red-400 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -436,6 +631,48 @@ export default function WBSServicePage() {
   }
 
   // === CREATE MODE ===
+  // Bug 1: Compute paginated product list
+  const currentProductList = (() => {
+    const products = getFilteredProducts();
+    let filtered = products.filter(p => p.major_category === productMajorCategory);
+    // Apply sub-category filter
+    if (productMajorCategory === '自有产品') {
+      filtered = filtered.filter(p => p.sub_category === productSubCategory);
+    }
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(p => p.name.toLowerCase().includes(term) || p.code.toLowerCase().includes(term));
+    }
+    // Apply arch filter
+    if (filterArch !== 'all') {
+      filtered = filtered.filter(p => p.arch === filterArch || !p.arch);
+    }
+    return filtered;
+  })();
+
+  const productTotalPages = Math.ceil(currentProductList.length / ITEMS_PER_PAGE);
+  const paginatedProducts = currentProductList.slice((productPage - 1) * ITEMS_PER_PAGE, productPage * ITEMS_PER_PAGE);
+
+  // Bug 2: Compute paginated service list
+  const currentServiceList = (() => {
+    const services = getFilteredServices();
+    let filtered = services.filter(s => s.major_category === serviceMajorCategory);
+    // Apply sub-category filter using series
+    if (serviceSubCategory) {
+      filtered = filtered.filter(s => (s.series || s.sub_category) === serviceSubCategory);
+    }
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(s => s.name.toLowerCase().includes(term) || s.code.toLowerCase().includes(term));
+    }
+    return filtered;
+  })();
+
+  const serviceTotalPages = Math.ceil(currentServiceList.length / ITEMS_PER_PAGE);
+  const paginatedServices = currentServiceList.slice((servicePage - 1) * ITEMS_PER_PAGE, servicePage * ITEMS_PER_PAGE);
+
   return (
     <div className="h-full overflow-auto p-6 bg-gradient-to-br from-slate-50 to-blue-50/30">
       <div className="max-w-6xl mx-auto">
@@ -648,7 +885,7 @@ export default function WBSServicePage() {
               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
                 <span className="text-xs text-gray-500 font-medium">选择环境:</span>
                 {environments.map((env, idx) => (
-                  <button key={idx} onClick={() => setActiveEnvIndex(idx)}
+                  <button key={idx} onClick={() => { setActiveEnvIndex(idx); setProductPage(1); }}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all ${
                       activeEnvIndex === idx ? 'bg-primary-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}>
@@ -673,102 +910,126 @@ export default function WBSServicePage() {
 
               {/* Major category tabs: 自有产品 vs 云平台增值软件及服务 */}
               <div className="flex items-center gap-1 mb-3">
-                {['自有产品', '云平台增值软件及服务'].map(cat => (
-                  <button key={cat} onClick={() => { setProductMajorCategory(cat); setProductSubCategory(null); setSearchTerm(''); }}
+                {PRODUCT_MAJOR_TABS.map(cat => (
+                  <button key={cat.id} onClick={() => { setProductMajorCategory(cat.id); setProductSubCategory(cat.id === '自有产品' ? OWN_PRODUCT_SUB_CATEGORIES[0] : null); setSearchTerm(''); setProductPage(1); }}
                     className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
-                      productMajorCategory === cat ? 'bg-primary-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      productMajorCategory === cat.id ? 'bg-primary-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}>
-                    {cat}
+                    {cat.label}
                   </button>
                 ))}
               </div>
 
-              {/* Sub-category tabs */}
-              <div className="flex items-center gap-0.5 mb-3 overflow-x-auto border-b border-gray-100 pb-1">
-                {productSubCategoriesMeta.map(cat => {
-                  const activeCat = productSubCategory || productSubCategoriesMeta[0]?.id;
-                  return (
-                    <button key={cat.id} onClick={() => { setProductSubCategory(cat.id); setSearchTerm(''); }}
+              {/* Sub-category tabs (Bug 1: fixed categories for 自有产品) */}
+              {productMajorCategory === '自有产品' && (
+                <div className="flex items-center gap-0.5 mb-3 overflow-x-auto border-b border-gray-100 pb-1">
+                  {OWN_PRODUCT_SUB_CATEGORIES.map(cat => (
+                    <button key={cat} onClick={() => { setProductSubCategory(cat); setSearchTerm(''); setProductPage(1); }}
                       className={`relative whitespace-nowrap px-3 py-2 text-xs font-medium transition-all ${
-                        activeCat === cat.id ? 'text-primary-700' : 'text-gray-500 hover:text-gray-700'
+                        productSubCategory === cat ? 'text-primary-700' : 'text-gray-500 hover:text-gray-700'
                       }`}>
-                      {cat.label}
-                      {activeCat === cat.id && <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-primary-600 rounded-full" />}
+                      {cat}
+                      {productSubCategory === cat && <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-primary-600 rounded-full" />}
                     </button>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {/* Filters */}
               <div className="flex items-center gap-3 mb-3">
                 <div className="relative flex-1 max-w-sm">
                   <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
                   <input className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 placeholder:text-gray-300"
-                    placeholder="搜索产品名称或编码..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    placeholder="搜索产品名称或编码..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setProductPage(1); }} />
                 </div>
-                <GlassSelect value={filterArch} onChange={setFilterArch}
+                <GlassSelect value={filterArch} onChange={v => { setFilterArch(v); setProductPage(1); }}
                   options={[{ value: 'all', label: '全部架构' }, { value: 'X86', label: 'X86' }, { value: 'Arm', label: 'Arm' }]}
                   placeholder="架构" className="w-36" />
+                <span className="text-xs text-gray-400">共 {currentProductList.length} 项</span>
               </div>
 
-              {/* Product list */}
-              <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                {getFilteredProducts()
-                  .filter(p => p.major_category === productMajorCategory)
-                  .filter(p => p.sub_category === (productSubCategory || productSubCategoriesMeta[0]?.id))
-                  .filter(p => !searchTerm || p.name.includes(searchTerm) || p.code.includes(searchTerm))
-                  .filter(p => filterArch === 'all' || p.arch === filterArch || !p.arch)
-                  .map(p => {
-                    const envProducts = selectedProducts[activeEnvIndex] || {};
-                    const qty = envProducts[p.id] || 0;
-                    return (
-                      <div key={p.id}
-                        className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
-                          qty > 0 ? 'border-primary-200 bg-primary-50/50 shadow-sm' : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
-                        }`}
-                        onMouseEnter={e => {
-                          if (p.description) {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setHoverTooltip({ visible: true, content: p.description, title: p.name, x: rect.left + 16, y: rect.bottom + 4 });
-                          }
-                        }}
-                        onMouseLeave={() => setHoverTooltip(prev => ({ ...prev, visible: false }))}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="font-medium text-sm text-gray-800 truncate">{p.name}</span>
-                            {p.arch && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${p.arch === 'X86' ? 'bg-blue-100/80 text-blue-700' : 'bg-purple-100/80 text-purple-700'}`}>{p.arch}</span>}
-                            {p.module && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">{p.module}</span>}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-gray-400">
-                            <span className="font-mono">{p.code}</span>
-                            <span>|</span>
-                            <span>{p.unit}</span>
-                            {p.description && <span className="text-primary-400 cursor-help">i</span>}
-                          </div>
+              {/* Product list with pagination (Bug 1) */}
+              <div className="space-y-2">
+                {paginatedProducts.map(p => {
+                  const envProducts = selectedProducts[activeEnvIndex] || {};
+                  const qty = envProducts[p.id] || 0;
+                  return (
+                    <div key={p.id}
+                      className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
+                        qty > 0 ? 'border-primary-200 bg-primary-50/50 shadow-sm' : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-medium text-sm text-gray-800 truncate">{p.name}</span>
+                          {p.arch && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${p.arch === 'X86' ? 'bg-blue-100/80 text-blue-700' : 'bg-purple-100/80 text-purple-700'}`}>{p.arch}</span>}
+                          {p.module && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">{p.module}</span>}
+                          {/* Bug 3: Info icon instead of hover tooltip */}
+                          <InfoPopup title={p.name} content={p.description} />
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setSelectedProducts(prev => ({
-                            ...prev, [activeEnvIndex]: { ...(prev[activeEnvIndex] || {}), [p.id]: Math.max(0, qty - 1) }
-                          }))} className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-lg font-light">-</button>
-                          <input type="number" min="0"
-                            className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 focus:ring-2 focus:ring-primary-200"
-                            value={qty}
-                            onChange={e => setSelectedProducts(prev => ({
-                              ...prev, [activeEnvIndex]: { ...(prev[activeEnvIndex] || {}), [p.id]: Math.max(0, parseInt(e.target.value) || 0) }
-                            }))} />
-                          <button onClick={() => setSelectedProducts(prev => ({
-                            ...prev, [activeEnvIndex]: { ...(prev[activeEnvIndex] || {}), [p.id]: qty + 1 }
-                          }))} className="w-7 h-7 rounded-lg border border-primary-200/80 bg-primary-50/80 flex items-center justify-center text-primary-600 hover:bg-primary-100 text-lg font-light">+</button>
+                        <div className="flex items-center gap-3 text-xs text-gray-400">
+                          <span className="font-mono">{p.code}</span>
+                          <span>|</span>
+                          <span>{p.unit}</span>
+                          {p.series && <span className="text-gray-300">| {p.series}</span>}
                         </div>
                       </div>
-                    );
-                  })}
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setSelectedProducts(prev => ({
+                          ...prev, [activeEnvIndex]: { ...(prev[activeEnvIndex] || {}), [p.id]: Math.max(0, qty - 1) }
+                        }))} className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-lg font-light">-</button>
+                        <input type="number" min="0"
+                          className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 focus:ring-2 focus:ring-primary-200"
+                          value={qty}
+                          onChange={e => setSelectedProducts(prev => ({
+                            ...prev, [activeEnvIndex]: { ...(prev[activeEnvIndex] || {}), [p.id]: Math.max(0, parseInt(e.target.value) || 0) }
+                          }))} />
+                        <button onClick={() => setSelectedProducts(prev => ({
+                          ...prev, [activeEnvIndex]: { ...(prev[activeEnvIndex] || {}), [p.id]: qty + 1 }
+                        }))} className="w-7 h-7 rounded-lg border border-primary-200/80 bg-primary-50/80 flex items-center justify-center text-primary-600 hover:bg-primary-100 text-lg font-light">+</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {paginatedProducts.length === 0 && (
+                  <div className="text-center py-8 text-gray-400 text-sm">
+                    当前筛选条件下无产品
+                  </div>
+                )}
               </div>
+
+              {/* Product pagination (Bug 1) */}
+              {productTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                  <span className="text-xs text-gray-500">第 {(productPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(productPage * ITEMS_PER_PAGE, currentProductList.length)} 项，共 {currentProductList.length} 项</span>
+                  <div className="flex items-center gap-1">
+                    <button disabled={productPage <= 1} onClick={() => setProductPage(p => p - 1)}
+                      className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200/80 bg-white/80 disabled:opacity-40 hover:bg-gray-50 transition-all">
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    {Array.from({ length: Math.min(productTotalPages, 5) }, (_, i) => {
+                      let pn;
+                      if (productTotalPages <= 5) pn = i + 1;
+                      else if (productPage <= 3) pn = i + 1;
+                      else if (productPage >= productTotalPages - 2) pn = productTotalPages - 4 + i;
+                      else pn = productPage - 2 + i;
+                      return (
+                        <button key={pn} onClick={() => setProductPage(pn)}
+                          className={`w-7 h-7 text-xs rounded-lg transition-all ${productPage === pn ? 'bg-primary-600 text-white' : 'border border-gray-200/80 bg-white/80 hover:bg-gray-50 text-gray-600'}`}
+                        >{pn}</button>
+                      );
+                    })}
+                    <button disabled={productPage >= productTotalPages} onClick={() => setProductPage(p => p + 1)}
+                      className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200/80 bg-white/80 disabled:opacity-40 hover:bg-gray-50 transition-all">
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Step 3: Services */}
+          {/* Step 3: Services (Bug 2: Fix filtering logic) */}
           {step === 3 && (
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -779,58 +1040,65 @@ export default function WBSServicePage() {
                 <span className="text-sm text-purple-600 font-medium bg-purple-50/80 px-3 py-1 rounded-xl">已选 {selectedServiceCount} 项</span>
               </div>
 
-              {/* Service category tabs */}
-              <div className="flex items-center gap-0.5 mb-4 border-b border-gray-100 overflow-x-auto">
-                {SERVICE_CATEGORIES_META.map(cat => {
-                  const count = catalog.services.filter(s => (s.sub_category || s.major_category) === cat.id).length;
-                  if (count === 0) return null;
-                  const activeCat = serviceCategory || SERVICE_CATEGORIES_META[0].id;
-                  const selected = Object.entries(selectedServices).filter(([id, qty]) => qty > 0 && (catalog.services.find(s => s.id === id)?.sub_category || catalog.services.find(s => s.id === id)?.major_category) === cat.id).length;
-                  return (
-                    <button key={cat.id} onClick={() => { setServiceCategory(cat.id); setSearchTerm(''); }}
-                      className={`relative whitespace-nowrap px-3.5 py-2.5 text-xs font-medium transition-all ${
-                        activeCat === cat.id ? 'text-purple-700' : 'text-gray-500 hover:text-gray-700'
-                      }`}>
-                      <span>{cat.label}</span>
-                      {selected > 0 && <span className="ml-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{selected}</span>}
-                      {activeCat === cat.id && <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 rounded-full" />}
-                    </button>
-                  );
-                })}
+              {/* Service major category: 自有产品 vs 云平台增值 */}
+              <div className="flex items-center gap-1 mb-3">
+                {['自有产品', '云平台增值软件及服务'].map(cat => (
+                  <button key={cat} onClick={() => { setServiceMajorCategory(cat); setSearchTerm(''); setServicePage(1); }}
+                    className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
+                      serviceMajorCategory === cat ? 'bg-purple-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}>
+                    {cat === '自有产品' ? '自有产品服务' : '云平台增值服务'}
+                  </button>
+                ))}
               </div>
+
+              {/* Service sub-category tabs (derived from series) */}
+              {serviceSubCategoriesMeta.length > 0 && (
+                <div className="flex items-center gap-0.5 mb-3 overflow-x-auto border-b border-gray-100 pb-1">
+                  {serviceSubCategoriesMeta.map(cat => (
+                    <button key={cat.id} onClick={() => { setServiceSubCategory(cat.id); setSearchTerm(''); setServicePage(1); }}
+                      className={`relative whitespace-nowrap px-3 py-2 text-xs font-medium transition-all ${
+                        serviceSubCategory === cat.id ? 'text-purple-700' : 'text-gray-500 hover:text-gray-700'
+                      }`}>
+                      {cat.label}
+                      {serviceSubCategory === cat.id && <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-purple-600 rounded-full" />}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Search */}
-              <div className="relative max-w-sm mb-3">
-                <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
-                <input className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 placeholder:text-gray-300"
-                  placeholder="搜索服务名称或编码..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <div className="flex items-center gap-3 mb-3">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-300" />
+                  <input className="w-full pl-10 pr-3.5 py-2.5 bg-white/70 border border-gray-200/60 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-primary-200 placeholder:text-gray-300"
+                    placeholder="搜索服务名称或编码..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setServicePage(1); }} />
+                </div>
+                <span className="text-xs text-gray-400">共 {currentServiceList.length} 项</span>
               </div>
 
-              {/* Service list */}
-              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-                {catalog.services
-                  .filter(s => (s.sub_category || s.major_category) === (serviceCategory || SERVICE_CATEGORIES_META[0].id))
-                  .filter(s => !searchTerm || s.name.includes(searchTerm) || s.code.includes(searchTerm))
-                  .map(s => (
+              {/* Service list with pagination */}
+              <div className="space-y-2">
+                {paginatedServices.map(s => {
+                  const qty = selectedServices[s.id] || 0;
+                  return (
                     <div key={s.id}
                       className={`relative flex items-center gap-4 p-3.5 rounded-xl border transition-all ${
-                        selectedServices[s.id] > 0 ? 'border-purple-200 bg-purple-50/50 shadow-sm' : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
+                        qty > 0 ? 'border-purple-200 bg-purple-50/50 shadow-sm' : 'border-gray-100/80 bg-white/50 hover:bg-white/80 hover:border-gray-200'
                       }`}
-                      onMouseEnter={e => {
-                        if (s.description) {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setHoverTooltip({ visible: true, content: s.description, title: s.name, x: rect.left + 16, y: rect.bottom + 4 });
-                        }
-                      }}
-                      onMouseLeave={() => setHoverTooltip(prev => ({ ...prev, visible: false }))}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm text-gray-800 mb-0.5 truncate">{s.name}</div>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-medium text-sm text-gray-800 truncate">{s.name}</span>
+                          {s.arch && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${s.arch === 'X86' ? 'bg-blue-100/80 text-blue-700' : 'bg-purple-100/80 text-purple-700'}`}>{s.arch}</span>}
+                          {/* Bug 3: Info icon */}
+                          <InfoPopup title={s.name} content={s.description} />
+                        </div>
                         <div className="flex items-center gap-3 text-xs text-gray-400">
                           <span className="font-mono">{s.code}</span>
                           <span>|</span>
                           <span>{s.unit}</span>
-                          {s.description && <span className="text-purple-400 cursor-help">i</span>}
+                          {s.series && <span className="text-gray-300">| {s.series}</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -838,14 +1106,49 @@ export default function WBSServicePage() {
                           className="w-7 h-7 rounded-lg border border-gray-200/80 bg-white/80 flex items-center justify-center text-gray-500 hover:bg-gray-50 text-lg font-light">-</button>
                         <input type="number" min="0"
                           className="w-14 px-2 py-1.5 border border-gray-200/60 rounded-xl text-center text-sm bg-white/70 focus:ring-2 focus:ring-purple-200"
-                          value={selectedServices[s.id] || 0}
+                          value={qty}
                           onChange={e => setSelectedServices(prev => ({ ...prev, [s.id]: Math.max(0, parseInt(e.target.value) || 0) }))} />
                         <button onClick={() => setSelectedServices(prev => ({ ...prev, [s.id]: (prev[s.id] || 0) + 1 }))}
                           className="w-7 h-7 rounded-lg border border-purple-200/80 bg-purple-50/80 flex items-center justify-center text-purple-600 hover:bg-purple-100 text-lg font-light">+</button>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
+                {paginatedServices.length === 0 && (
+                  <div className="text-center py-8 text-gray-400 text-sm">
+                    当前筛选条件下无服务项
+                  </div>
+                )}
               </div>
+
+              {/* Service pagination */}
+              {serviceTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                  <span className="text-xs text-gray-500">第 {(servicePage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(servicePage * ITEMS_PER_PAGE, currentServiceList.length)} 项，共 {currentServiceList.length} 项</span>
+                  <div className="flex items-center gap-1">
+                    <button disabled={servicePage <= 1} onClick={() => setServicePage(p => p - 1)}
+                      className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200/80 bg-white/80 disabled:opacity-40 hover:bg-gray-50 transition-all">
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    {Array.from({ length: Math.min(serviceTotalPages, 5) }, (_, i) => {
+                      let pn;
+                      if (serviceTotalPages <= 5) pn = i + 1;
+                      else if (servicePage <= 3) pn = i + 1;
+                      else if (servicePage >= serviceTotalPages - 2) pn = serviceTotalPages - 4 + i;
+                      else pn = servicePage - 2 + i;
+                      return (
+                        <button key={pn} onClick={() => setServicePage(pn)}
+                          className={`w-7 h-7 text-xs rounded-lg transition-all ${servicePage === pn ? 'bg-purple-600 text-white' : 'border border-gray-200/80 bg-white/80 hover:bg-gray-50 text-gray-600'}`}
+                        >{pn}</button>
+                      );
+                    })}
+                    <button disabled={servicePage >= serviceTotalPages} onClick={() => setServicePage(p => p + 1)}
+                      className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200/80 bg-white/80 disabled:opacity-40 hover:bg-gray-50 transition-all">
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1020,17 +1323,6 @@ export default function WBSServicePage() {
             )}
           </div>
         </div>
-
-        {/* Floating tooltip portal */}
-        {hoverTooltip.visible && (
-          <div className="fixed z-[9999] pointer-events-none"
-            style={{ left: hoverTooltip.x, top: hoverTooltip.y, maxWidth: '420px' }}>
-            <div className="p-3 bg-gray-900/95 backdrop-blur-md text-white text-xs rounded-xl shadow-2xl leading-relaxed border border-white/10">
-              <div className="font-medium text-white/90 mb-1 text-sm">{hoverTooltip.title}</div>
-              <div className="text-white/80">{hoverTooltip.content}</div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
