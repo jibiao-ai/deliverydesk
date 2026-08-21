@@ -378,20 +378,44 @@ type WBSOrder struct {
 	Remarks         string         `gorm:"type:text" json:"remarks"`
 }
 
+// WBSEnvironment represents a deployment environment in a WBS order
+type WBSEnvironment struct {
+	ID             uint           `gorm:"primarykey" json:"id"`
+	CreatedAt      time.Time      `json:"created_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	OrderID        uint           `gorm:"index;not null" json:"order_id"`
+	EnvIndex       int            `json:"env_index"`                         // 环境序号 (1,2,3...)
+	EnvName        string         `gorm:"size:128" json:"env_name"`          // 环境名称 e.g. 第1套环境
+	EnvType        string         `gorm:"size:32" json:"env_type"`           // 新建/扩容/纯服务/升级
+	ProductVersion string         `gorm:"size:64" json:"product_version"`    // ECF V612 / ECNF V612 / ECF V611 / ECNF V611
+	LicenseType    string         `gorm:"size:128" json:"license_type"`      // 正式（软件永久许可）/正式（软件订阅）/预交付/POC
+	ArchType       string         `gorm:"size:32" json:"arch_type"`          // X86/Arm
+	SLA            string         `gorm:"size:32" json:"sla"`                // 7x24/5x9
+	MaintenanceYr  int            `json:"maintenance_yr"`                    // 维保年限
+	ChangeLogo     bool           `json:"change_logo"`                       // 是否更换logo
+}
+
 // WBSOrderItem represents a line item in a WBS order
 type WBSOrderItem struct {
-	ID       uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time     `json:"created_at"`
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-	OrderID  uint           `gorm:"index;not null" json:"order_id"`
-	ItemType string         `gorm:"size:32" json:"item_type"`  // product / service
-	ItemID   string         `gorm:"size:64" json:"item_id"`    // catalog item ID
-	Name     string         `gorm:"size:512" json:"name"`      // 产品/服务名称
-	Code     string         `gorm:"size:64" json:"code"`       // 产品/服务编码
-	Quantity int            `json:"quantity"`
-	Unit     string         `gorm:"size:32" json:"unit"`
-	Category string         `gorm:"size:128" json:"category"`  // 产品大类/服务类别
-	Arch     string         `gorm:"size:32" json:"arch"`       // X86/Arm (products only)
+	OrderID   uint           `gorm:"index;not null" json:"order_id"`
+	EnvID     uint           `gorm:"index" json:"env_id"`          // 所属环境ID (0=全局/服务)
+	ItemType  string         `gorm:"size:32" json:"item_type"`     // product / service
+	ItemID    string         `gorm:"size:128" json:"item_id"`      // catalog item ID
+	Name      string         `gorm:"size:512" json:"name"`         // 产品/服务名称
+	Code      string         `gorm:"size:64" json:"code"`          // 产品/服务编码
+	Quantity  int            `json:"quantity"`
+	Unit      string         `gorm:"size:32" json:"unit"`
+	Category  string         `gorm:"size:128" json:"category"`     // 产品大类/服务类别
+	SubCategory string       `gorm:"size:256" json:"sub_category"` // 子类别
+	Series    string         `gorm:"size:256" json:"series"`       // 产品系列
+	Arch      string         `gorm:"size:32" json:"arch"`          // X86/Arm (products only)
+	Module    string         `gorm:"size:64" json:"module"`        // 基础模块/可选模块
+	BuyProduct string        `gorm:"size:128" json:"buy_product"`  // 购买产品
+	LicenseType string       `gorm:"size:128" json:"license_type"` // license授权类型
+	Description string       `gorm:"type:text" json:"description"` // 产品说明
 }
 
 // KBHistory records knowledge base generation history
