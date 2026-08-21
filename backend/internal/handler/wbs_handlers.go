@@ -380,6 +380,7 @@ func (h *WBSHandler) GetOrder(c *gin.Context) {
 
 // ExportExcel generates and returns an Excel file for the WBS order
 // following the standard WBS V3 template structure with 13 sheets
+// Bug 5: ALL catalog items are included in export; selected items show quantity, others show 0
 func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	id := c.Param("id")
 	var order model.WBSOrder
@@ -394,43 +395,90 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	var items []model.WBSOrderItem
 	repository.DB.Where("order_id = ?", order.ID).Find(&items)
 
-	// Separate by type and environment
-	var productItems, serviceItems []model.WBSOrderItem
-	envItemsMap := make(map[uint][]model.WBSOrderItem) // envID -> items
+	// Build a map of selected item code -> quantity (for lookup)
+	selectedQtyMap := make(map[string]int)       // code -> total quantity
+	selectedEnvQtyMap := make(map[string]map[uint]int) // code -> envID -> quantity
 	for _, item := range items {
-		if item.ItemType == "product" {
-			productItems = append(productItems, item)
-		} else {
-			serviceItems = append(serviceItems, item)
+		selectedQtyMap[item.Code] += item.Quantity
+		if item.EnvID > 0 {
+			if selectedEnvQtyMap[item.Code] == nil {
+				selectedEnvQtyMap[item.Code] = make(map[uint]int)
+			}
+			selectedEnvQtyMap[item.Code][item.EnvID] += item.Quantity
 		}
+	}
+
+	// Load full catalog
+	allCatalogItems, err := loadCatalog()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "加载产品目录失败"})
+		return
+	}
+
+	// Determine version filter from environments
+	versionFilter := ""
+	if len(envs) > 0 {
+		pv := envs[0].ProductVersion
+		if strings.Contains(pv, "V612") {
+			versionFilter = "V621"
+		} else if strings.Contains(pv, "V611") {
+			versionFilter = "V611"
+		}
+	}
+
+	// Filter catalog by version and separate into categories
+	type catalogRow struct {
+		Name          string
+		Code          string
+		MajorCategory string
+		SubCategory   string
+		Series        string
+		Description   string
+		Module        string
+		Arch          string
+		BuyProduct    string
+		LicenseType   string
+		Unit          string
+		ItemType      string
+		Quantity      int // from selected items
+	}
+
+	var allOwnProducts, allVasProducts, allStandardServices, allAdvancedServices []catalogRow
+	for _, ci := range allCatalogItems {
+		if versionFilter != "" && ci.Version != versionFilter {
+			continue
+		}
+		qty := selectedQtyMap[ci.Code]
+		row := catalogRow{
+			Name: ci.Name, Code: ci.Code, MajorCategory: ci.MajorCategory,
+			SubCategory: ci.SubCategory, Series: ci.Series, Description: ci.Description,
+			Module: ci.Module, Arch: ci.Arch, BuyProduct: ci.BuyProduct,
+			LicenseType: ci.LicenseType, Unit: ci.Unit, ItemType: ci.ItemType,
+			Quantity: qty,
+		}
+		if ci.ItemType == "product" {
+			if ci.MajorCategory == "云平台增值软件及服务" {
+				allVasProducts = append(allVasProducts, row)
+			} else {
+				allOwnProducts = append(allOwnProducts, row)
+			}
+		} else {
+			// Services: standard vs advanced based on series
+			isAdvanced := strings.Contains(ci.Series, "高级") || strings.Contains(ci.Series, "增值") ||
+				strings.Contains(ci.Series, "人天") || strings.Contains(ci.Series, "培训")
+			if isAdvanced {
+				allAdvancedServices = append(allAdvancedServices, row)
+			} else {
+				allStandardServices = append(allStandardServices, row)
+			}
+		}
+	}
+
+	// Also keep the per-environment item maps for sheet 5 and 7
+	envItemsMap := make(map[uint][]model.WBSOrderItem)
+	for _, item := range items {
 		if item.EnvID > 0 {
 			envItemsMap[item.EnvID] = append(envItemsMap[item.EnvID], item)
-		}
-	}
-
-	// Separate own products vs value-added products
-	var ownProducts, vasProducts []model.WBSOrderItem
-	for _, p := range productItems {
-		if p.Category == "云平台增值软件及服务" || p.SubCategory == "云平台增值软件及服务" {
-			vasProducts = append(vasProducts, p)
-		} else {
-			ownProducts = append(ownProducts, p)
-		}
-	}
-
-	// Separate standard services (自有产品标准服务) and advanced services (自有产品高级服务)
-	var standardServices, advancedServices []model.WBSOrderItem
-	advancedCategories := map[string]bool{
-		"产品高级服务": true,
-		"增值运维服务": true,
-		"服务人天":    true,
-		"培训服务":    true,
-	}
-	for _, s := range serviceItems {
-		if advancedCategories[s.Category] {
-			advancedServices = append(advancedServices, s)
-		} else {
-			standardServices = append(standardServices, s)
 		}
 	}
 
@@ -555,11 +603,13 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 		f.SetCellStyle(sheetQ1, cell, cell, headerStyle)
 	}
 	row := 2
-	for _, item := range standardServices {
-		f.SetCellValue(sheetQ1, fmt.Sprintf("A%d", row), item.Category)
+	for _, item := range allStandardServices {
+		f.SetCellValue(sheetQ1, fmt.Sprintf("A%d", row), item.Series)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("B%d", row), item.Name)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("C%d", row), item.Code)
-		f.SetCellValue(sheetQ1, fmt.Sprintf("D%d", row), item.Quantity)
+		if item.Quantity > 0 {
+			f.SetCellValue(sheetQ1, fmt.Sprintf("D%d", row), item.Quantity)
+		}
 		f.SetCellValue(sheetQ1, fmt.Sprintf("E%d", row), item.Unit)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
@@ -583,11 +633,13 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 		f.SetCellStyle(sheetQ2, cell, cell, headerStyle)
 	}
 	row = 2
-	for _, item := range advancedServices {
-		f.SetCellValue(sheetQ2, fmt.Sprintf("A%d", row), item.Category)
+	for _, item := range allAdvancedServices {
+		f.SetCellValue(sheetQ2, fmt.Sprintf("A%d", row), item.Series)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("B%d", row), item.Name)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("C%d", row), item.Code)
-		f.SetCellValue(sheetQ2, fmt.Sprintf("D%d", row), item.Quantity)
+		if item.Quantity > 0 {
+			f.SetCellValue(sheetQ2, fmt.Sprintf("D%d", row), item.Quantity)
+		}
 		f.SetCellValue(sheetQ2, fmt.Sprintf("E%d", row), item.Unit)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
@@ -612,12 +664,14 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 		f.SetCellStyle(sheetQ3, cell, cell, headerStyle)
 	}
 	row = 2
-	for _, item := range vasProducts {
+	for _, item := range allVasProducts {
 		f.SetCellValue(sheetQ3, fmt.Sprintf("A%d", row), item.SubCategory)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("B%d", row), item.Series)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("C%d", row), item.Name)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("D%d", row), item.Code)
-		f.SetCellValue(sheetQ3, fmt.Sprintf("E%d", row), item.Quantity)
+		if item.Quantity > 0 {
+			f.SetCellValue(sheetQ3, fmt.Sprintf("E%d", row), item.Quantity)
+		}
 		f.SetCellValue(sheetQ3, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
 			f.SetCellStyle(sheetQ3, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
@@ -647,18 +701,20 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	f.SetColWidth(sheetProd, "K", "K", 10)
 
 	row = 2
-	for _, item := range ownProducts {
+	for _, item := range allOwnProducts {
 		f.SetCellValue(sheetProd, fmt.Sprintf("A%d", row), item.SubCategory)
 		f.SetCellValue(sheetProd, fmt.Sprintf("B%d", row), item.Series)
 		f.SetCellValue(sheetProd, fmt.Sprintf("C%d", row), item.Name)
 		f.SetCellValue(sheetProd, fmt.Sprintf("D%d", row), item.Code)
-		f.SetCellValue(sheetProd, fmt.Sprintf("E%d", row), item.Quantity)
+		if item.Quantity > 0 {
+			f.SetCellValue(sheetProd, fmt.Sprintf("E%d", row), item.Quantity)
+		}
 		f.SetCellValue(sheetProd, fmt.Sprintf("F%d", row), item.Description)
 		f.SetCellValue(sheetProd, fmt.Sprintf("G%d", row), item.Module)
 		f.SetCellValue(sheetProd, fmt.Sprintf("H%d", row), item.Arch)
 		f.SetCellValue(sheetProd, fmt.Sprintf("I%d", row), item.BuyProduct)
 		f.SetCellValue(sheetProd, fmt.Sprintf("J%d", row), item.LicenseType)
-		f.SetCellValue(sheetProd, fmt.Sprintf("K%d", row), item.Category)
+		f.SetCellValue(sheetProd, fmt.Sprintf("K%d", row), item.MajorCategory)
 		for col := 'A'; col <= 'K'; col++ {
 			f.SetCellStyle(sheetProd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
 		}
@@ -748,12 +804,14 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 		f.SetCellStyle(sheetVAS, cell, cell, headerStyle)
 	}
 	row = 2
-	for _, item := range vasProducts {
+	for _, item := range allVasProducts {
 		f.SetCellValue(sheetVAS, fmt.Sprintf("A%d", row), item.SubCategory)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("B%d", row), item.Series)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("C%d", row), item.Name)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("D%d", row), item.Code)
-		f.SetCellValue(sheetVAS, fmt.Sprintf("E%d", row), item.Quantity)
+		if item.Quantity > 0 {
+			f.SetCellValue(sheetVAS, fmt.Sprintf("E%d", row), item.Quantity)
+		}
 		f.SetCellValue(sheetVAS, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
 			f.SetCellStyle(sheetVAS, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
@@ -963,14 +1021,16 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	}
 	// Third-party products are the 云平台增值软件及服务 items that have non-ECF/ECNF buy_product
 	row = 3
-	for _, item := range vasProducts {
+	for _, item := range allVasProducts {
 		bp := item.BuyProduct
 		if bp != "" && !strings.Contains(bp, "ECF") && !strings.Contains(bp, "ECNF") {
 			f.SetCellValue(sheet3rd, fmt.Sprintf("A%d", row), item.SubCategory)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("B%d", row), item.Series)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("C%d", row), item.Name)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("D%d", row), item.Code)
-			f.SetCellValue(sheet3rd, fmt.Sprintf("E%d", row), item.Quantity)
+			if item.Quantity > 0 {
+				f.SetCellValue(sheet3rd, fmt.Sprintf("E%d", row), item.Quantity)
+			}
 			f.SetCellValue(sheet3rd, fmt.Sprintf("F%d", row), item.Description)
 			for col := 'A'; col <= 'F'; col++ {
 				f.SetCellStyle(sheet3rd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
