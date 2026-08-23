@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, Bot, Zap, Globe, Cpu, ArrowRight, Plus } from 'lucide-react';
-import { getDashboard } from '../services/api';
+import { MessageSquare, Bot, Zap, Globe, Cpu, ArrowRight, Plus, Clock, FolderKanban, Monitor } from 'lucide-react';
+import { getDashboard, getWorktimeStats } from '../services/api';
 import useStore from '../store/useStore';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [worktimeData, setWorktimeData] = useState(null);
+  const [projectData, setProjectData] = useState(null);
+  const [opsEnvData, setOpsEnvData] = useState(null);
   const setActivePage = useStore((s) => s.setActivePage);
+  const token = useStore((s) => s.token);
 
-  useEffect(() => { loadDashboard(); }, []);
+  useEffect(() => { loadDashboard(); loadSummaryData(); }, []);
 
   const loadDashboard = async () => {
     try {
@@ -16,6 +20,35 @@ export default function DashboardPage() {
       if (res.code === 0) setStats(res.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  };
+
+  const loadSummaryData = async () => {
+    // Fetch worktime stats (current month)
+    try {
+      const res = await getWorktimeStats({ period: 'month' });
+      if (res?.code === 0) setWorktimeData(res.data);
+    } catch (e) { /* ignore */ }
+
+    // Fetch project stats
+    try {
+      const now = new Date();
+      const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const endDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+      const res = await fetch(`/api/projects/stats?period_type=month&start_date=${startDate}&end_date=${endDate}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.code === 0) setProjectData(data.data);
+    } catch (e) { /* ignore */ }
+
+    // Fetch ops-env stats
+    try {
+      const res = await fetch('/api/ops-env/stats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.code === 0) setOpsEnvData(data.data);
+    } catch (e) { /* ignore */ }
   };
 
   const statCards = [
@@ -120,6 +153,66 @@ export default function DashboardPage() {
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        {/* ── Summary Row: Worktime / Project / Ops Environment ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+          {/* Worktime Summary */}
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setActivePage('worktime')}
+          >
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <Clock className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-800">工时管理</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {worktimeData ? (
+                  <>本月 {worktimeData.total_hours?.toFixed(1) || 0} 小时 · {worktimeData.total_man_days?.toFixed(1) || 0} 人天</>
+                ) : '加载中...'}
+              </p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-300" />
+          </div>
+
+          {/* Project Summary */}
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setActivePage('projects')}
+          >
+            <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
+              <FolderKanban className="w-5 h-5 text-purple-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-800">项目管理</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {projectData ? (
+                  <>{projectData.total_projects || projectData.project_count || 0} 个项目 · {projectData.total_issues || projectData.issue_count || 0} 个任务</>
+                ) : '加载中...'}
+              </p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-300" />
+          </div>
+
+          {/* Ops Environment Summary */}
+          <div
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setActivePage('ops-env')}
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <Monitor className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-800">运维环境</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {opsEnvData ? (
+                  <>{opsEnvData.total || opsEnvData.status_counts?.reduce((a, b) => a + (b.count || 0), 0) || 0} 个环境 · {opsEnvData.total_nodes || 0} 节点</>
+                ) : '加载中...'}
+              </p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-300" />
           </div>
         </div>
       </div>
