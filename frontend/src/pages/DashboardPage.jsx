@@ -100,7 +100,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm">
+          {/* 最近对话 - 1/3 */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-gray-800">最近对话</h2>
@@ -110,14 +111,14 @@ export default function DashboardPage() {
                 查看全部 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-4">
               {recentConvs.length > 0 ? (
                 <div className="space-y-1">
-                  {recentConvs.slice(0, 6).map((conv, i) => (
+                  {recentConvs.slice(0, 5).map((conv, i) => (
                     <div key={conv.id || i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
                       onClick={() => setActivePage('chat')}>
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-primary-50">
-                        <MessageSquare className="w-4 h-4 text-primary-600" />
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-primary-50">
+                        <MessageSquare className="w-3.5 h-3.5 text-primary-600" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-700 truncate group-hover:text-primary-600">{conv.title || `对话 ${i + 1}`}</p>
@@ -127,20 +128,24 @@ export default function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-10">
-                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <MessageSquare className="w-6 h-6 text-gray-300" />
+                <div className="text-center py-8">
+                  <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <MessageSquare className="w-5 h-5 text-gray-300" />
                   </div>
-                  <p className="text-sm text-gray-400 mb-3">暂无对话记录</p>
+                  <p className="text-xs text-gray-400 mb-2">暂无对话记录</p>
                   <button onClick={() => setActivePage('chat')}
-                    className="text-sm font-medium px-4 py-2 rounded-lg text-white bg-primary-600">
-                    <span className="flex items-center gap-1.5"><Plus className="w-4 h-4" /> 开始第一个对话</span>
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg text-white bg-primary-600">
+                    <span className="flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> 开始对话</span>
                   </button>
                 </div>
               )}
             </div>
           </div>
 
+          {/* 活动热力图 - 1/3 */}
+          <ActivityHeatmap data={heatmapData} />
+
+          {/* 快捷操作 - 1/3 */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
             <div className="px-6 py-4 border-b border-gray-100">
               <h2 className="text-base font-semibold text-gray-800">快捷操作</h2>
@@ -166,9 +171,6 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-
-        {/* ── Activity Heatmap ── */}
-        <ActivityHeatmap data={heatmapData} />
 
         {/* ── Summary Row: Worktime / Project / Ops Environment ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -235,7 +237,7 @@ export default function DashboardPage() {
 }
 
 // ============================================================================
-// Activity Heatmap — GitHub-style contribution heatmap
+// Activity Heatmap — GitHub-style contribution heatmap (compact, fits 1/3 grid)
 // ============================================================================
 
 function ActivityHeatmap({ data }) {
@@ -243,11 +245,10 @@ function ActivityHeatmap({ data }) {
   const countMap = {};
   (data || []).forEach(d => { countMap[d.date] = d.count; });
 
-  // Generate past 26 weeks (approx 6 months)
-  const weeks = 26;
+  // Generate past 14 weeks (~3 months) to fit 1/3 column width
+  const weeks = 14;
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0=Sun
-  // Start from the Sunday of (today - 26 weeks)
   const startDate = new Date(today);
   startDate.setDate(today.getDate() - (weeks * 7) - dayOfWeek);
 
@@ -263,7 +264,7 @@ function ActivityHeatmap({ data }) {
   // Group into columns (weeks)
   const columns = [];
   let col = [];
-  cells.forEach((cell, i) => {
+  cells.forEach((cell) => {
     col.push(cell);
     if (col.length === 7) {
       columns.push(col);
@@ -299,44 +300,41 @@ function ActivityHeatmap({ data }) {
   const totalActivity = cells.reduce((sum, c) => sum + c.count, 0);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col">
+      <div className="px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <Flame className="w-4 h-4 text-orange-500" />
-          <div>
-            <h2 className="text-base font-semibold text-gray-800">活动热力图</h2>
-            <p className="text-sm text-gray-400 mt-0.5">近 6 个月对话活动记录</p>
-          </div>
+          <h2 className="text-base font-semibold text-gray-800">活动热力图</h2>
         </div>
-        <span className="text-xs text-gray-400">共 {totalActivity} 次对话</span>
+        <p className="text-xs text-gray-400 mt-1">近 3 个月 · 共 {totalActivity} 次对话</p>
       </div>
-      <div className="p-5 overflow-x-auto">
+      <div className="p-4 flex-1 flex flex-col justify-center overflow-hidden">
         {/* Month labels */}
-        <div className="flex mb-1 ml-8">
+        <div className="flex mb-1 ml-6 gap-0">
           {monthLabels.map((m, i) => (
-            <span key={i} className="text-[10px] text-gray-400" style={{ position: 'relative', left: `${m.index * 14}px` }}>
+            <span key={i} className="text-[9px] text-gray-400 absolute" style={{ marginLeft: `${m.index * 12}px` }}>
               {m.label}
             </span>
           ))}
         </div>
-        <div className="flex gap-[2px]">
+        <div className="flex gap-[2px] mt-4">
           {/* Day labels */}
-          <div className="flex flex-col gap-[2px] mr-1 justify-between py-[1px]">
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]">一</span>
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]">三</span>
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]">五</span>
-            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
+          <div className="flex flex-col gap-[2px] mr-0.5 justify-between">
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]"></span>
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]">一</span>
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]"></span>
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]">三</span>
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]"></span>
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]">五</span>
+            <span className="text-[8px] text-gray-400 h-[10px] leading-[10px]"></span>
           </div>
           {/* Grid */}
           {columns.map((week, wi) => (
             <div key={wi} className="flex flex-col gap-[2px]">
-              {week.map((cell, di) => (
+              {week.map((cell) => (
                 <div
                   key={cell.date}
-                  className={`w-[12px] h-[12px] rounded-[2px] ${getColor(cell.count)} transition-colors`}
+                  className={`w-[10px] h-[10px] rounded-[2px] ${getColor(cell.count)} transition-colors`}
                   title={`${cell.date}: ${cell.count} 次对话`}
                 />
               ))}
@@ -344,14 +342,14 @@ function ActivityHeatmap({ data }) {
           ))}
         </div>
         {/* Legend */}
-        <div className="flex items-center gap-2 mt-3 justify-end">
-          <span className="text-[10px] text-gray-400">少</span>
-          <div className="w-[12px] h-[12px] rounded-[2px] bg-gray-100" />
-          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-200" />
-          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-300" />
-          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-500" />
-          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-700" />
-          <span className="text-[10px] text-gray-400">多</span>
+        <div className="flex items-center gap-1.5 mt-3 justify-end">
+          <span className="text-[9px] text-gray-400">少</span>
+          <div className="w-[10px] h-[10px] rounded-[2px] bg-gray-100" />
+          <div className="w-[10px] h-[10px] rounded-[2px] bg-primary-200" />
+          <div className="w-[10px] h-[10px] rounded-[2px] bg-primary-300" />
+          <div className="w-[10px] h-[10px] rounded-[2px] bg-primary-500" />
+          <div className="w-[10px] h-[10px] rounded-[2px] bg-primary-700" />
+          <span className="text-[9px] text-gray-400">多</span>
         </div>
       </div>
     </div>
