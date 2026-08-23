@@ -513,6 +513,12 @@ func seedCommunitySkills(db *gorm.DB) {
 			ToolDefs:    `[{"name":"k8s_cluster_status","description":"获取K8S集群状态"},{"name":"k8s_pod_diagnosis","description":"诊断Pod异常"},{"name":"k8s_resource_check","description":"检查资源配额"},{"name":"k8s_yaml_generator","description":"生成K8S YAML配置"}]`,
 		},
 		{
+			Name:        "k8s-fault-diagnosis",
+			Description: "K8S 故障排查技能 - 基于 awesome-openclaw-skills 社区技能，提供 Kubernetes 故障智能诊断、根因分析、修复方案推荐。覆盖 Pod/Node/Network/Storage/ETCD 等故障场景。",
+			Category:    "k8s-fault-diagnosis",
+			ToolDefs:    `[{"name":"k8s_fault_pod_diagnosis","description":"Pod故障诊断"},{"name":"k8s_fault_node_diagnosis","description":"Node故障诊断"},{"name":"k8s_fault_network_diagnosis","description":"网络故障诊断"},{"name":"k8s_fault_storage_diagnosis","description":"存储故障诊断"},{"name":"k8s_fault_etcd_diagnosis","description":"ETCD故障诊断"},{"name":"k8s_fault_repair_guide","description":"故障修复指导"}]`,
+		},
+		{
 			Name:        "openstack-operator",
 			Description: "OpenStack 云平台管理技能 - 提供 OpenStack 部署运维、计算/网络/存储服务管理、故障排查、性能调优等操作指导",
 			Category:    "openstack-operator",
@@ -523,6 +529,18 @@ func seedCommunitySkills(db *gorm.DB) {
 			Description: "SRE 站点可靠性工程技能 - 提供 SLO/SLI 定义、故障管理、容量规划、变更管理、自动化运维、监控告警、事件响应等 SRE 实践指导",
 			Category:    "sre-operator",
 			ToolDefs:    `[{"name":"sre_slo_calculator","description":"计算SLO和错误预算"},{"name":"sre_incident_response","description":"引导事件响应流程"},{"name":"sre_capacity_planning","description":"容量规划和预测"},{"name":"sre_change_risk","description":"变更风险评估"},{"name":"sre_toil_analysis","description":"Toil分析和自动化消除"},{"name":"sre_postmortem_guide","description":"事后复盘引导"}]`,
+		},
+		{
+			Name:        "biz-deviation-table",
+			Description: "商务偏离表编写技能 - 基于 OpenBidKit 标书编写工具，智能生成招标文件商务偏离表。自动分析招标文件商务条款，对比投标方实际能力，生成合规的偏离/响应说明。",
+			Category:    "biz-deviation-table",
+			ToolDefs:    `[{"name":"bid_biz_clause_extract","description":"提取招标文件商务条款"},{"name":"bid_biz_deviation_analyze","description":"分析商务条款偏离情况"},{"name":"bid_biz_table_generate","description":"生成商务偏离表"},{"name":"bid_biz_compliance_check","description":"检查否决性条款合规"},{"name":"bid_biz_optimize","description":"偏离项优化建议"}]`,
+		},
+		{
+			Name:        "tech-point-response",
+			Description: "技术要点响应技能 - 基于 BidAgent 投标智能体，自动分析招标文件技术要求并生成逐条响应方案。支持技术参数对标、方案编写、合规性检查、评分优化。",
+			Category:    "tech-point-response",
+			ToolDefs:    `[{"name":"bid_tech_requirement_extract","description":"提取技术要求点"},{"name":"bid_tech_response_generate","description":"生成技术响应方案"},{"name":"bid_tech_param_compare","description":"技术参数对比"},{"name":"bid_tech_compliance_check","description":"技术响应完整性检查"},{"name":"bid_tech_score_optimize","description":"评分优化建议"},{"name":"bid_tech_advantage_highlight","description":"技术优势亮点标注"}]`,
 		},
 	}
 	for _, def := range communityDefs {

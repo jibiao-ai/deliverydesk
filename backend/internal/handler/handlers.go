@@ -471,6 +471,85 @@ func (h *Handler) AbortStream(c *gin.Context) {
 	}
 }
 
+// ==================== Chat File Upload ====================
+
+// UploadChatFile handles file uploads for chat conversations.
+// Files are stored on disk and metadata is returned for the frontend to reference.
+func (h *Handler) UploadChatFile(c *gin.Context) {
+	convID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+	userID := c.GetUint("user_id")
+
+	// Verify conversation belongs to user
+	var conv model.Conversation
+	if err := repository.DB.Where("id = ? AND user_id = ?", convID, userID).First(&conv).Error; err != nil {
+		response.BadRequest(c, "conversation not found")
+		return
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		response.BadRequest(c, "invalid multipart form")
+		return
+	}
+
+	files := form.File["files"]
+	if len(files) == 0 {
+		response.BadRequest(c, "no files provided")
+		return
+	}
+
+	uploadDir := fmt.Sprintf("uploads/chat/%d", convID)
+	os.MkdirAll(uploadDir, 0755)
+
+	type FileInfo struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Size int64  `json:"size"`
+		Type string `json:"type"`
+	}
+
+	var uploaded []FileInfo
+	for _, file := range files {
+		if file.Size > 10*1024*1024 { // 10MB limit per file
+			continue
+		}
+		fileName := filepath.Base(file.Filename)
+		filePath := fmt.Sprintf("%s/%d_%s", uploadDir, time.Now().UnixMilli(), fileName)
+
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			logger.Log.Warnf("Failed to save chat file: %v", err)
+			continue
+		}
+
+		// Determine file type
+		ext := strings.ToLower(filepath.Ext(fileName))
+		fileType := "file"
+		switch ext {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+			fileType = "image"
+		case ".pdf":
+			fileType = "pdf"
+		case ".doc", ".docx":
+			fileType = "word"
+		case ".xls", ".xlsx":
+			fileType = "excel"
+		case ".md", ".txt":
+			fileType = "text"
+		}
+
+		uploaded = append(uploaded, FileInfo{
+			Name: fileName,
+			Path: filePath,
+			Size: file.Size,
+			Type: fileType,
+		})
+	}
+
+	recordOperationLog(c, "conversation", "upload_file", uint(convID), "",
+		fmt.Sprintf("上传 %d 个文件到对话 #%d", len(uploaded), convID))
+	response.Success(c, gin.H{"files": uploaded})
+}
+
 // ==================== Skills ====================
 
 func (h *Handler) ListSkills(c *gin.Context) {

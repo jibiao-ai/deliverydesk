@@ -134,6 +134,16 @@ export const sendMessageStream = (conversationId, content, { onToken, onDone, on
 export const abortStream = (conversationId) =>
   api.post(`/conversations/${conversationId}/abort`);
 
+// Upload files to a conversation for chat context
+export const uploadChatFiles = (conversationId, files) => {
+  const formData = new FormData();
+  files.forEach(file => formData.append('files', file));
+  return api.post(`/conversations/${conversationId}/upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  });
+};
+
 // Skills
 export const getSkills = () => api.get('/skills');
 export const getSkill = (id) => api.get(`/skills/${id}`);
