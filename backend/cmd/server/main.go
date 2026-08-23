@@ -117,6 +117,7 @@ func main() {
 		{
 			auth.GET("/profile", h.GetProfile)
 			auth.GET("/dashboard", h.GetDashboard)
+			auth.GET("/dashboard/heatmap", h.GetDashboardHeatmap)
 
 			// Agents
 			auth.GET("/agents", h.ListAgents)

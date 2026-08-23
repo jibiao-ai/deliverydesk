@@ -144,6 +144,17 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// GetDashboardHeatmap returns daily activity counts for the past 6 months
+func (h *Handler) GetDashboardHeatmap(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	data, err := h.chatService.GetActivityHeatmap(userID)
+	if err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	response.Success(c, data)
+}
+
 // ==================== Agents ====================
 
 func (h *Handler) ListAgents(c *gin.Context) {

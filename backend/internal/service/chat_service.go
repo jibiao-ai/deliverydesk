@@ -104,6 +104,38 @@ func (s *ChatService) GetDashboardStats(userID uint) (map[string]interface{}, er
 	}, nil
 }
 
+// GetActivityHeatmap returns daily message counts for the past 6 months
+func (s *ChatService) GetActivityHeatmap(userID uint) ([]map[string]interface{}, error) {
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
+
+	type DailyCount struct {
+		Date  string `json:"date"`
+		Count int    `json:"count"`
+	}
+
+	var results []DailyCount
+	err := repository.DB.Model(&model.Message{}).
+		Select("DATE(messages.created_at) as date, COUNT(*) as count").
+		Joins("JOIN conversations ON conversations.id = messages.conversation_id").
+		Where("conversations.user_id = ? AND messages.created_at >= ?", userID, sixMonthsAgo).
+		Group("DATE(messages.created_at)").
+		Order("date ASC").
+		Find(&results).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]map[string]interface{}, len(results))
+	for i, r := range results {
+		data[i] = map[string]interface{}{
+			"date":  r.Date,
+			"count": r.Count,
+		}
+	}
+	return data, nil
+}
+
 // ==================== Agents ====================
 
 func (s *ChatService) GetAgents() ([]model.Agent, error) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, Bot, Zap, Globe, Cpu, ArrowRight, Plus, Clock, FolderKanban, Monitor } from 'lucide-react';
+import { MessageSquare, Bot, Zap, Globe, Cpu, ArrowRight, Plus, Clock, FolderKanban, Monitor, Flame } from 'lucide-react';
 import { getDashboard, getWorktimeStats } from '../services/api';
 import useStore from '../store/useStore';
 
@@ -9,10 +9,11 @@ export default function DashboardPage() {
   const [worktimeData, setWorktimeData] = useState(null);
   const [projectData, setProjectData] = useState(null);
   const [opsEnvData, setOpsEnvData] = useState(null);
+  const [heatmapData, setHeatmapData] = useState([]);
   const setActivePage = useStore((s) => s.setActivePage);
   const token = useStore((s) => s.token);
 
-  useEffect(() => { loadDashboard(); loadSummaryData(); }, []);
+  useEffect(() => { loadDashboard(); loadSummaryData(); loadHeatmap(); }, []);
 
   const loadDashboard = async () => {
     try {
@@ -20,6 +21,16 @@ export default function DashboardPage() {
       if (res.code === 0) setStats(res.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  };
+
+  const loadHeatmap = async () => {
+    try {
+      const res = await fetch('/api/dashboard/heatmap', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.code === 0) setHeatmapData(data.data || []);
+    } catch (e) { /* ignore */ }
   };
 
   const loadSummaryData = async () => {
@@ -156,6 +167,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* ── Activity Heatmap ── */}
+        <ActivityHeatmap data={heatmapData} />
+
         {/* ── Summary Row: Worktime / Project / Ops Environment ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
           {/* Worktime Summary */}
@@ -170,7 +184,7 @@ export default function DashboardPage() {
               <p className="text-sm font-semibold text-gray-800">工时管理</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {worktimeData ? (
-                  <>本月 {worktimeData.total_hours?.toFixed(1) || 0} 小时 · {worktimeData.total_man_days?.toFixed(1) || 0} 人天</>
+                  <>总计 {worktimeData.total?.total_hours?.toFixed(1) || 0} 小时 · {worktimeData.total?.total_man_days?.toFixed(1) || 0} 人天</>
                 ) : '加载中...'}
               </p>
             </div>
@@ -214,6 +228,130 @@ export default function DashboardPage() {
             </div>
             <ArrowRight className="w-4 h-4 text-gray-300" />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Activity Heatmap — GitHub-style contribution heatmap
+// ============================================================================
+
+function ActivityHeatmap({ data }) {
+  // Build a map of date -> count
+  const countMap = {};
+  (data || []).forEach(d => { countMap[d.date] = d.count; });
+
+  // Generate past 26 weeks (approx 6 months)
+  const weeks = 26;
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=Sun
+  // Start from the Sunday of (today - 26 weeks)
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - (weeks * 7) - dayOfWeek);
+
+  const totalDays = weeks * 7 + dayOfWeek + 1;
+  const cells = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    cells.push({ date: dateStr, count: countMap[dateStr] || 0, day: d.getDay() });
+  }
+
+  // Group into columns (weeks)
+  const columns = [];
+  let col = [];
+  cells.forEach((cell, i) => {
+    col.push(cell);
+    if (col.length === 7) {
+      columns.push(col);
+      col = [];
+    }
+  });
+  if (col.length > 0) columns.push(col);
+
+  // Color intensity
+  const maxCount = Math.max(1, ...cells.map(c => c.count));
+  const getColor = (count) => {
+    if (count === 0) return 'bg-gray-100';
+    const ratio = count / maxCount;
+    if (ratio <= 0.25) return 'bg-primary-200';
+    if (ratio <= 0.5) return 'bg-primary-300';
+    if (ratio <= 0.75) return 'bg-primary-500';
+    return 'bg-primary-700';
+  };
+
+  // Month labels
+  const monthLabels = [];
+  let lastMonth = -1;
+  columns.forEach((week, i) => {
+    const firstDay = week[0];
+    const month = new Date(firstDay.date).getMonth();
+    if (month !== lastMonth) {
+      lastMonth = month;
+      monthLabels.push({ index: i, label: `${month + 1}月` });
+    }
+  });
+
+  // Total activity
+  const totalActivity = cells.reduce((sum, c) => sum + c.count, 0);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Flame className="w-4 h-4 text-orange-500" />
+          <div>
+            <h2 className="text-base font-semibold text-gray-800">活动热力图</h2>
+            <p className="text-sm text-gray-400 mt-0.5">近 6 个月对话活动记录</p>
+          </div>
+        </div>
+        <span className="text-xs text-gray-400">共 {totalActivity} 次对话</span>
+      </div>
+      <div className="p-5 overflow-x-auto">
+        {/* Month labels */}
+        <div className="flex mb-1 ml-8">
+          {monthLabels.map((m, i) => (
+            <span key={i} className="text-[10px] text-gray-400" style={{ position: 'relative', left: `${m.index * 14}px` }}>
+              {m.label}
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-[2px]">
+          {/* Day labels */}
+          <div className="flex flex-col gap-[2px] mr-1 justify-between py-[1px]">
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]">一</span>
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]">三</span>
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]">五</span>
+            <span className="text-[9px] text-gray-400 h-[12px] leading-[12px]"></span>
+          </div>
+          {/* Grid */}
+          {columns.map((week, wi) => (
+            <div key={wi} className="flex flex-col gap-[2px]">
+              {week.map((cell, di) => (
+                <div
+                  key={cell.date}
+                  className={`w-[12px] h-[12px] rounded-[2px] ${getColor(cell.count)} transition-colors`}
+                  title={`${cell.date}: ${cell.count} 次对话`}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+        {/* Legend */}
+        <div className="flex items-center gap-2 mt-3 justify-end">
+          <span className="text-[10px] text-gray-400">少</span>
+          <div className="w-[12px] h-[12px] rounded-[2px] bg-gray-100" />
+          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-200" />
+          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-300" />
+          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-500" />
+          <div className="w-[12px] h-[12px] rounded-[2px] bg-primary-700" />
+          <span className="text-[10px] text-gray-400">多</span>
         </div>
       </div>
     </div>
