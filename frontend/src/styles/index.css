@@ -443,6 +443,74 @@ body {
   border-color: #334155 !important;
 }
 
+/* ========== Dark Mode: ChatPage (EmptyState & Right Panel) ========== */
+
+/* EmptyState gradient: from-gray-50 to-white */
+[data-theme="dark"] .from-gray-50 {
+  --tw-gradient-from: #0f172a !important;
+}
+
+[data-theme="dark"] .to-white {
+  --tw-gradient-to: #1e293b !important;
+}
+
+/* Conversation list item highlight bg-blue-50/50 */
+[data-theme="dark"] .bg-blue-50\/50 {
+  background-color: rgba(59, 130, 246, 0.08) !important;
+}
+
+/* Conversation item border-gray-50 */
+[data-theme="dark"] .border-gray-50 {
+  border-color: #1e293b !important;
+}
+
+/* Tab active borders */
+[data-theme="dark"] .border-primary-200 {
+  border-color: rgba(81, 60, 200, 0.4) !important;
+}
+
+[data-theme="dark"] .border-primary-300 {
+  border-color: rgba(81, 60, 200, 0.5) !important;
+}
+
+/* Sidebar border-l for active conversation */
+[data-theme="dark"] .border-l-primary-500 {
+  border-left-color: #7c3aed !important;
+}
+
+/* AgentSelector dropdown in dark */
+[data-theme="dark"] .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Primary-100 background for icons */
+[data-theme="dark"] .bg-primary-100 {
+  background-color: rgba(81, 60, 200, 0.2) !important;
+}
+
+/* Orange/blue badge backgrounds in agent list */
+[data-theme="dark"] .bg-orange-100 {
+  background-color: rgba(251, 146, 60, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+
+/* hover:bg-red-50 for close buttons */
+[data-theme="dark"] .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+/* hover:bg-primary-50 for icon buttons in input area */
+[data-theme="dark"] .hover\:border-primary-300:hover {
+  border-color: rgba(81, 60, 200, 0.5) !important;
+}
+
+[data-theme="dark"] .hover\:bg-primary-50:hover {
+  background-color: rgba(81, 60, 200, 0.15) !important;
+}
+
 /* ========== End Dark Theme Overrides ========== */
 
 ::-webkit-scrollbar {
