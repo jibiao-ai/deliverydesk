@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Bot, User, Plus, Trash2, Loader2, X, Square, MessageSquare,
   Zap, ChevronDown, PanelLeftClose, PanelLeftOpen, Sparkles, Check,
+  Mic, MicOff, Paperclip, FileText, Image as ImageIcon, File,
 } from 'lucide-react';
 import {
   getAgents, getConversations, createConversation, deleteConversation,
-  getMessages, sendMessageStream, abortStream,
+  getMessages, sendMessageStream, abortStream, uploadChatFiles,
 } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -261,12 +262,29 @@ export default function ChatPage() {
   }, []);
 
   // ─── Send message (streaming) ────────────────────────────────────────
-  const handleSend = useCallback((tabIdx) => {
+  const handleSend = useCallback(async (tabIdx, attachedFiles = []) => {
     const tab = tabs[tabIdx];
-    if (!tab || !tab.input.trim() || tab.streaming) return;
+    if (!tab || (!tab.input.trim() && attachedFiles.length === 0) || tab.streaming) return;
 
-    const content = tab.input.trim();
     const convId = tab.convId;
+    let content = tab.input.trim();
+
+    // Upload attached files first if any
+    if (attachedFiles.length > 0) {
+      try {
+        const res = await uploadChatFiles(convId, attachedFiles);
+        if (res?.data?.files?.length > 0) {
+          const fileNames = res.data.files.map(f => f.name).join(', ');
+          content = content
+            ? `${content}\n\n[附件: ${fileNames}]`
+            : `[附件: ${fileNames}]`;
+        }
+      } catch (err) {
+        toast.error('文件上传失败');
+      }
+    }
+
+    if (!content) return;
 
     // Add user message to UI immediately
     const userMsg = { id: Date.now(), role: 'user', content };
@@ -529,6 +547,10 @@ export default function ChatPage() {
 function ChatPanel({ tab, tabIdx, updateTab, handleSend, handleAbort }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const recognitionRef = useRef(null);
 
   // Auto-scroll on new messages or streaming content
   useEffect(() => {
@@ -543,7 +565,8 @@ function ChatPanel({ tab, tabIdx, updateTab, handleSend, handleAbort }) {
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend(tabIdx);
+      handleSend(tabIdx, attachments);
+      setAttachments([]);
     }
   };
 
@@ -608,13 +631,117 @@ function ChatPanel({ tab, tabIdx, updateTab, handleSend, handleAbort }) {
 
       {/* Input Area */}
       <div className="px-6 py-3 border-t border-gray-100 bg-white">
-        <div className="flex items-end gap-3">
+        {/* Attachments preview */}
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {attachments.map((file, i) => (
+              <div key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-600">
+                {file.type.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> : <FileText className="w-3.5 h-3.5 text-orange-500" />}
+                <span className="max-w-[120px] truncate">{file.name}</span>
+                <span className="text-gray-400">({(file.size / 1024).toFixed(0)}KB)</span>
+                <button onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))} className="p-0.5 rounded hover:bg-red-50 hover:text-red-500 transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-end gap-2">
+          {/* Document upload button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-primary-600 hover:border-primary-300 hover:bg-primary-50 transition-colors flex-shrink-0"
+            title="上传文档/图片"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files);
+              if (files.length > 0) {
+                setAttachments(prev => [...prev, ...files]);
+                toast.success(`已添加 ${files.length} 个文件`);
+              }
+              e.target.value = '';
+            }}
+          />
+
+          {/* Voice input button */}
+          <button
+            onClick={() => {
+              if (isRecording) {
+                // Stop recording
+                if (recognitionRef.current) {
+                  recognitionRef.current.stop();
+                }
+                setIsRecording(false);
+              } else {
+                // Start recording
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                  toast.error('您的浏览器不支持语音识别，请使用 Chrome 浏览器');
+                  return;
+                }
+                const recognition = new SpeechRecognition();
+                recognition.lang = 'zh-CN';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognitionRef.current = recognition;
+
+                let finalTranscript = tab.input || '';
+
+                recognition.onresult = (event) => {
+                  let interim = '';
+                  for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                      finalTranscript += transcript;
+                    } else {
+                      interim += transcript;
+                    }
+                  }
+                  updateTab(tabIdx, { input: finalTranscript + interim });
+                };
+
+                recognition.onerror = (event) => {
+                  if (event.error !== 'aborted') {
+                    toast.error('语音识别出错: ' + event.error);
+                  }
+                  setIsRecording(false);
+                };
+
+                recognition.onend = () => {
+                  setIsRecording(false);
+                };
+
+                recognition.start();
+                setIsRecording(true);
+                toast.success('开始语音输入，请说话...');
+              }
+            }}
+            className={`p-2.5 rounded-xl border flex-shrink-0 transition-colors ${
+              isRecording
+                ? 'border-red-300 bg-red-50 text-red-500 animate-pulse'
+                : 'border-gray-200 text-gray-400 hover:text-primary-600 hover:border-primary-300 hover:bg-primary-50'
+            }`}
+            title={isRecording ? '点击停止语音输入' : '语音输入'}
+          >
+            {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
+
+          {/* Text input */}
           <textarea
             ref={inputRef}
             value={tab.input}
             onChange={(e) => updateTab(tabIdx, { input: e.target.value })}
             onKeyDown={onKeyDown}
-            placeholder={tab.streaming ? '智能体正在回复中...' : '输入消息，Enter 发送，Shift+Enter 换行'}
+            placeholder={isRecording ? '正在语音输入...' : tab.streaming ? '智能体正在回复中...' : '输入消息，Enter 发送，Shift+Enter 换行'}
             disabled={false}
             rows={1}
             className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 outline-none resize-none max-h-32 min-h-[42px] transition-colors"
@@ -638,13 +765,21 @@ function ChatPanel({ tab, tabIdx, updateTab, handleSend, handleAbort }) {
           ) : (
             /* ── SEND Button ── */
             <button
-              onClick={() => handleSend(tabIdx)}
-              disabled={!tab.input.trim()}
+              onClick={() => { handleSend(tabIdx, attachments); setAttachments([]); }}
+              disabled={!tab.input.trim() && attachments.length === 0}
               className="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2 text-sm font-medium shadow-sm min-w-[80px] justify-center"
             >
               <Send className="w-4 h-4" />
               <span>发送</span>
             </button>
+          )}
+        </div>
+        {/* Input hints */}
+        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
+          <span className="flex items-center gap-1"><Paperclip className="w-3 h-3" /> 支持上传文档/图片</span>
+          <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> 支持语音输入</span>
+          {attachments.length > 0 && (
+            <span className="text-primary-500 font-medium">{attachments.length} 个文件待发送</span>
           )}
         </div>
       </div>

@@ -135,6 +135,7 @@ func main() {
 			auth.POST("/conversations/:id/messages", h.SendMessage)
 			auth.POST("/conversations/:id/messages/stream", h.SendMessageStream)
 			auth.POST("/conversations/:id/abort", h.AbortStream)
+			auth.POST("/conversations/:id/upload", h.UploadChatFile)
 
 			// Skills
 			auth.GET("/skills", h.ListSkills)
