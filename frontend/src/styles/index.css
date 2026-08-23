@@ -15,17 +15,270 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ========== Light Theme (default) ========== */
 [data-theme="light"] {
   --bg-main: #ffffff;
-  --bg-sidebar: #513CC8;
+  --bg-sidebar: #ffffff;
+  --bg-surface: #f9fafb;
+  --bg-card: #ffffff;
+  --bg-hover: #f3f4f6;
+  --bg-active: #f0ecfb;
+  --border-color: #e5e7eb;
+  --border-light: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-tertiary: #6b7280;
+  --text-muted: #9ca3af;
   --text-main: #1a1a2e;
 }
 
+/* ========== Dark Theme ========== */
 [data-theme="dark"] {
-  --bg-main: #0f0e17;
-  --bg-sidebar: #1e40af;
+  --bg-main: #0f172a;
+  --bg-sidebar: #1e293b;
+  --bg-surface: #1e293b;
+  --bg-card: #1e293b;
+  --bg-hover: #334155;
+  --bg-active: #312e81;
+  --border-color: #334155;
+  --border-light: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #e2e8f0;
+  --text-tertiary: #94a3b8;
+  --text-muted: #64748b;
   --text-main: #e8e6f0;
 }
+
+/* ========== Dark Theme Global Overrides ========== */
+/* These override Tailwind utility classes globally when dark theme is active */
+
+/* Smooth theme transition */
+[data-theme="dark"] *,
+[data-theme="light"] * {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+}
+
+[data-theme="dark"] body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* Background overrides */
+[data-theme="dark"] .bg-white {
+  background-color: #1e293b !important;
+}
+
+[data-theme="dark"] .bg-gray-50 {
+  background-color: #0f172a !important;
+}
+
+[data-theme="dark"] .bg-gray-100 {
+  background-color: #1e293b !important;
+}
+
+[data-theme="dark"] .bg-gray-200 {
+  background-color: #334155 !important;
+}
+
+/* Text overrides */
+[data-theme="dark"] .text-gray-800 {
+  color: #f1f5f9 !important;
+}
+
+[data-theme="dark"] .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .text-gray-400 {
+  color: #64748b !important;
+}
+
+[data-theme="dark"] .text-gray-300 {
+  color: #475569 !important;
+}
+
+[data-theme="dark"] .text-gray-900 {
+  color: #f8fafc !important;
+}
+
+/* Border overrides */
+[data-theme="dark"] .border-gray-200 {
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .border-gray-100 {
+  border-color: #1e293b !important;
+}
+
+[data-theme="dark"] .border-gray-300 {
+  border-color: #475569 !important;
+}
+
+/* Hover backgrounds */
+[data-theme="dark"] .hover\:bg-gray-50:hover {
+  background-color: #334155 !important;
+}
+
+[data-theme="dark"] .hover\:bg-gray-100:hover {
+  background-color: #334155 !important;
+}
+
+/* Input/form overrides */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background-color: #0f172a !important;
+  border-color: #475569 !important;
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+[data-theme="dark"] input:focus,
+[data-theme="dark"] textarea:focus,
+[data-theme="dark"] select:focus {
+  border-color: #7757db !important;
+}
+
+/* Table overrides */
+[data-theme="dark"] table {
+  border-color: #334155;
+}
+
+[data-theme="dark"] th {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] td {
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .bg-gray-50 th,
+[data-theme="dark"] thead.bg-gray-50 {
+  background-color: #0f172a !important;
+}
+
+/* Card-like surfaces with accent colors */
+[data-theme="dark"] .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.1) !important; }
+[data-theme="dark"] .bg-blue-50 { background-color: rgba(59, 130, 246, 0.1) !important; }
+[data-theme="dark"] .bg-green-50 { background-color: rgba(34, 197, 94, 0.1) !important; }
+[data-theme="dark"] .bg-amber-50 { background-color: rgba(245, 158, 11, 0.1) !important; }
+[data-theme="dark"] .bg-red-50 { background-color: rgba(239, 68, 68, 0.1) !important; }
+[data-theme="dark"] .bg-purple-50 { background-color: rgba(168, 85, 247, 0.1) !important; }
+[data-theme="dark"] .bg-green-100 { background-color: rgba(34, 197, 94, 0.15) !important; }
+
+[data-theme="dark"] .text-indigo-700,
+[data-theme="dark"] .text-indigo-800 {
+  color: #a5b4fc !important;
+}
+
+[data-theme="dark"] .text-indigo-600 {
+  color: #818cf8 !important;
+}
+
+[data-theme="dark"] .text-blue-700,
+[data-theme="dark"] .text-blue-800 {
+  color: #93c5fd !important;
+}
+
+[data-theme="dark"] .text-green-700 {
+  color: #86efac !important;
+}
+
+[data-theme="dark"] .text-green-600 {
+  color: #4ade80 !important;
+}
+
+[data-theme="dark"] .text-amber-600,
+[data-theme="dark"] .text-amber-700 {
+  color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .text-red-700 {
+  color: #fca5a5 !important;
+}
+
+[data-theme="dark"] .text-red-500 {
+  color: #f87171 !important;
+}
+
+/* Border accent colors in dark */
+[data-theme="dark"] .border-indigo-100,
+[data-theme="dark"] .border-blue-100,
+[data-theme="dark"] .border-green-100,
+[data-theme="dark"] .border-amber-100,
+[data-theme="dark"] .border-amber-200,
+[data-theme="dark"] .border-red-100 {
+  border-color: #334155 !important;
+}
+
+/* Primary color adjustments for dark */
+[data-theme="dark"] .bg-primary-50 {
+  background-color: rgba(81, 60, 200, 0.15) !important;
+}
+
+[data-theme="dark"] .hover\:bg-primary-50:hover {
+  background-color: rgba(81, 60, 200, 0.2) !important;
+}
+
+/* Scrollbar in dark mode */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Ring/focus in dark mode */
+[data-theme="dark"] .ring-gray-300 {
+  --tw-ring-color: #475569 !important;
+}
+
+/* Shadow adjustments */
+[data-theme="dark"] .shadow-sm,
+[data-theme="dark"] .shadow,
+[data-theme="dark"] .shadow-md,
+[data-theme="dark"] .shadow-lg {
+  --tw-shadow-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Chat message dark mode */
+[data-theme="dark"] .chat-message code {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .chat-message th {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .chat-message th,
+[data-theme="dark"] .chat-message td {
+  border-color: #475569 !important;
+}
+
+[data-theme="dark"] .chat-message blockquote {
+  border-left-color: #7757db;
+  color: #94a3b8;
+}
+
+/* ========== End Dark Theme Overrides ========== */
 
 ::-webkit-scrollbar {
   width: 6px;
