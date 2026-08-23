@@ -8,14 +8,14 @@ import { useNavigate } from 'react-router-dom';
 // Menu visible to ALL users (including normal users)
 const userMenuGroups = [
   {
-    label: '交付工作台',
+    label: '\u4ea4\u4ed8\u5de5\u4f5c\u53f0',
     items: [
-      { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
-      { id: 'websites', label: '公司系统', icon: Globe },
-      { id: 'chat', label: '即时对话', icon: MessageSquare },
-      { id: 'totp', label: '双因子管理', icon: Key },
-      { id: 'kb', label: '知识库生成', icon: BookOpen },
-      { id: 'wbs', label: 'WBS服务', icon: FileSpreadsheet },
+      { id: 'dashboard', label: '\u4eea\u8868\u76d8', icon: LayoutDashboard },
+      { id: 'websites', label: '\u516c\u53f8\u7cfb\u7edf', icon: Globe },
+      { id: 'chat', label: '\u5373\u65f6\u5bf9\u8bdd', icon: MessageSquare },
+      { id: 'totp', label: '\u53cc\u56e0\u5b50\u7ba1\u7406', icon: Key },
+      { id: 'kb', label: '\u77e5\u8bc6\u5e93\u751f\u6210', icon: BookOpen },
+      { id: 'wbs', label: 'WBS\u670d\u52a1', icon: FileSpreadsheet },
     ],
   },
 ];
@@ -23,35 +23,36 @@ const userMenuGroups = [
 // Menu visible to ADMIN users only
 const adminMenuGroups = [
   {
-    label: '智能应用',
+    label: '\u667a\u80fd\u5e94\u7528',
     items: [
-      { id: 'agents', label: '智能体', icon: Bot },
-      { id: 'worktime', label: '工时管理', icon: Clock },
-      { id: 'projects', label: '项目管理', icon: FolderKanban },
-      { id: 'ops-env', label: '运维环境', icon: Monitor },
+      { id: 'agents', label: '\u667a\u80fd\u4f53', icon: Bot },
+      { id: 'worktime', label: '\u5de5\u65f6\u7ba1\u7406', icon: Clock },
+      { id: 'projects', label: '\u9879\u76ee\u7ba1\u7406', icon: FolderKanban },
+      { id: 'ops-env', label: '\u8fd0\u7ef4\u73af\u5883', icon: Monitor },
     ],
   },
   {
-    label: '配置管理',
+    label: '\u914d\u7f6e\u7ba1\u7406',
     items: [
-      { id: 'ai-models', label: '模型配置', icon: Cpu },
-      { id: 'skills', label: '技能商店', icon: Zap },
+      { id: 'ai-models', label: '\u6a21\u578b\u914d\u7f6e', icon: Cpu },
+      { id: 'skills', label: '\u6280\u80fd\u5546\u5e97', icon: Zap },
     ],
   },
   {
-    label: '系统管理',
+    label: '\u7cfb\u7edf\u7ba1\u7406',
     items: [
-      { id: 'ldap', label: 'LDAP管理', icon: Server },
-      { id: 'users', label: '用户管理', icon: Users },
-      { id: 'settings', label: '系统设置', icon: Settings },
-      { id: 'operation-logs', label: '操作日志', icon: FileText },
+      { id: 'ldap', label: 'LDAP\u7ba1\u7406', icon: Server },
+      { id: 'users', label: '\u7528\u6237\u7ba1\u7406', icon: Users },
+      { id: 'settings', label: '\u7cfb\u7edf\u8bbe\u7f6e', icon: Settings },
+      { id: 'operation-logs', label: '\u64cd\u4f5c\u65e5\u5fd7', icon: FileText },
     ],
   },
 ];
 
 export default function Sidebar() {
-  const { activePage, setActivePage, user, logout, sidebarCollapsed, toggleSidebar } = useStore();
+  const { activePage, setActivePage, user, logout, sidebarCollapsed, toggleSidebar, theme } = useStore();
   const navigate = useNavigate();
+  const isDark = theme === 'dark';
 
   const handleLogout = () => {
     logout();
@@ -62,15 +63,17 @@ export default function Sidebar() {
 
   return (
     <div
-      className={`flex flex-col transition-all duration-300 flex-shrink-0 border-r border-gray-200 ${
-        sidebarCollapsed ? 'w-16' : 'w-56'
-      }`}
-      style={{ background: '#ffffff' }}
+      className={`flex flex-col transition-all duration-300 flex-shrink-0 border-r ${
+        isDark ? 'border-slate-700' : 'border-gray-200'
+      } ${sidebarCollapsed ? 'w-16' : 'w-56'}`}
+      style={{ background: isDark ? '#1e293b' : '#ffffff' }}
     >
-      <div className="flex items-center h-16 px-3 flex-shrink-0 border-b border-gray-200">
+      <div className={`flex items-center h-16 px-3 flex-shrink-0 border-b ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
         <button
           onClick={toggleSidebar}
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors flex-shrink-0 text-gray-500 hover:text-primary-600 hover:bg-primary-50"
+          className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors flex-shrink-0 ${
+            isDark ? 'text-slate-400 hover:text-primary-400 hover:bg-slate-700' : 'text-gray-500 hover:text-primary-600 hover:bg-primary-50'
+          }`}
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -79,9 +82,9 @@ export default function Sidebar() {
             <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
               <Shield className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-semibold whitespace-nowrap text-gray-800">
-              <span className="text-gray-800">Delivery</span><span style={{ color: '#513CC8' }}>Desk</span>
-              <span className="text-xs ml-1 px-1 py-0.5 rounded" style={{ background: '#ddd5f6', color: '#513CC8', fontSize: '10px' }}>AI</span>
+            <span className="text-sm font-semibold whitespace-nowrap">
+              <span className={isDark ? 'text-slate-200' : 'text-gray-800'}>Delivery</span><span style={{ color: isDark ? '#a78bfa' : '#513CC8' }}>Desk</span>
+              <span className="text-xs ml-1 px-1 py-0.5 rounded" style={{ background: isDark ? '#312e81' : '#ddd5f6', color: isDark ? '#a78bfa' : '#513CC8', fontSize: '10px' }}>AI</span>
             </span>
           </div>
         )}
@@ -91,13 +94,13 @@ export default function Sidebar() {
         {allGroups.map((group, groupIdx) => (
           <div key={groupIdx} className="mb-1">
             {!sidebarCollapsed && (
-              <div className="px-4 pt-4 pb-1 text-xs uppercase tracking-widest font-medium text-gray-400"
+              <div className={`px-4 pt-4 pb-1 text-xs uppercase tracking-widest font-medium ${isDark ? 'text-slate-500' : 'text-gray-400'}`}
                 style={{ letterSpacing: '0.1em' }}>
                 {group.label}
               </div>
             )}
             {sidebarCollapsed && groupIdx > 0 && (
-              <div className="mx-3 my-2 border-t border-gray-100" />
+              <div className={`mx-3 my-2 border-t ${isDark ? 'border-slate-700' : 'border-gray-100'}`} />
             )}
             {group.items.map((item) => {
               const Icon = item.icon;
@@ -111,12 +114,16 @@ export default function Sidebar() {
                     sidebarCollapsed ? 'justify-center px-0' : 'px-4'
                   } cursor-pointer ${
                     isActive
-                      ? 'bg-primary-50 text-primary-600 font-medium'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? isDark
+                        ? 'bg-slate-700/60 text-primary-300 font-medium'
+                        : 'bg-primary-50 text-primary-600 font-medium'
+                      : isDark
+                        ? 'text-slate-300 hover:bg-slate-700 hover:text-slate-100'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   {isActive && !sidebarCollapsed && (
-                    <span className="absolute left-0 top-0 bottom-0 w-0.5 rounded-r bg-primary-600" />
+                    <span className={`absolute left-0 top-0 bottom-0 w-0.5 rounded-r ${isDark ? 'bg-primary-400' : 'bg-primary-600'}`} />
                   )}
                   <Icon className="w-4 h-4 flex-shrink-0" />
                   {!sidebarCollapsed && (
@@ -129,11 +136,11 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="flex-shrink-0 border-t border-gray-200 p-3">
+      <div className={`flex-shrink-0 border-t ${isDark ? 'border-slate-700' : 'border-gray-200'} p-3`}>
         {sidebarCollapsed ? (
           <button onClick={handleLogout}
-            className="w-full flex items-center justify-center h-9 rounded-lg transition-colors text-gray-400 hover:bg-red-50 hover:text-red-500"
-            title="退出登录">
+            className={`w-full flex items-center justify-center h-9 rounded-lg transition-colors ${isDark ? 'text-slate-400 hover:bg-red-900/30 hover:text-red-400' : 'text-gray-400 hover:bg-red-50 hover:text-red-500'}`}
+            title="\u9000\u51fa\u767b\u5f55">
             <LogOut className="w-4 h-4" />
           </button>
         ) : (
@@ -142,21 +149,21 @@ export default function Sidebar() {
               {(user?.username || 'U').slice(0, 1).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate text-gray-700">{user?.username || 'admin'}</p>
+              <p className={`text-sm font-medium truncate ${isDark ? 'text-slate-200' : 'text-gray-700'}`}>{user?.username || 'admin'}</p>
               <span className="text-xs px-1.5 py-0.5 rounded"
-                style={{ background: user?.role === 'admin' ? '#ddd5f6' : '#f3f4f6', color: user?.role === 'admin' ? '#513CC8' : '#6b7280', fontSize: '10px' }}>
-                {user?.role === 'admin' ? '管理员' : '用户'}
+                style={{ background: user?.role === 'admin' ? (isDark ? '#312e81' : '#ddd5f6') : (isDark ? '#334155' : '#f3f4f6'), color: user?.role === 'admin' ? (isDark ? '#a78bfa' : '#513CC8') : (isDark ? '#94a3b8' : '#6b7280'), fontSize: '10px' }}>
+                {user?.role === 'admin' ? '\u7ba1\u7406\u5458' : '\u7528\u6237'}
               </span>
             </div>
             <button onClick={handleLogout}
-              className="p-1.5 rounded-lg transition-colors flex-shrink-0 text-gray-400 hover:bg-red-50 hover:text-red-500"
-              title="退出登录">
+              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${isDark ? 'text-slate-400 hover:bg-red-900/30 hover:text-red-400' : 'text-gray-400 hover:bg-red-50 hover:text-red-500'}`}
+              title="\u9000\u51fa\u767b\u5f55">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         )}
         {!sidebarCollapsed && (
-          <p className="text-center text-[10px] text-gray-300 mt-2">v3.2.0</p>
+          <p className={`text-center text-[10px] mt-2 ${isDark ? 'text-slate-600' : 'text-gray-300'}`}>v3.2.0</p>
         )}
       </div>
     </div>

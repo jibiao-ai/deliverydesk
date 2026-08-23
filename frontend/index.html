@@ -5,6 +5,13 @@
     <link rel="icon" type="image/png" href="/logo-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DeliveryDesk - Cloud Delivery Workbench</title>
+    <script>
+      // Apply saved theme immediately to prevent flash of unstyled content
+      (function() {
+        var theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
