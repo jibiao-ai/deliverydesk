@@ -435,7 +435,7 @@ export default function OpsEnvironmentPage() {
   const pageRef = useRef(null);
 
   return (
-    <div ref={pageRef} className="h-full overflow-y-auto p-4 space-y-3" style={{ background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 50%, #f0fdf4 100%)' }}>
+    <div ref={pageRef} className="h-full overflow-y-auto p-4 space-y-3 ops-env-gradient-bg">
       {/* ── Top Stats Cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <GlassCard icon={Monitor} title="环境总数" subtitle="所有运维环境">
