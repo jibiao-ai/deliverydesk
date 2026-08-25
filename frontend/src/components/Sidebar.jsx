@@ -26,16 +26,16 @@ const adminMenuGroups = [
     label: '\u667a\u80fd\u5e94\u7528',
     items: [
       { id: 'agents', label: '\u667a\u80fd\u4f53', icon: Bot },
-      { id: 'worktime', label: '\u5de5\u65f6\u7ba1\u7406', icon: Clock },
-      { id: 'projects', label: '\u9879\u76ee\u7ba1\u7406', icon: FolderKanban },
-      { id: 'ops-env', label: '\u8fd0\u7ef4\u73af\u5883', icon: Monitor },
+      { id: 'skills', label: '\u6280\u80fd\u5546\u5e97', icon: Zap },
+      { id: 'ai-models', label: '\u6a21\u578b\u914d\u7f6e', icon: Cpu },
     ],
   },
   {
-    label: '\u914d\u7f6e\u7ba1\u7406',
+    label: '\u4e1a\u52a1\u5e94\u7528',
     items: [
-      { id: 'ai-models', label: '\u6a21\u578b\u914d\u7f6e', icon: Cpu },
-      { id: 'skills', label: '\u6280\u80fd\u5546\u5e97', icon: Zap },
+      { id: 'worktime', label: '\u5de5\u65f6\u7ba1\u7406', icon: Clock },
+      { id: 'projects', label: '\u9879\u76ee\u7ba1\u7406', icon: FolderKanban },
+      { id: 'ops-env', label: '\u8fd0\u7ef4\u7ba1\u7406', icon: Monitor },
     ],
   },
   {
