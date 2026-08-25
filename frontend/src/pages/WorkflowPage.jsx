@@ -135,34 +135,58 @@ function ZoomIndicator() {
   );
 }
 
-// ─── Node Config Modal ──────────────────────────────────────────────────────
+// ─── Node Config Modal (friendly form, no JSON/special chars) ────────────────
 function NodeConfigModal({ node, onClose, onSave }) {
   const [label, setLabel] = useState(node.data.label || '');
   const [description, setDescription] = useState(node.data.description || '');
-  const [params, setParams] = useState(node.data.params || '');
-  const [condition, setCondition] = useState(node.data.condition || '');
+  // Friendly params as key-value pairs
+  const initParams = () => {
+    if (node.data.paramList && Array.isArray(node.data.paramList)) return node.data.paramList;
+    return [{ key: '', value: '' }];
+  };
+  const [paramList, setParamList] = useState(initParams);
+  const [condField, setCondField] = useState(node.data.condField || '');
+  const [condOp, setCondOp] = useState(node.data.condOp || '>');
+  const [condValue, setCondValue] = useState(node.data.condValue || '');
+  const [inputText, setInputText] = useState(node.data.inputText || '');
+  const [sourceRef, setSourceRef] = useState(node.data.sourceRef || '上一节点输出');
 
   const typeLabels = { agent: '智能体', skill: '技能', condition: '条件判断', start: '开始节点', end: '结束节点' };
-  const typeColors = { agent: 'primary', skill: 'amber', condition: 'purple', start: 'green', end: 'red' };
-  const color = typeColors[node.type] || 'gray';
 
   const handleSave = () => {
-    onSave(node.id, { ...node.data, label, description, params, condition });
+    const newData = { ...node.data, label, description, paramList, condField, condOp, condValue, inputText, sourceRef };
+    // Build readable params string for display in run logs
+    const filledParams = paramList.filter(p => p.key);
+    if (filledParams.length > 0) {
+      newData.params = filledParams.map(p => `${p.key}=${p.value}`).join(', ');
+    }
+    if (condField) {
+      newData.condition = `${condField} ${condOp} ${condValue}`;
+    }
+    onSave(node.id, newData);
     onClose();
+  };
+
+  const addParam = () => setParamList([...paramList, { key: '', value: '' }]);
+  const removeParam = (idx) => setParamList(paramList.filter((_, i) => i !== idx));
+  const updateParam = (idx, field, val) => {
+    const list = [...paramList];
+    list[idx] = { ...list[idx], [field]: val };
+    setParamList(list);
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className={`h-1 bg-gradient-to-r from-${color}-400 to-${color}-600`} />
-        <div className="p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="h-1 bg-gradient-to-r from-primary-400 to-primary-600" />
+        <div className="p-6 overflow-y-auto flex-1">
           <div className="flex items-center gap-3 mb-5">
-            <div className={`w-10 h-10 rounded-xl bg-${color}-100 flex items-center justify-center`}>
-              {node.type === 'agent' && <Bot className={`w-5 h-5 text-${color}-600`} />}
-              {node.type === 'skill' && <Zap className={`w-5 h-5 text-${color}-600`} />}
-              {node.type === 'condition' && <GitBranch className={`w-5 h-5 text-${color}-600`} />}
-              {node.type === 'start' && <Play className={`w-5 h-5 text-${color}-600`} />}
-              {node.type === 'end' && <MessageSquare className={`w-5 h-5 text-${color}-600`} />}
+            <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
+              {node.type === 'agent' && <Bot className="w-5 h-5 text-primary-600" />}
+              {node.type === 'skill' && <Zap className="w-5 h-5 text-amber-600" />}
+              {node.type === 'condition' && <GitBranch className="w-5 h-5 text-purple-600" />}
+              {node.type === 'start' && <Play className="w-5 h-5 text-green-600" />}
+              {node.type === 'end' && <MessageSquare className="w-5 h-5 text-red-600" />}
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-800">配置{typeLabels[node.type] || '节点'}</h3>
@@ -181,60 +205,125 @@ function NodeConfigModal({ node, onClose, onSave }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">功能说明</label>
               <input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="节点功能描述"
+                placeholder="简述该节点的作用"
               />
             </div>
 
             {node.type === 'condition' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">判断条件</label>
-                <textarea
-                  value={condition}
-                  onChange={(e) => setCondition(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
-                  rows={3}
-                  placeholder="例如: output.score > 0.8"
-                />
-                <p className="text-xs text-gray-400 mt-1">满足条件走 Yes 分支，否则走 No 分支</p>
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">判断规则</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={condField}
+                    onChange={(e) => setCondField(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    placeholder="判断字段"
+                  />
+                  <select
+                    value={condOp}
+                    onChange={(e) => setCondOp(e.target.value)}
+                    className="px-2 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  >
+                    <option value=">">大于</option>
+                    <option value=">=">大于等于</option>
+                    <option value="<">小于</option>
+                    <option value="<=">小于等于</option>
+                    <option value="==">等于</option>
+                    <option value="!=">不等于</option>
+                    <option value="contains">包含</option>
+                  </select>
+                  <input
+                    value={condValue}
+                    onChange={(e) => setCondValue(e.target.value)}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    placeholder="值"
+                  />
+                </div>
+                <p className="text-xs text-gray-400">满足条件走「是」分支，不满足走「否」分支</p>
               </div>
             )}
 
             {(node.type === 'agent' || node.type === 'skill') && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">输入参数</label>
-                <textarea
-                  value={params}
-                  onChange={(e) => setParams(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
-                  rows={4}
-                  placeholder='{"prompt": "{{input}}", "temperature": 0.7}'
-                />
-                <p className="text-xs text-gray-400 mt-1">JSON 格式，支持 {`{{input}}`} 引用上游输出</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">数据来源</label>
+                  <select
+                    value={sourceRef}
+                    onChange={(e) => setSourceRef(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="上一节点输出">上一节点输出</option>
+                    <option value="用户输入">用户输入</option>
+                    <option value="固定值">固定值</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-700">参数配置</label>
+                    <button onClick={addParam} className="text-xs text-primary-600 hover:text-primary-700 font-medium">+ 添加参数</button>
+                  </div>
+                  <div className="space-y-2">
+                    {paramList.map((p, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          value={p.key}
+                          onChange={(e) => updateParam(idx, 'key', e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500"
+                          placeholder="参数名"
+                        />
+                        <span className="text-gray-400 text-xs">=</span>
+                        <input
+                          value={p.value}
+                          onChange={(e) => updateParam(idx, 'value', e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500"
+                          placeholder="参数值"
+                        />
+                        {paramList.length > 1 && (
+                          <button onClick={() => removeParam(idx)} className="p-1 text-gray-400 hover:text-red-500 rounded">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1.5">参数值支持填写文本，系统自动传递给节点</p>
+                </div>
               </div>
             )}
 
             {node.type === 'start' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">触发输入</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">触发输入内容</label>
                 <textarea
-                  value={params}
-                  onChange={(e) => setParams(e.target.value)}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
                   rows={3}
-                  placeholder="工作流启动时的输入内容"
+                  placeholder="输入启动工作流时传入的内容"
                 />
+              </div>
+            )}
+
+            {node.type === 'end' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">输出格式</label>
+                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500">
+                  <option>文本输出</option>
+                  <option>结构化数据</option>
+                  <option>文件下载</option>
+                </select>
               </div>
             )}
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
             <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">取消</button>
-            <button onClick={handleSave} className="px-4 py-2 text-sm text-white bg-primary-600 rounded-lg hover:bg-primary-700">确认</button>
+            <button onClick={handleSave} className="px-4 py-2 text-sm text-white bg-primary-600 rounded-lg hover:bg-primary-700">确认保存</button>
           </div>
         </div>
       </div>
@@ -487,9 +576,10 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
             onDrop={onDrop}
             nodeTypes={nodeTypes}
             defaultEdgeOptions={defaultEdgeOptions}
-            defaultViewport={{ x: 100, y: 80, zoom: 0.7 }}
+            defaultViewport={{ x: 80, y: 60, zoom: 0.8 }}
             minZoom={0.3}
             maxZoom={2}
+            deleteKeyCode={['Backspace', 'Delete']}
             className="bg-gray-50"
           >
             <Background gap={20} size={1} color="#e2e8f0" />
