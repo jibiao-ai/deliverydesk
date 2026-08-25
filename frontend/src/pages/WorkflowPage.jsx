@@ -429,12 +429,26 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
   const [description, setDescription] = useState(workflow?.description || '');
   const [configNode, setConfigNode] = useState(null);
   const [showRunOutput, setShowRunOutput] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
   const reactFlowInstance = useReactFlow();
   const idCounter = useRef(100);
 
   const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
   const onEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
   const onConnect = useCallback((connection) => setEdges((eds) => addEdge(connection, eds)), []);
+
+  // Track selection state for delete button
+  const onSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }) => {
+    setHasSelection((selectedNodes && selectedNodes.length > 0) || (selectedEdges && selectedEdges.length > 0));
+  }, []);
+
+  // Delete selected nodes and edges via button
+  const handleDeleteSelected = useCallback(() => {
+    setNodes((nds) => nds.filter((n) => !n.selected));
+    setEdges((eds) => eds.filter((e) => !e.selected));
+    setHasSelection(false);
+    toast.success('已删除选中的节点/连线');
+  }, []);
 
   // Node double-click → open config modal
   const onNodeDoubleClick = useCallback((_, node) => {
@@ -519,6 +533,15 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
           className="text-xs text-gray-400 border-none focus:ring-0 bg-transparent flex-1 px-2 py-1 rounded hover:bg-gray-50 focus:bg-gray-50"
         />
         <button
+          onClick={handleDeleteSelected}
+          disabled={!hasSelection}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          title="删除选中的节点或连线 (Delete/Backspace)"
+        >
+          <Trash2 className="w-4 h-4" />
+          删除
+        </button>
+        <button
           onClick={() => setShowRunOutput(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
         >
@@ -572,6 +595,7 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeDoubleClick={onNodeDoubleClick}
+            onSelectionChange={onSelectionChange}
             onDragOver={onDragOver}
             onDrop={onDrop}
             nodeTypes={nodeTypes}
