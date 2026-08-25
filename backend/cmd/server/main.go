@@ -230,6 +230,7 @@ func main() {
 				// TOTP Audit (admin only)
 				admin.GET("/totp/pending-reviews", totpH.ListPendingReviews)
 				admin.GET("/totp/all", totpH.ListAllApplications)
+				admin.GET("/totp/export", totpH.ExportAllApplications)
 				admin.POST("/totp/audit", totpH.AuditApplication)
 				admin.POST("/totp/sync-jira", totpH.SyncJiraIssues)
 

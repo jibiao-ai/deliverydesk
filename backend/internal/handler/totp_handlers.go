@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jibiao-ai/deliverydesk/internal/model"
 	"github.com/jibiao-ai/deliverydesk/internal/repository"
 	"github.com/jibiao-ai/deliverydesk/internal/service"
+	"github.com/xuri/excelize/v2"
 )
 
 // TotpHandler handles TOTP application and audit endpoints
@@ -288,6 +291,210 @@ func (h *TotpHandler) GetAdminList(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": admins})
+}
+
+// ExportAllApplications handles GET /api/admin/totp/export
+// Exports all TOTP application records to an Excel file
+func (h *TotpHandler) ExportAllApplications(c *gin.Context) {
+	status := c.DefaultQuery("status", "all")
+
+	// Fetch all records without pagination
+	var apps []model.TotpApplication
+	query := repository.DB.Model(&model.TotpApplication{})
+	if status != "" && status != "all" {
+		query = query.Where("audit_status = ?", status)
+	}
+	if err := query.Order("created_at DESC").Find(&apps).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "查询数据失败: " + err.Error()})
+		return
+	}
+
+	// Create Excel file
+	f := excelize.NewFile()
+	sheet := "双因子申请记录"
+	f.SetSheetName("Sheet1", sheet)
+
+	// Define styles
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 11, Color: "#FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"#4472C4"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
+		Border: []excelize.Border{
+			{Type: "left", Color: "#B4C6E7", Style: 1},
+			{Type: "top", Color: "#B4C6E7", Style: 1},
+			{Type: "right", Color: "#B4C6E7", Style: 1},
+			{Type: "bottom", Color: "#B4C6E7", Style: 1},
+		},
+	})
+
+	dataStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10},
+		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+		Border: []excelize.Border{
+			{Type: "left", Color: "#D9E2F3", Style: 1},
+			{Type: "top", Color: "#D9E2F3", Style: 1},
+			{Type: "right", Color: "#D9E2F3", Style: 1},
+			{Type: "bottom", Color: "#D9E2F3", Style: 1},
+		},
+	})
+
+	dataStyleAlt, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"#F2F7FC"}},
+		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+		Border: []excelize.Border{
+			{Type: "left", Color: "#D9E2F3", Style: 1},
+			{Type: "top", Color: "#D9E2F3", Style: 1},
+			{Type: "right", Color: "#D9E2F3", Style: 1},
+			{Type: "bottom", Color: "#D9E2F3", Style: 1},
+		},
+	})
+
+	approvedStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10, Color: "#2E7D32"},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "#D9E2F3", Style: 1},
+			{Type: "top", Color: "#D9E2F3", Style: 1},
+			{Type: "right", Color: "#D9E2F3", Style: 1},
+			{Type: "bottom", Color: "#D9E2F3", Style: 1},
+		},
+	})
+
+	rejectedStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10, Color: "#C62828"},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "#D9E2F3", Style: 1},
+			{Type: "top", Color: "#D9E2F3", Style: 1},
+			{Type: "right", Color: "#D9E2F3", Style: 1},
+			{Type: "bottom", Color: "#D9E2F3", Style: 1},
+		},
+	})
+
+	pendingStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10, Color: "#F57F17"},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border: []excelize.Border{
+			{Type: "left", Color: "#D9E2F3", Style: 1},
+			{Type: "top", Color: "#D9E2F3", Style: 1},
+			{Type: "right", Color: "#D9E2F3", Style: 1},
+			{Type: "bottom", Color: "#D9E2F3", Style: 1},
+		},
+	})
+
+	// Set column widths
+	f.SetColWidth(sheet, "A", "A", 6)   // 序号
+	f.SetColWidth(sheet, "B", "B", 18)  // 申请时间
+	f.SetColWidth(sheet, "C", "C", 12)  // 申请人
+	f.SetColWidth(sheet, "D", "D", 16)  // 工单号
+	f.SetColWidth(sheet, "E", "E", 30)  // 工单标题
+	f.SetColWidth(sheet, "F", "F", 18)  // 客户
+	f.SetColWidth(sheet, "G", "G", 20)  // 项目
+	f.SetColWidth(sheet, "H", "H", 8)   // 版本
+	f.SetColWidth(sheet, "I", "I", 10)  // 类型
+	f.SetColWidth(sheet, "J", "J", 12)  // 审批人
+	f.SetColWidth(sheet, "K", "K", 10)  // 状态
+	f.SetColWidth(sheet, "L", "L", 18)  // 审批时间
+	f.SetColWidth(sheet, "M", "M", 25)  // 申请原因
+
+	// Write header
+	headers := []string{"序号", "申请时间", "申请人", "工单号", "工单标题", "客户", "项目", "版本", "类型", "审批人", "状态", "审批时间", "申请原因"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, h)
+	}
+	f.SetRowHeight(sheet, 1, 24)
+	f.SetCellStyle(sheet, "A1", "M1", headerStyle)
+
+	// Write data rows
+	statusText := map[string]string{"pending": "待审核", "approved": "已通过", "rejected": "已拒绝"}
+	typeText := map[string]string{"roller": "Roller", "totp": "动态密码"}
+
+	for i, app := range apps {
+		row := i + 2
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), app.CreatedAt.Format("2006-01-02 15:04:05"))
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), app.Username)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), app.Issue)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), app.IssueSummary)
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), app.Customer)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), app.Project)
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), app.Version)
+		typeLabel := typeText[app.TotpType]
+		if typeLabel == "" {
+			typeLabel = app.TotpType
+		}
+		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), typeLabel)
+
+		// Auditor: show assigned or actual
+		auditor := app.AuditorName
+		if auditor == "" {
+			auditor = app.AssignedAuditorName
+		}
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), auditor)
+
+		// Status
+		stLabel := statusText[app.AuditStatus]
+		if stLabel == "" {
+			stLabel = app.AuditStatus
+		}
+		f.SetCellValue(sheet, fmt.Sprintf("K%d", row), stLabel)
+
+		// Audit time
+		auditTime := ""
+		if app.AuditTime != nil {
+			auditTime = app.AuditTime.Format("2006-01-02 15:04:05")
+		}
+		f.SetCellValue(sheet, fmt.Sprintf("L%d", row), auditTime)
+
+		f.SetCellValue(sheet, fmt.Sprintf("M%d", row), app.Reason)
+
+		// Apply row style (alternating)
+		rowStyle := dataStyle
+		if i%2 == 1 {
+			rowStyle = dataStyleAlt
+		}
+		for col := 1; col <= 13; col++ {
+			cell, _ := excelize.CoordinatesToCellName(col, row)
+			f.SetCellStyle(sheet, cell, cell, rowStyle)
+		}
+
+		// Apply status-specific style to column K
+		statusCell := fmt.Sprintf("K%d", row)
+		switch app.AuditStatus {
+		case "approved":
+			f.SetCellStyle(sheet, statusCell, statusCell, approvedStyle)
+		case "rejected":
+			f.SetCellStyle(sheet, statusCell, statusCell, rejectedStyle)
+		case "pending":
+			f.SetCellStyle(sheet, statusCell, statusCell, pendingStyle)
+		}
+
+		f.SetRowHeight(sheet, row, 20)
+	}
+
+	// Freeze first row (header)
+	f.SetPanes(sheet, &excelize.Panes{
+		Freeze:      true,
+		Split:       false,
+		XSplit:      0,
+		YSplit:      1,
+		TopLeftCell: "A2",
+		ActivePane:  "bottomLeft",
+	})
+
+	// Set response headers for download
+	filename := fmt.Sprintf("双因子申请记录_%s.xlsx", time.Now().Format("20060102_150405"))
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Header("Cache-Control", "no-cache")
+
+	if err := f.Write(c.Writer); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "生成Excel失败: " + err.Error()})
+		return
+	}
 }
 
 // QuickQueryTotp handles GET /api/totp/quick-query?issue=ECSL2-50579
