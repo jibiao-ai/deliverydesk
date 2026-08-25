@@ -105,6 +105,7 @@ func (s *ChatService) GetDashboardStats(userID uint) (map[string]interface{}, er
 }
 
 // GetActivityHeatmap returns daily message counts for the past 6 months
+// If userID is 0, returns all system activity; otherwise filters by user
 func (s *ChatService) GetActivityHeatmap(userID uint) ([]map[string]interface{}, error) {
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
 
@@ -114,11 +115,16 @@ func (s *ChatService) GetActivityHeatmap(userID uint) ([]map[string]interface{},
 	}
 
 	var results []DailyCount
-	err := repository.DB.Model(&model.Message{}).
+	query := repository.DB.Model(&model.Message{}).
 		Select("DATE(messages.created_at) as date, COUNT(*) as count").
-		Joins("JOIN conversations ON conversations.id = messages.conversation_id").
-		Where("conversations.user_id = ? AND messages.created_at >= ?", userID, sixMonthsAgo).
-		Group("DATE(messages.created_at)").
+		Joins("JOIN conversations ON conversations.id = messages.conversation_id AND conversations.deleted_at IS NULL").
+		Where("messages.created_at >= ? AND messages.deleted_at IS NULL", sixMonthsAgo)
+
+	if userID > 0 {
+		query = query.Where("conversations.user_id = ?", userID)
+	}
+
+	err := query.Group("DATE(messages.created_at)").
 		Order("date ASC").
 		Find(&results).Error
 

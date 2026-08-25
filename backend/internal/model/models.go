@@ -433,3 +433,16 @@ type KBHistory struct {
 	Customer      string         `gorm:"size:256" json:"customer"`
 	Status        string         `gorm:"size:32" json:"status"` // success / failed
 }
+
+// Workflow represents an AI workflow that connects agents and skills
+type Workflow struct {
+	ID          uint           `gorm:"primarykey" json:"id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	Name        string         `gorm:"size:128;not null" json:"name"`
+	Description string         `gorm:"type:text" json:"description"`
+	FlowData    string         `gorm:"type:longtext" json:"flow_data"` // JSON: nodes + edges from React Flow
+	IsActive    bool           `gorm:"default:true" json:"is_active"`
+	CreatedBy   uint           `gorm:"index" json:"created_by"`
+}

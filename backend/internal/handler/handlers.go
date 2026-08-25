@@ -145,9 +145,18 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 }
 
 // GetDashboardHeatmap returns daily activity counts for the past 6 months
+// Admin users see all system activity; regular users see only their own
 func (h *Handler) GetDashboardHeatmap(c *gin.Context) {
 	userID := c.GetUint("user_id")
-	data, err := h.chatService.GetActivityHeatmap(userID)
+	role := c.GetString("role")
+
+	// Admin sees all activity, regular users see only their own
+	queryUserID := userID
+	if role == "admin" {
+		queryUserID = 0
+	}
+
+	data, err := h.chatService.GetActivityHeatmap(queryUserID)
 	if err != nil {
 		response.InternalError(c, err.Error())
 		return

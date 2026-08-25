@@ -132,6 +132,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"WBSOrder":        &model.WBSOrder{},
 		"WBSEnvironment":  &model.WBSEnvironment{},
 		"WBSOrderItem":    &model.WBSOrderItem{},
+		"Workflow":         &model.Workflow{},
 	}
 	migrationOrder := []string{
 		"User", "LDAPConfig", "Agent", "Skill", "SkillDocument", "AgentSkill",
@@ -140,6 +141,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"TotpApplication", "SystemSetting", "JiraIssueCache", "WorktimeUser", "WorktimeCache",
 		"ProjectInfo", "OpsEnvironment", "KBHistory",
 		"WBSOrder", "WBSEnvironment", "WBSOrderItem",
+		"Workflow",
 	}
 	for _, name := range migrationOrder {
 		m := migrationModels[name]
