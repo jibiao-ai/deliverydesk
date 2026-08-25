@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Plus, CheckCircle, XCircle, Clock, RefreshCw, FileText, Eye, EyeOff, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, X, User } from 'lucide-react';
+import { Shield, Plus, CheckCircle, XCircle, Clock, RefreshCw, FileText, Eye, EyeOff, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, X, User, Download } from 'lucide-react';
 import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
 import {
@@ -10,6 +10,7 @@ import {
   auditTotpApplications,
   checkTotpIssue,
   getTotpAdmins,
+  exportTotpApplications,
 } from '../services/api';
 
 const PAGE_SIZE = 15;
@@ -342,16 +343,41 @@ export default function TotpPage() {
         </div>
         <div className="flex items-center gap-2">
           {tab === 'all' && (
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
-            >
-              <option value="all">全部状态</option>
-              <option value="pending">待审核</option>
-              <option value="approved">已通过</option>
-              <option value="rejected">已拒绝</option>
-            </select>
+            <>
+              <select
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
+              >
+                <option value="all">全部状态</option>
+                <option value="pending">待审核</option>
+                <option value="approved">已通过</option>
+                <option value="rejected">已拒绝</option>
+              </select>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await exportTotpApplications({ status: statusFilter });
+                    const blob = new Blob([res], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `双因子申请记录_${new Date().toISOString().slice(0,10)}.xlsx`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                    toast.success('导出成功');
+                  } catch (e) {
+                    toast.error('导出失败');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                导出Excel
+              </button>
+            </>
           )}
           <button
             onClick={fetchData}

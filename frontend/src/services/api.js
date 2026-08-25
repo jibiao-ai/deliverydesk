@@ -217,6 +217,7 @@ export const checkTotpIssue = (issue) => api.get('/totp/check-issue', { params: 
 export const syncJiraIssues = () => api.post('/totp/sync-jira');
 export const getJiraCache = (params) => api.get('/totp/jira-cache', { params });
 export const getTotpAdmins = () => api.get('/totp/admins');
+export const exportTotpApplications = (params) => api.get('/totp/export', { params, responseType: 'blob' });
 
 // System Settings
 export const getSettings = (params) => api.get('/settings', { params });
