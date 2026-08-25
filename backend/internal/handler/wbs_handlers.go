@@ -488,37 +488,61 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 
 	// --- Common styles ---
 	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Font:      &excelize.Font{Bold: true, Size: 11},
-		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#DAEEF3"}, Pattern: 1},
-		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "999999"}, {Type: "right", Style: 1, Color: "999999"}, {Type: "top", Style: 1, Color: "999999"}, {Type: "bottom", Style: 1, Color: "999999"}},
+		Font:      &excelize.Font{Bold: true, Size: 11, Color: "FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#4472C4"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "4472C4"}, {Type: "right", Style: 1, Color: "4472C4"}, {Type: "top", Style: 1, Color: "4472C4"}, {Type: "bottom", Style: 1, Color: "4472C4"}},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
 	})
 	titleStyle, _ := f.NewStyle(&excelize.Style{
-		Font:      &excelize.Font{Bold: true, Size: 14},
+		Font:      &excelize.Font{Bold: true, Size: 14, Color: "1F4E79"},
 		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center"},
 	})
 	labelStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Size: 10},
-		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#F2F2F2"}, Pattern: 1},
-		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "CCCCCC"}, {Type: "right", Style: 1, Color: "CCCCCC"}, {Type: "top", Style: 1, Color: "CCCCCC"}, {Type: "bottom", Style: 1, Color: "CCCCCC"}},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#E8EDF3"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "B4C6D9"}, {Type: "right", Style: 1, Color: "B4C6D9"}, {Type: "top", Style: 1, Color: "B4C6D9"}, {Type: "bottom", Style: 1, Color: "B4C6D9"}},
 		Alignment: &excelize.Alignment{Vertical: "center"},
 	})
 	valueStyle, _ := f.NewStyle(&excelize.Style{
-		Font:   &excelize.Font{Size: 10},
-		Border: []excelize.Border{{Type: "left", Style: 1, Color: "CCCCCC"}, {Type: "right", Style: 1, Color: "CCCCCC"}, {Type: "top", Style: 1, Color: "CCCCCC"}, {Type: "bottom", Style: 1, Color: "CCCCCC"}},
+		Font:      &excelize.Font{Size: 10},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"}, {Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"}},
+		Alignment: &excelize.Alignment{Vertical: "center"},
 	})
 	hintStyle, _ := f.NewStyle(&excelize.Style{
 		Font: &excelize.Font{Size: 9, Color: "808080", Italic: true},
 	})
 	dataStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Size: 10},
-		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "CCCCCC"}, {Type: "right", Style: 1, Color: "CCCCCC"}, {Type: "top", Style: 1, Color: "CCCCCC"}, {Type: "bottom", Style: 1, Color: "CCCCCC"}},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"}, {Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"}},
 		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+	})
+	dataStyleAlt, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#F2F7FC"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"}, {Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"}},
+		Alignment: &excelize.Alignment{Vertical: "center", WrapText: true},
+	})
+	qtyStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10, Bold: true},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"}, {Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	qtyStyleAlt, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10, Bold: true},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#F2F7FC"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"}, {Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	qtyHighlightStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Size: 10, Bold: true, Color: "C00000"},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#FFF2CC"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"}, {Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
 	envHeaderStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Size: 11, Color: "FFFFFF"},
-		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#4472C4"}, Pattern: 1},
-		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "999999"}, {Type: "right", Style: 1, Color: "999999"}, {Type: "top", Style: 1, Color: "999999"}, {Type: "bottom", Style: 1, Color: "999999"}},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#2F5496"}, Pattern: 1},
+		Border:    []excelize.Border{{Type: "left", Style: 1, Color: "2F5496"}, {Type: "right", Style: 1, Color: "2F5496"}, {Type: "top", Style: 1, Color: "2F5496"}, {Type: "bottom", Style: 1, Color: "2F5496"}},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
 	})
 
@@ -604,16 +628,27 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	}
 	row := 2
 	for _, item := range allStandardServices {
+		rowStyle := dataStyle
+		rowQtyStyle := qtyStyle
+		if row%2 == 0 {
+			rowStyle = dataStyleAlt
+			rowQtyStyle = qtyStyleAlt
+		}
+		if item.Quantity > 0 {
+			rowQtyStyle = qtyHighlightStyle
+		}
 		f.SetCellValue(sheetQ1, fmt.Sprintf("A%d", row), item.Series)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("B%d", row), item.Name)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("C%d", row), item.Code)
-		if item.Quantity > 0 {
-			f.SetCellValue(sheetQ1, fmt.Sprintf("D%d", row), item.Quantity)
-		}
+		f.SetCellValue(sheetQ1, fmt.Sprintf("D%d", row), item.Quantity)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("E%d", row), item.Unit)
 		f.SetCellValue(sheetQ1, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
-			f.SetCellStyle(sheetQ1, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+			if col == 'D' {
+				f.SetCellStyle(sheetQ1, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowQtyStyle)
+			} else {
+				f.SetCellStyle(sheetQ1, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowStyle)
+			}
 		}
 		row++
 	}
@@ -634,16 +669,27 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	}
 	row = 2
 	for _, item := range allAdvancedServices {
+		rowStyle := dataStyle
+		rowQtyStyle := qtyStyle
+		if row%2 == 0 {
+			rowStyle = dataStyleAlt
+			rowQtyStyle = qtyStyleAlt
+		}
+		if item.Quantity > 0 {
+			rowQtyStyle = qtyHighlightStyle
+		}
 		f.SetCellValue(sheetQ2, fmt.Sprintf("A%d", row), item.Series)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("B%d", row), item.Name)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("C%d", row), item.Code)
-		if item.Quantity > 0 {
-			f.SetCellValue(sheetQ2, fmt.Sprintf("D%d", row), item.Quantity)
-		}
+		f.SetCellValue(sheetQ2, fmt.Sprintf("D%d", row), item.Quantity)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("E%d", row), item.Unit)
 		f.SetCellValue(sheetQ2, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
-			f.SetCellStyle(sheetQ2, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+			if col == 'D' {
+				f.SetCellStyle(sheetQ2, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowQtyStyle)
+			} else {
+				f.SetCellStyle(sheetQ2, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowStyle)
+			}
 		}
 		row++
 	}
@@ -665,16 +711,27 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	}
 	row = 2
 	for _, item := range allVasProducts {
+		rowStyle := dataStyle
+		rowQtyStyle := qtyStyle
+		if row%2 == 0 {
+			rowStyle = dataStyleAlt
+			rowQtyStyle = qtyStyleAlt
+		}
+		if item.Quantity > 0 {
+			rowQtyStyle = qtyHighlightStyle
+		}
 		f.SetCellValue(sheetQ3, fmt.Sprintf("A%d", row), item.SubCategory)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("B%d", row), item.Series)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("C%d", row), item.Name)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("D%d", row), item.Code)
-		if item.Quantity > 0 {
-			f.SetCellValue(sheetQ3, fmt.Sprintf("E%d", row), item.Quantity)
-		}
+		f.SetCellValue(sheetQ3, fmt.Sprintf("E%d", row), item.Quantity)
 		f.SetCellValue(sheetQ3, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
-			f.SetCellStyle(sheetQ3, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+			if col == 'E' {
+				f.SetCellStyle(sheetQ3, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowQtyStyle)
+			} else {
+				f.SetCellStyle(sheetQ3, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowStyle)
+			}
 		}
 		row++
 	}
@@ -702,13 +759,20 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 
 	row = 2
 	for _, item := range allOwnProducts {
+		rowStyle := dataStyle
+		rowQtyStyle := qtyStyle
+		if row%2 == 0 {
+			rowStyle = dataStyleAlt
+			rowQtyStyle = qtyStyleAlt
+		}
+		if item.Quantity > 0 {
+			rowQtyStyle = qtyHighlightStyle
+		}
 		f.SetCellValue(sheetProd, fmt.Sprintf("A%d", row), item.SubCategory)
 		f.SetCellValue(sheetProd, fmt.Sprintf("B%d", row), item.Series)
 		f.SetCellValue(sheetProd, fmt.Sprintf("C%d", row), item.Name)
 		f.SetCellValue(sheetProd, fmt.Sprintf("D%d", row), item.Code)
-		if item.Quantity > 0 {
-			f.SetCellValue(sheetProd, fmt.Sprintf("E%d", row), item.Quantity)
-		}
+		f.SetCellValue(sheetProd, fmt.Sprintf("E%d", row), item.Quantity)
 		f.SetCellValue(sheetProd, fmt.Sprintf("F%d", row), item.Description)
 		f.SetCellValue(sheetProd, fmt.Sprintf("G%d", row), item.Module)
 		f.SetCellValue(sheetProd, fmt.Sprintf("H%d", row), item.Arch)
@@ -716,7 +780,11 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 		f.SetCellValue(sheetProd, fmt.Sprintf("J%d", row), item.LicenseType)
 		f.SetCellValue(sheetProd, fmt.Sprintf("K%d", row), item.MajorCategory)
 		for col := 'A'; col <= 'K'; col++ {
-			f.SetCellStyle(sheetProd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+			if col == 'E' {
+				f.SetCellStyle(sheetProd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowQtyStyle)
+			} else {
+				f.SetCellStyle(sheetProd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowStyle)
+			}
 		}
 		row++
 	}
@@ -805,16 +873,27 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	}
 	row = 2
 	for _, item := range allVasProducts {
+		rowStyle := dataStyle
+		rowQtyStyle := qtyStyle
+		if row%2 == 0 {
+			rowStyle = dataStyleAlt
+			rowQtyStyle = qtyStyleAlt
+		}
+		if item.Quantity > 0 {
+			rowQtyStyle = qtyHighlightStyle
+		}
 		f.SetCellValue(sheetVAS, fmt.Sprintf("A%d", row), item.SubCategory)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("B%d", row), item.Series)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("C%d", row), item.Name)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("D%d", row), item.Code)
-		if item.Quantity > 0 {
-			f.SetCellValue(sheetVAS, fmt.Sprintf("E%d", row), item.Quantity)
-		}
+		f.SetCellValue(sheetVAS, fmt.Sprintf("E%d", row), item.Quantity)
 		f.SetCellValue(sheetVAS, fmt.Sprintf("F%d", row), item.Description)
 		for col := 'A'; col <= 'F'; col++ {
-			f.SetCellStyle(sheetVAS, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+			if col == 'E' {
+				f.SetCellStyle(sheetVAS, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowQtyStyle)
+			} else {
+				f.SetCellStyle(sheetVAS, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowStyle)
+			}
 		}
 		row++
 	}
@@ -1024,16 +1103,27 @@ func (h *WBSHandler) ExportExcel(c *gin.Context) {
 	for _, item := range allVasProducts {
 		bp := item.BuyProduct
 		if bp != "" && !strings.Contains(bp, "ECF") && !strings.Contains(bp, "ECNF") {
+			rowStyle := dataStyle
+			rowQtyStyle := qtyStyle
+			if row%2 == 1 {
+				rowStyle = dataStyleAlt
+				rowQtyStyle = qtyStyleAlt
+			}
+			if item.Quantity > 0 {
+				rowQtyStyle = qtyHighlightStyle
+			}
 			f.SetCellValue(sheet3rd, fmt.Sprintf("A%d", row), item.SubCategory)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("B%d", row), item.Series)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("C%d", row), item.Name)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("D%d", row), item.Code)
-			if item.Quantity > 0 {
-				f.SetCellValue(sheet3rd, fmt.Sprintf("E%d", row), item.Quantity)
-			}
+			f.SetCellValue(sheet3rd, fmt.Sprintf("E%d", row), item.Quantity)
 			f.SetCellValue(sheet3rd, fmt.Sprintf("F%d", row), item.Description)
 			for col := 'A'; col <= 'F'; col++ {
-				f.SetCellStyle(sheet3rd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), dataStyle)
+				if col == 'E' {
+					f.SetCellStyle(sheet3rd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowQtyStyle)
+				} else {
+					f.SetCellStyle(sheet3rd, fmt.Sprintf("%c%d", col, row), fmt.Sprintf("%c%d", col, row), rowStyle)
+				}
 			}
 			row++
 		}
