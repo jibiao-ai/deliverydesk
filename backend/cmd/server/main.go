@@ -69,6 +69,7 @@ func main() {
 	opsEnvH := handler.NewOpsEnvHandler()
 	kbH := handler.NewKBHandler()
 	wbsH := &handler.WBSHandler{}
+	workflowH := handler.NewWorkflowHandler()
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -241,6 +242,13 @@ func main() {
 				// Diagnostic endpoint for skill/RAG debugging
 				admin.GET("/diagnose/skills", h.DiagnoseSkills)
 				admin.POST("/diagnose/skills/reindex-all", h.ReindexAllSkills)
+
+				// Workflows (admin only)
+				admin.GET("/workflows", workflowH.ListWorkflows)
+				admin.GET("/workflows/:id", workflowH.GetWorkflow)
+				admin.POST("/workflows", workflowH.CreateWorkflow)
+				admin.PUT("/workflows/:id", workflowH.UpdateWorkflow)
+				admin.DELETE("/workflows/:id", workflowH.DeleteWorkflow)
 			}
 		}
 	}
