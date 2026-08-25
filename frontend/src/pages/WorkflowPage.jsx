@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-  ReactFlow, Controls, Background, MiniMap,
+  ReactFlow, Controls, Background, MiniMap, Panel,
   addEdge, applyNodeChanges, applyEdgeChanges,
-  Handle, Position, useReactFlow,
+  Handle, Position, useReactFlow, useViewport,
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
   GitBranch, Plus, Save, Trash2, Play, Bot, Zap, ArrowRight,
   MessageSquare, Settings2, X, ChevronLeft, Loader2, Edit3,
-  Copy, ToggleLeft, ToggleRight, AlertTriangle,
+  Copy, ToggleLeft, ToggleRight, AlertTriangle, ZoomIn, ZoomOut,
+  CheckCircle, Clock, Terminal,
 } from 'lucide-react';
 import { getAgents, getSkills } from '../services/api';
 import useStore from '../store/useStore';
@@ -114,6 +115,209 @@ const defaultEdgeOptions = {
   type: 'smoothstep',
 };
 
+// ─── Zoom Display Panel ─────────────────────────────────────────────────────
+function ZoomIndicator() {
+  const { zoom } = useViewport();
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const pct = Math.round(zoom * 100);
+  return (
+    <Panel position="top-right" className="!m-3">
+      <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 shadow-sm px-2 py-1">
+        <button onClick={() => zoomOut()} className="p-1 rounded hover:bg-gray-100 text-gray-500">
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-xs font-medium text-gray-600 w-10 text-center">{pct}%</span>
+        <button onClick={() => zoomIn()} className="p-1 rounded hover:bg-gray-100 text-gray-500">
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Node Config Modal ──────────────────────────────────────────────────────
+function NodeConfigModal({ node, onClose, onSave }) {
+  const [label, setLabel] = useState(node.data.label || '');
+  const [description, setDescription] = useState(node.data.description || '');
+  const [params, setParams] = useState(node.data.params || '');
+  const [condition, setCondition] = useState(node.data.condition || '');
+
+  const typeLabels = { agent: '智能体', skill: '技能', condition: '条件判断', start: '开始节点', end: '结束节点' };
+  const typeColors = { agent: 'primary', skill: 'amber', condition: 'purple', start: 'green', end: 'red' };
+  const color = typeColors[node.type] || 'gray';
+
+  const handleSave = () => {
+    onSave(node.id, { ...node.data, label, description, params, condition });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className={`h-1 bg-gradient-to-r from-${color}-400 to-${color}-600`} />
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className={`w-10 h-10 rounded-xl bg-${color}-100 flex items-center justify-center`}>
+              {node.type === 'agent' && <Bot className={`w-5 h-5 text-${color}-600`} />}
+              {node.type === 'skill' && <Zap className={`w-5 h-5 text-${color}-600`} />}
+              {node.type === 'condition' && <GitBranch className={`w-5 h-5 text-${color}-600`} />}
+              {node.type === 'start' && <Play className={`w-5 h-5 text-${color}-600`} />}
+              {node.type === 'end' && <MessageSquare className={`w-5 h-5 text-${color}-600`} />}
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800">配置{typeLabels[node.type] || '节点'}</h3>
+              <p className="text-xs text-gray-400">设置节点参数和运行条件</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">节点名称</label>
+              <input
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="输入节点名称"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="节点功能描述"
+              />
+            </div>
+
+            {node.type === 'condition' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">判断条件</label>
+                <textarea
+                  value={condition}
+                  onChange={(e) => setCondition(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                  rows={3}
+                  placeholder="例如: output.score > 0.8"
+                />
+                <p className="text-xs text-gray-400 mt-1">满足条件走 Yes 分支，否则走 No 分支</p>
+              </div>
+            )}
+
+            {(node.type === 'agent' || node.type === 'skill') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">输入参数</label>
+                <textarea
+                  value={params}
+                  onChange={(e) => setParams(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                  rows={4}
+                  placeholder='{"prompt": "{{input}}", "temperature": 0.7}'
+                />
+                <p className="text-xs text-gray-400 mt-1">JSON 格式，支持 {`{{input}}`} 引用上游输出</p>
+              </div>
+            )}
+
+            {node.type === 'start' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">触发输入</label>
+                <textarea
+                  value={params}
+                  onChange={(e) => setParams(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                  rows={3}
+                  placeholder="工作流启动时的输入内容"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">取消</button>
+            <button onClick={handleSave} className="px-4 py-2 text-sm text-white bg-primary-600 rounded-lg hover:bg-primary-700">确认</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Run Output Modal ───────────────────────────────────────────────────────
+function RunOutputModal({ nodes, edges, onClose }) {
+  const [running, setRunning] = useState(true);
+  const [logs, setLogs] = useState([]);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    // Simulate workflow execution
+    const simulateRun = async () => {
+      setLogs([]);
+      const sortedNodes = [...nodes].sort((a, b) => a.position.x - b.position.x);
+
+      for (let i = 0; i < sortedNodes.length; i++) {
+        const node = sortedNodes[i];
+        const ts = new Date().toLocaleTimeString('zh-CN');
+        await new Promise((r) => setTimeout(r, 600 + Math.random() * 400));
+
+        if (node.type === 'start') {
+          setLogs((prev) => [...prev, { ts, type: 'info', msg: `[开始] 工作流触发 - ${node.data.label}` }]);
+        } else if (node.type === 'agent') {
+          setLogs((prev) => [...prev, { ts, type: 'process', msg: `[智能体] 执行: ${node.data.label}${node.data.params ? ` (参数: ${node.data.params.slice(0, 50)})` : ''}` }]);
+        } else if (node.type === 'skill') {
+          setLogs((prev) => [...prev, { ts, type: 'process', msg: `[技能] 调用: ${node.data.label}${node.data.params ? ` (参数: ${node.data.params.slice(0, 50)})` : ''}` }]);
+        } else if (node.type === 'condition') {
+          setLogs((prev) => [...prev, { ts, type: 'branch', msg: `[条件] 判断: ${node.data.condition || node.data.label} → 结果: Yes` }]);
+        } else if (node.type === 'end') {
+          setLogs((prev) => [...prev, { ts, type: 'success', msg: `[完成] 工作流执行成功 - ${node.data.label}` }]);
+        }
+      }
+
+      setResult({ status: 'success', message: '工作流执行完成', nodeCount: sortedNodes.length, edgeCount: edges.length });
+      setRunning(false);
+    };
+
+    simulateRun();
+  }, [nodes, edges]);
+
+  const logColors = { info: 'text-blue-600', process: 'text-gray-700', branch: 'text-purple-600', success: 'text-green-600', error: 'text-red-600' };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="h-1 bg-gradient-to-r from-green-400 via-blue-500 to-purple-600" />
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
+              {running ? <Loader2 className="w-5 h-5 text-green-600 animate-spin" /> : <CheckCircle className="w-5 h-5 text-green-600" />}
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-800">{running ? '正在执行...' : '执行完成'}</h3>
+              <p className="text-xs text-gray-400">{running ? '工作流节点逐步运行中' : `共 ${result?.nodeCount} 个节点, ${result?.edgeCount} 条连线`}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          <div className="bg-gray-900 rounded-xl p-4 font-mono text-xs space-y-1.5 min-h-[200px]">
+            {logs.map((log, i) => (
+              <div key={i} className="flex gap-2">
+                <span className="text-gray-500 flex-shrink-0">{log.ts}</span>
+                <span className={logColors[log.type] || 'text-gray-300'}>{log.msg}</span>
+              </div>
+            ))}
+            {running && <span className="inline-block w-2 h-4 bg-green-400 animate-pulse" />}
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 flex justify-end flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+            {running ? '后台运行' : '关闭'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Workflow Editor (inner, with useReactFlow) ─────────────────────────────
 function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
   const initialFlow = useMemo(() => {
@@ -134,12 +338,24 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState(workflow?.name || '');
   const [description, setDescription] = useState(workflow?.description || '');
+  const [configNode, setConfigNode] = useState(null);
+  const [showRunOutput, setShowRunOutput] = useState(false);
   const reactFlowInstance = useReactFlow();
   const idCounter = useRef(100);
 
   const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
   const onEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
   const onConnect = useCallback((connection) => setEdges((eds) => addEdge(connection, eds)), []);
+
+  // Node double-click → open config modal
+  const onNodeDoubleClick = useCallback((_, node) => {
+    setConfigNode(node);
+  }, []);
+
+  // Save node config
+  const handleNodeConfigSave = (nodeId, newData) => {
+    setNodes((nds) => nds.map((n) => n.id === nodeId ? { ...n, data: newData } : n));
+  };
 
   const addNode = (type, item) => {
     idCounter.current += 1;
@@ -214,6 +430,13 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
           className="text-xs text-gray-400 border-none focus:ring-0 bg-transparent flex-1 px-2 py-1 rounded hover:bg-gray-50 focus:bg-gray-50"
         />
         <button
+          onClick={() => setShowRunOutput(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+        >
+          <Play className="w-4 h-4" />
+          运行
+        </button>
+        <button
           onClick={handleSave}
           disabled={saving}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
@@ -259,15 +482,19 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onNodeDoubleClick={onNodeDoubleClick}
             onDragOver={onDragOver}
             onDrop={onDrop}
             nodeTypes={nodeTypes}
             defaultEdgeOptions={defaultEdgeOptions}
-            fitView
+            defaultViewport={{ x: 100, y: 80, zoom: 0.7 }}
+            minZoom={0.3}
+            maxZoom={2}
             className="bg-gray-50"
           >
             <Background gap={20} size={1} color="#e2e8f0" />
-            <Controls position="bottom-right" className="!shadow-lg !rounded-xl !border !border-gray-200" />
+            <Controls position="bottom-right" showZoom={false} className="!shadow-lg !rounded-xl !border !border-gray-200" />
+            <ZoomIndicator />
             <MiniMap
               position="bottom-left"
               className="!shadow-lg !rounded-xl !border !border-gray-200"
@@ -282,6 +509,24 @@ function WorkflowEditor({ workflow, agents, skills, onSave, onBack }) {
           </ReactFlow>
         </div>
       </div>
+
+      {/* Node config modal */}
+      {configNode && (
+        <NodeConfigModal
+          node={configNode}
+          onClose={() => setConfigNode(null)}
+          onSave={handleNodeConfigSave}
+        />
+      )}
+
+      {/* Run output modal */}
+      {showRunOutput && (
+        <RunOutputModal
+          nodes={nodes}
+          edges={edges}
+          onClose={() => setShowRunOutput(false)}
+        />
+      )}
     </div>
   );
 }
