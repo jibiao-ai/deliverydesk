@@ -115,7 +115,7 @@ export default function BizOpportunityPage() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview'); // overview, charts, data, history
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(null); // null = not yet loaded, will auto-set to latest
   const [filters, setFilters] = useState({ status: '', region: '', biz_type: '', search: '' });
   const [page, setPage] = useState(1);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -126,18 +126,40 @@ export default function BizOpportunityPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Load data
+  // On mount: fetch available months, then auto-select the latest one
+  useEffect(() => {
+    (async () => {
+      try {
+        const [monthsRes, historyRes] = await Promise.all([
+          getBizMonths(),
+          getBizHistory(),
+        ]);
+        if (monthsRes?.code === 0) {
+          const list = monthsRes.data || [];
+          setMonths(list);
+          // Auto-select the latest month (backend returns DESC order)
+          if (list.length > 0) {
+            setSelectedMonth(list[0]);
+          } else {
+            setSelectedMonth(''); // no months available
+          }
+        }
+        if (historyRes?.code === 0) setHistory(historyRes.data || []);
+      } catch (e) { console.error(e); }
+    })();
+  }, []);
+
+  // Load stats & filters whenever the selected month changes (skip if not yet resolved)
   const loadData = useCallback(async () => {
+    if (selectedMonth === null) return; // not yet resolved
     setLoading(true);
     try {
-      const [statsRes, monthsRes, historyRes] = await Promise.all([
+      const [statsRes, monthsRes] = await Promise.all([
         getBizStats({ month: selectedMonth }),
         getBizMonths(),
-        getBizHistory(),
       ]);
       if (statsRes?.code === 0) setStats(statsRes.data);
       if (monthsRes?.code === 0) setMonths(monthsRes.data || []);
-      if (historyRes?.code === 0) setHistory(historyRes.data || []);
 
       const filtersRes = await getBizFilters({ month: selectedMonth });
       if (filtersRes?.code === 0) setFilterOptions(filtersRes.data || {});
@@ -146,6 +168,7 @@ export default function BizOpportunityPage() {
   }, [selectedMonth]);
 
   const loadRecords = useCallback(async () => {
+    if (selectedMonth === null) return; // not yet resolved
     try {
       const res = await getBizList({
         month: selectedMonth,
@@ -173,6 +196,8 @@ export default function BizOpportunityPage() {
       const res = await uploadBizExcel(file, uploadMonth);
       if (res?.code === 0) {
         setUploadResult(res.data);
+        // Auto-switch to the uploaded month so user sees the new data
+        if (res.data?.month) setSelectedMonth(res.data.month);
         loadData();
         loadRecords();
       } else {
@@ -192,7 +217,19 @@ export default function BizOpportunityPage() {
     try {
       const res = await deleteBizUpload(deleteTarget.id);
       if (res?.code === 0) {
+        const deletedMonth = deleteTarget.month;
         setDeleteTarget(null);
+        // Refresh months and auto-switch if the deleted month was the selected one
+        const monthsRes = await getBizMonths();
+        if (monthsRes?.code === 0) {
+          const list = monthsRes.data || [];
+          setMonths(list);
+          if (list.length === 0) {
+            setSelectedMonth('');
+          } else if (!list.includes(selectedMonth) || selectedMonth === deletedMonth) {
+            setSelectedMonth(list[0]); // switch to latest available
+          }
+        }
         loadData();
         loadRecords();
       }
@@ -230,10 +267,10 @@ export default function BizOpportunityPage() {
         <div className="flex items-center gap-2">
           <label className={`text-sm font-medium ${textSub}`}>数据月份</label>
           <CustomSelect
-            value={selectedMonth}
+            value={selectedMonth || ''}
             onChange={(v) => { setSelectedMonth(v); setPage(1); }}
-            options={[{ value: '', label: '全部月份' }, ...months.map(m => ({ value: m, label: m }))]}
-            placeholder="全部月份"
+            options={months.map(m => ({ value: m, label: m }))}
+            placeholder="选择月份"
             isDark={isDark}
           />
         </div>
