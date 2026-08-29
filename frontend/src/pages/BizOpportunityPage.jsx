@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Upload, FileSpreadsheet, TrendingUp, Users, Building2, MapPin, BarChart3,
   RefreshCw, Download, Trash2, Search, Filter, ChevronDown, ChevronUp,
   AlertCircle, CheckCircle2, Clock, Target, DollarSign, Layers, PieChart as PieIcon,
-  History, X, ArrowUpDown, AlertTriangle, Loader2,
+  History, X, ArrowUpDown, AlertTriangle, Loader2, Check,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -26,6 +26,68 @@ const CHART_COLORS = {
   danger: '#E17055',
   info: '#0984E3',
 };
+
+// === Custom dropdown matching GlassSelect pattern with dark mode support ===
+function CustomSelect({ value, onChange, options, placeholder, isDark, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => o.value === value);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`flex items-center justify-between gap-2 px-3.5 py-2 backdrop-blur-md border rounded-xl text-sm transition-all shadow-sm min-w-[120px] ${
+          isDark
+            ? 'bg-slate-700/70 border-slate-600/60 hover:bg-slate-600/80 text-slate-200'
+            : 'bg-white/70 border-gray-200/60 hover:bg-white/90 text-gray-800'
+        }`}
+      >
+        <span className={selected ? '' : isDark ? 'text-slate-500' : 'text-gray-400'}>
+          {selected?.label || placeholder}
+        </span>
+        <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${
+          isDark ? 'text-slate-400' : 'text-gray-400'
+        } ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className={`absolute z-50 mt-1.5 w-full min-w-[160px] backdrop-blur-xl rounded-xl shadow-xl border overflow-hidden py-1 max-h-60 overflow-y-auto ${
+          isDark
+            ? 'bg-slate-800/95 border-slate-600/60 shadow-black/30'
+            : 'bg-white/95 border-white/60'
+        }`}>
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`w-full text-left px-3.5 py-2 text-sm transition-colors flex items-center gap-2 ${
+                value === opt.value
+                  ? isDark
+                    ? 'text-primary-300 bg-primary-900/30 font-medium'
+                    : 'text-primary-700 bg-primary-50/50 font-medium'
+                  : isDark
+                    ? 'text-slate-300 hover:bg-slate-700/70'
+                    : 'text-gray-700 hover:bg-primary-50/70'
+              }`}
+            >
+              {value === opt.value && <Check className="w-3.5 h-3.5 text-primary-500" />}
+              <span className={value === opt.value ? '' : 'pl-5'}>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatAmount(val) {
   if (val >= 10000) return (val / 10000).toFixed(2) + ' 万';
@@ -167,16 +229,13 @@ export default function BizOpportunityPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <label className={`text-sm font-medium ${textSub}`}>数据月份</label>
-          <select
+          <CustomSelect
             value={selectedMonth}
-            onChange={(e) => { setSelectedMonth(e.target.value); setPage(1); }}
-            className={`text-sm px-3 py-1.5 rounded-lg border ${isDark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-gray-300 text-gray-700'}`}
-          >
-            <option value="">全部月份</option>
-            {months.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+            onChange={(v) => { setSelectedMonth(v); setPage(1); }}
+            options={[{ value: '', label: '全部月份' }, ...months.map(m => ({ value: m, label: m }))]}
+            placeholder="全部月份"
+            isDark={isDark}
+          />
         </div>
 
         <button
@@ -576,21 +635,27 @@ export default function BizOpportunityPage() {
           {/* Filters */}
           <div className={`${cardClass} p-4 flex flex-wrap items-center gap-3`}>
             <Filter className={`w-4 h-4 ${textSub}`} />
-            <select value={filters.status} onChange={(e) => { setFilters(f => ({...f, status: e.target.value})); setPage(1); }}
-              className={`text-sm px-3 py-1.5 rounded-lg border ${isDark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-gray-300 text-gray-700'}`}>
-              <option value="">全部状态</option>
-              {(filterOptions.statuses || []).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select value={filters.region} onChange={(e) => { setFilters(f => ({...f, region: e.target.value})); setPage(1); }}
-              className={`text-sm px-3 py-1.5 rounded-lg border ${isDark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-gray-300 text-gray-700'}`}>
-              <option value="">全部区域</option>
-              {(filterOptions.regions || []).map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-            <select value={filters.biz_type} onChange={(e) => { setFilters(f => ({...f, biz_type: e.target.value})); setPage(1); }}
-              className={`text-sm px-3 py-1.5 rounded-lg border ${isDark ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-gray-300 text-gray-700'}`}>
-              <option value="">全部类型</option>
-              {(filterOptions.biz_types || []).map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
+            <CustomSelect
+              value={filters.status}
+              onChange={(v) => { setFilters(f => ({...f, status: v})); setPage(1); }}
+              options={[{ value: '', label: '全部状态' }, ...(filterOptions.statuses || []).map(s => ({ value: s, label: s }))]}
+              placeholder="全部状态"
+              isDark={isDark}
+            />
+            <CustomSelect
+              value={filters.region}
+              onChange={(v) => { setFilters(f => ({...f, region: v})); setPage(1); }}
+              options={[{ value: '', label: '全部区域' }, ...(filterOptions.regions || []).map(r => ({ value: r, label: r }))]}
+              placeholder="全部区域"
+              isDark={isDark}
+            />
+            <CustomSelect
+              value={filters.biz_type}
+              onChange={(v) => { setFilters(f => ({...f, biz_type: v})); setPage(1); }}
+              options={[{ value: '', label: '全部类型' }, ...(filterOptions.biz_types || []).map(b => ({ value: b, label: b }))]}
+              placeholder="全部类型"
+              isDark={isDark}
+            />
             <div className="relative flex-1 min-w-[200px]">
               <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${textMuted}`} />
               <input
