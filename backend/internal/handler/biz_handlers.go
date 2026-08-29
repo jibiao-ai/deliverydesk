@@ -258,7 +258,7 @@ func (h *BizHandler) GetBizStats(c *gin.Context) {
 	regionCountMap := map[string]int{}
 	ownerAmountMap := map[string]float64{}
 	ownerCountMap := map[string]int{}
-	provinceAmountMap := map[string]float64{}
+	// provinceAmountMap removed — TOP10 区域 now uses regionAmountMap (负责人所属核心管控单元)
 	buyTypeMap := map[string]int{}
 	bizTypeMap := map[string]int{}
 	winRateDistMap := map[string]int{}
@@ -274,9 +274,7 @@ func (h *BizHandler) GetBizStats(c *gin.Context) {
 		regionCountMap[r.Region]++
 		ownerAmountMap[r.Owner] += r.Amount
 		ownerCountMap[r.Owner]++
-		if r.Province != "" {
-			provinceAmountMap[r.Province] += r.Amount
-		}
+		// Province aggregation removed — region_data already covers 负责人所属核心管控单元
 		if r.BuyType != "" {
 			buyTypeMap[r.BuyType]++
 		}
@@ -329,15 +327,10 @@ func (h *BizHandler) GetBizStats(c *gin.Context) {
 	}
 	sort.Slice(regionData, func(i, j int) bool { return regionData[i].Value > regionData[j].Value })
 
-	// Province data
-	provinceData := []kv{}
-	for k, v := range provinceAmountMap {
-		provinceData = append(provinceData, kv{Key: k, Value: math.Round(v*100) / 100})
-	}
-	sort.Slice(provinceData, func(i, j int) bool { return provinceData[i].Value > provinceData[j].Value })
-	top10Province := provinceData
-	if len(top10Province) > 10 {
-		top10Province = top10Province[:10]
+	// TOP10 Region (负责人所属核心管控单元) — reuse regionData which is already sorted desc
+	top10Region := regionData
+	if len(top10Region) > 10 {
+		top10Region = top10Region[:10]
 	}
 
 	// Status pie data
@@ -416,7 +409,7 @@ func (h *BizHandler) GetBizStats(c *gin.Context) {
 			},
 			"top10_owners":    top10Owners,
 			"top10_customers": top10Customers,
-			"top10_province":  top10Province,
+			"top10_region":    top10Region,
 			"region_data":     regionData,
 			"status_data":     statusData,
 			"buy_type_data":   buyTypeData,
