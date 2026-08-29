@@ -68,9 +68,15 @@ func (h *BizHandler) UploadBizExcel(c *gin.Context) {
 	}
 
 	// Parse header to find column indices
+	// Sort colNames by length DESC so longer/more-specific names match first.
+	// This prevents "负责人" from matching the "负责人所属核心管控单元" column header
+	// before the longer name gets a chance to match.
 	headerRow := rows[0]
 	colIdx := map[string]int{}
 	colNames := []string{"商机名称", "客户名称", "商机编号", "商机总金额", "易捷行云培训及服务", "预计成交日期", "状态", "负责人", "售前人员", "负责人所属核心管控单元", "省份", "城市", "商机赢率", "总节点数", "购买类型", "创建人", "创建时间"}
+	sort.Slice(colNames, func(i, j int) bool {
+		return len([]rune(colNames[i])) > len([]rune(colNames[j]))
+	})
 	for i, cell := range headerRow {
 		for _, cn := range colNames {
 			if strings.Contains(cell, cn) {
