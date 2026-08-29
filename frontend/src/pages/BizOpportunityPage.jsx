@@ -358,22 +358,23 @@ export default function BizOpportunityPage() {
               </div>
             </div>
 
-            {/* TOP10 Province */}
+            {/* TOP10 Region (负责人所属核心管控单元) */}
             <div className={`${cardClass} p-4`}>
               <h4 className={`text-sm font-semibold mb-3 flex items-center gap-2 ${textMain}`}>
-                <MapPin className="w-4 h-4 text-orange-500" /> TOP10 省份
+                <MapPin className="w-4 h-4 text-orange-500" /> TOP10 区域
               </h4>
               <div className="space-y-2">
-                {(stats?.top10_province || []).map((item, i) => (
+                {(stats?.top10_region || []).map((item, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold flex-shrink-0 ${
                       i < 3 ? 'bg-orange-600 text-white' : isDark ? 'bg-slate-700 text-slate-400' : 'bg-gray-100 text-gray-500'
                     }`}>{i + 1}</span>
                     <span className={`text-sm flex-1 truncate ${textMain}`}>{item.name}</span>
+                    <span className={`text-xs ${textSub}`}>{item.count}笔</span>
                     <span className="text-sm font-medium text-orange-500">{formatAmount(item.value)}</span>
                   </div>
                 ))}
-                {(stats?.top10_province || []).length === 0 && <p className={`text-sm ${textMuted}`}>暂无数据</p>}
+                {(stats?.top10_region || []).length === 0 && <p className={`text-sm ${textMuted}`}>暂无数据</p>}
               </div>
             </div>
           </div>
