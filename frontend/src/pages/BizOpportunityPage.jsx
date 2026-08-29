@@ -3,7 +3,7 @@ import {
   Upload, FileSpreadsheet, TrendingUp, Users, Building2, MapPin, BarChart3,
   RefreshCw, Download, Trash2, Search, Filter, ChevronDown, ChevronUp,
   AlertCircle, CheckCircle2, Clock, Target, DollarSign, Layers, PieChart as PieIcon,
-  History, X, ArrowUpDown,
+  History, X, ArrowUpDown, AlertTriangle, Loader2,
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -61,6 +61,8 @@ export default function BizOpportunityPage() {
   const [uploadResult, setUploadResult] = useState(null);
   const [sortField, setSortField] = useState('amount');
   const [sortDir, setSortDir] = useState('desc');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Load data
   const loadData = useCallback(async () => {
@@ -122,15 +124,18 @@ export default function BizOpportunityPage() {
     }
   };
 
-  const handleDeleteUpload = async (id) => {
-    if (!window.confirm('确定删除该上传记录及其所有数据？')) return;
+  const handleDeleteUpload = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await deleteBizUpload(id);
+      const res = await deleteBizUpload(deleteTarget.id);
       if (res?.code === 0) {
+        setDeleteTarget(null);
         loadData();
         loadRecords();
       }
     } catch (e) { console.error(e); }
+    finally { setDeleting(false); }
   };
 
   // Sort locally
@@ -267,6 +272,49 @@ export default function BizOpportunityPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No Data Placeholder */}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div className={`rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden ${isDark ? 'bg-slate-800' : 'bg-white'}`} onClick={(e) => e.stopPropagation()}>
+            <div className="h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600" />
+            <div className="p-6 text-center">
+              <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${isDark ? 'bg-red-900/30' : 'bg-red-50'}`}>
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className={`text-lg font-semibold mb-2 ${textMain}`}>确认删除上传记录</h3>
+              <p className={`text-sm mb-1 ${textSub}`}>确定要删除以下上传记录及其所有商机数据？</p>
+              <div className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-gray-100 text-gray-800'}`}>
+                <FileSpreadsheet className="w-4 h-4 text-primary-500" />
+                {deleteTarget.file_name}
+                <span className={`text-xs ${textMuted}`}>({deleteTarget.month})</span>
+              </div>
+              <p className={`text-xs mt-3 ${textMuted}`}>
+                此操作不可撤销，将删除该月 {deleteTarget.filtered_rows} 条维保/续保商机数据
+              </p>
+            </div>
+            <div className={`px-6 pb-6 flex items-center gap-3 justify-center`}>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className={`px-5 py-2.5 text-sm font-medium rounded-xl transition-colors ${isDark ? 'text-slate-300 bg-slate-700 hover:bg-slate-600' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'}`}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleDeleteUpload}
+                disabled={deleting}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center gap-2 shadow-sm shadow-red-200"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                确认删除
+              </button>
             </div>
           </div>
         </div>
@@ -644,8 +692,8 @@ export default function BizOpportunityPage() {
                     <td className={`px-4 py-3 ${textSub}`}>{h.uploaded_name}</td>
                     <td className={`px-4 py-3 ${textSub}`}>{new Date(h.created_at).toLocaleString('zh-CN')}</td>
                     <td className="px-4 py-3">
-                      <button onClick={() => handleDeleteUpload(h.id)}
-                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                      <button onClick={() => setDeleteTarget(h)}
+                        className={`p-1.5 rounded-lg transition-colors ${isDark ? 'text-slate-400 hover:bg-red-900/30 hover:text-red-400' : 'text-gray-400 hover:bg-red-50 hover:text-red-500'}`}
                         title="删除该月数据"
                       >
                         <Trash2 className="w-4 h-4" />
