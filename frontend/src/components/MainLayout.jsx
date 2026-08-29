@@ -19,7 +19,7 @@ import WBSServicePage from '../pages/WBSServicePage';
 import WorkflowPage from '../pages/WorkflowPage';
 import BizOpportunityPage from '../pages/BizOpportunityPage';
 import useStore from '../store/useStore';
-import { Bell, Sun, Moon, X, Sparkles } from 'lucide-react';
+import { Bell, Sun, Moon, X, Sparkles, Quote, ChevronRight } from 'lucide-react';
 import { MOTIVATIONAL_QUOTES } from '../data/motivationalQuotes';
 
 const pageComponents = {
@@ -72,6 +72,18 @@ const THEMES = [
 // Pages that require admin role
 const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects', 'ops-env', 'workflows', 'biz-opportunity']);
 
+// Deterministic daily quote: hash date string to pick a quote index, ensuring
+// each day gets a different quote and the same day always shows the same one.
+function getDailyQuoteIndex(dateStr, username) {
+  const seed = `${dateStr}_${username}`;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  const idx = Math.abs(hash) % MOTIVATIONAL_QUOTES.length;
+  return idx;
+}
+
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);
   const setActivePage = useStore((s) => s.setActivePage);
@@ -84,28 +96,43 @@ export default function MainLayout() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [expandedNotif, setExpandedNotif] = useState(null);  // detail modal
   const notifRef = useRef(null);
 
-  // Generate welcome notification on login
+  // Generate / restore today's motivational notification
   useEffect(() => {
     if (user?.username) {
       const today = new Date().toLocaleDateString('zh-CN');
-      const storageKey = `welcome_shown_${user.username}_${today}`;
-      if (!sessionStorage.getItem(storageKey)) {
-        const quote = MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)];
+      const storageKey = `daily_notif_${user.username}`;
+      const stored = localStorage.getItem(storageKey);
+      let parsed = null;
+      try { parsed = stored ? JSON.parse(stored) : null; } catch { /* ignore */ }
+
+      if (parsed && parsed.date === today) {
+        // Restore today's notification so it survives page refresh
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === parsed.notif.id)) return prev;
+          return [parsed.notif, ...prev];
+        });
+        if (!parsed.notif.read) setUnreadCount((c) => c + 1);
+      } else {
+        // New day — generate a deterministic quote
+        const quoteIdx = getDailyQuoteIndex(today, user.username);
+        const quote = MOTIVATIONAL_QUOTES[quoteIdx];
         const hour = new Date().getHours();
         const greeting = hour < 6 ? '夜深了' : hour < 9 ? '早上好' : hour < 12 ? '上午好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
         const welcomeNotif = {
-          id: Date.now(),
+          id: `daily_${today}`,
           type: 'welcome',
           title: `${greeting}，${user.username}！`,
           message: quote,
           time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+          date: today,
           read: false,
         };
         setNotifications((prev) => [welcomeNotif, ...prev]);
         setUnreadCount((c) => c + 1);
-        sessionStorage.setItem(storageKey, '1');
+        localStorage.setItem(storageKey, JSON.stringify({ date: today, notif: welcomeNotif }));
       }
     }
   }, [user?.username]);
@@ -125,13 +152,33 @@ export default function MainLayout() {
     setShowNotifications(!showNotifications);
     if (!showNotifications) {
       // Mark all as read when opening
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setNotifications((prev) => {
+        const updated = prev.map((n) => ({ ...n, read: true }));
+        // Persist read state for daily notif
+        if (user?.username) {
+          const storageKey = `daily_notif_${user.username}`;
+          try {
+            const stored = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            if (stored.notif) {
+              stored.notif.read = true;
+              localStorage.setItem(storageKey, JSON.stringify(stored));
+            }
+          } catch { /* ignore */ }
+        }
+        return updated;
+      });
       setUnreadCount(0);
     }
   };
 
   const dismissNotification = (id) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  // Open detail modal for a notification
+  const openNotifDetail = (n) => {
+    setExpandedNotif(n);
+    setShowNotifications(false);
   };
 
   // Redirect non-admin users away from admin pages
@@ -226,10 +273,11 @@ export default function MainLayout() {
                       notifications.map((n) => (
                         <div
                           key={n.id}
-                          className={`px-4 py-3 border-b last:border-0 ${
+                          onClick={() => openNotifDetail(n)}
+                          className={`px-4 py-3 border-b last:border-0 cursor-pointer group transition-colors ${
                             isDark
-                              ? `border-slate-700 ${n.read ? '' : 'bg-slate-750'}`
-                              : `border-gray-50 ${n.read ? '' : 'bg-primary-50/30'}`
+                              ? `border-slate-700 ${n.read ? 'hover:bg-slate-700/60' : 'bg-slate-750 hover:bg-slate-700/80'}`
+                              : `border-gray-50 ${n.read ? 'hover:bg-gray-50' : 'bg-primary-50/30 hover:bg-primary-50/50'}`
                           }`}
                         >
                           <div className="flex items-start gap-3">
@@ -243,15 +291,21 @@ export default function MainLayout() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
                                 <p className={`text-sm font-medium ${isDark ? 'text-slate-200' : 'text-gray-800'}`}>{n.title}</p>
-                                <button
-                                  onClick={() => dismissNotification(n.id)}
-                                  className={`p-0.5 rounded hover:bg-gray-200 ${isDark ? 'text-slate-500 hover:bg-slate-600' : 'text-gray-300'}`}
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  <ChevronRight className={`w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'text-slate-400' : 'text-gray-400'}`} />
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); dismissNotification(n.id); }}
+                                    className={`p-0.5 rounded hover:bg-gray-200 ${isDark ? 'text-slate-500 hover:bg-slate-600' : 'text-gray-300'}`}
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                              <p className={`text-xs mt-1 leading-relaxed ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{n.message}</p>
-                              <p className={`text-xs mt-1.5 ${isDark ? 'text-slate-500' : 'text-gray-300'}`}>{n.time}</p>
+                              <p className={`text-xs mt-1 leading-relaxed line-clamp-2 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{n.message}</p>
+                              <p className={`text-xs mt-1.5 ${isDark ? 'text-slate-500' : 'text-gray-300'}`}>
+                                {n.time}
+                                <span className={`ml-2 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'text-primary-400' : 'text-primary-500'}`}>点击查看</span>
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -261,6 +315,51 @@ export default function MainLayout() {
                 </div>
               )}
             </div>
+
+            {/* Notification detail modal */}
+            {expandedNotif && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                onClick={() => setExpandedNotif(null)}
+              >
+                <div
+                  className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden transition-all ${isDark ? 'bg-slate-800' : 'bg-white'}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Top gradient bar */}
+                  <div className="h-1.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500" />
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
+                          <Sparkles className="w-5 h-5 text-amber-500" />
+                        </div>
+                        <div>
+                          <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-gray-800'}`}>{expandedNotif.title}</p>
+                          <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{expandedNotif.date || ''} {expandedNotif.time}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setExpandedNotif(null)}
+                        className={`p-1.5 rounded-lg transition-colors ${isDark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-gray-400'}`}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className={`relative rounded-xl p-5 ${isDark ? 'bg-slate-700/50' : 'bg-gradient-to-br from-amber-50/80 to-orange-50/60'}`}>
+                      <Quote className={`w-8 h-8 mb-3 ${isDark ? 'text-amber-400/30' : 'text-amber-300/50'}`} />
+                      <p className={`text-base leading-relaxed font-medium ${isDark ? 'text-slate-200' : 'text-gray-700'}`}>
+                        {expandedNotif.message}
+                      </p>
+                      <div className="flex justify-end mt-3">
+                        <Quote className={`w-6 h-6 rotate-180 ${isDark ? 'text-amber-400/30' : 'text-amber-300/50'}`} />
+                      </div>
+                    </div>
+                    <p className={`text-xs text-center mt-4 ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>每日励志 · 今日推送</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-primary-600">
                 {(user?.username || 'U').slice(0, 1).toUpperCase()}
