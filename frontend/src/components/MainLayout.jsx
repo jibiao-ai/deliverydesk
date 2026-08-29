@@ -17,6 +17,7 @@ import SettingsPage from '../pages/SettingsPage';
 import KnowledgeBasePage from '../pages/KnowledgeBasePage';
 import WBSServicePage from '../pages/WBSServicePage';
 import WorkflowPage from '../pages/WorkflowPage';
+import BizOpportunityPage from '../pages/BizOpportunityPage';
 import useStore from '../store/useStore';
 import { Bell, Sun, Moon, X, Sparkles } from 'lucide-react';
 import { MOTIVATIONAL_QUOTES } from '../data/motivationalQuotes';
@@ -39,6 +40,7 @@ const pageComponents = {
   kb: KnowledgeBasePage,
   wbs: WBSServicePage,
   workflows: WorkflowPage,
+  'biz-opportunity': BizOpportunityPage,
 };
 
 const PAGE_META = {
@@ -59,6 +61,7 @@ const PAGE_META = {
   kb:               { title: '\u77e5\u8bc6\u5e93\u751f\u6210', subtitle: 'Jira \u5de5\u5355 \u2192 Confluence \u77e5\u8bc6\u5e93\uff08AI \u6da6\u8272\uff09' },
   wbs:              { title: 'WBS\u670d\u52a1', subtitle: '\u9879\u76ee\u5de5\u4f5c\u4efb\u52a1\u5206\u89e3\u4e0e\u4ea7\u54c1\u670d\u52a1\u62a5\u4ef7\u6c47\u603b' },
   workflows:        { title: '\u5de5\u4f5c\u6d41',     subtitle: '\u53ef\u89c6\u5316\u7f16\u6392\u667a\u80fd\u4f53\u4e0e\u6280\u80fd\u7684\u81ea\u52a8\u5316\u6d41\u7a0b' },
+  'biz-opportunity': { title: '\u5546\u673a\u7ba1\u7406', subtitle: '\u7ef4\u4fdd/\u7eed\u4fdd\u5546\u673a\u6570\u636e\u5206\u6790\u4e0eTOP10\u53ef\u89c6\u5316\u770b\u677f' },
 };
 
 const THEMES = [
@@ -67,7 +70,7 @@ const THEMES = [
 ];
 
 // Pages that require admin role
-const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects', 'ops-env', 'workflows']);
+const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects', 'ops-env', 'workflows', 'biz-opportunity']);
 
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);

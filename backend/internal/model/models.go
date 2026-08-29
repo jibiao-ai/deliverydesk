@@ -446,3 +446,43 @@ type Workflow struct {
 	IsActive    bool           `gorm:"default:true" json:"is_active"`
 	CreatedBy   uint           `gorm:"index" json:"created_by"`
 }
+
+// BizUploadHistory records each Excel file upload for business opportunity tracking
+type BizUploadHistory struct {
+	ID           uint           `gorm:"primarykey" json:"id"`
+	CreatedAt    time.Time      `json:"created_at"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	FileName     string         `gorm:"size:512;not null" json:"file_name"`
+	Month        string         `gorm:"size:16;index;not null" json:"month"` // e.g. 2026-08
+	TotalRows    int            `json:"total_rows"`                          // total rows in sheet
+	FilteredRows int            `json:"filtered_rows"`                       // rows matching 维保/续保
+	UploadedBy   uint           `gorm:"index" json:"uploaded_by"`
+	UploadedName string         `gorm:"size:64" json:"uploaded_name"`
+}
+
+// BizOpportunity represents a single 维保/续保 business opportunity record
+type BizOpportunity struct {
+	ID              uint           `gorm:"primarykey" json:"id"`
+	CreatedAt       time.Time      `json:"created_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	UploadID        uint           `gorm:"index;not null" json:"upload_id"`
+	Month           string         `gorm:"size:16;index;not null" json:"month"` // e.g. 2026-08
+	Name            string         `gorm:"size:512;index" json:"name"`          // 商机名称
+	Customer        string         `gorm:"size:512;index" json:"customer"`      // 客户名称
+	Code            string         `gorm:"size:128;index" json:"code"`          // 商机编号
+	Amount          float64        `json:"amount"`                              // 商机总金额
+	ServiceAmount   float64        `json:"service_amount"`                      // 培训及服务金额
+	ExpectedDate    string         `gorm:"size:32" json:"expected_date"`        // 预计成交日期
+	Status          string         `gorm:"size:64;index" json:"status"`         // 进行中/赢单/无效
+	Owner           string         `gorm:"size:128;index" json:"owner"`         // 负责人
+	PreSales        string         `gorm:"size:128" json:"pre_sales"`           // 售前人员
+	Region          string         `gorm:"size:128;index" json:"region"`        // 核心管控单元
+	Province        string         `gorm:"size:64;index" json:"province"`       // 省份
+	City            string         `gorm:"size:64" json:"city"`                 // 城市
+	WinRate         string         `gorm:"size:16" json:"win_rate"`             // 商机赢率
+	NodeCount       float64        `json:"node_count"`                          // 总节点数
+	BuyType         string         `gorm:"size:32;index" json:"buy_type"`       // 新拓/复购
+	Creator         string         `gorm:"size:128" json:"creator"`             // 创建人
+	OrigCreateTime  string         `gorm:"size:32" json:"orig_create_time"`     // 原始创建时间
+	BizType         string         `gorm:"size:16;index" json:"biz_type"`       // 维保/续保
+}
