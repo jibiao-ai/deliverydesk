@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key, Clock, FolderKanban, Monitor, BookOpen, FileSpreadsheet, GitBranch,
+  LayoutDashboard, MessageSquare, Bot, Zap, Users, LogOut, Menu, Cpu, Globe, Shield, FileText, Server, Settings, Key, Clock, FolderKanban, Monitor, BookOpen, FileSpreadsheet, GitBranch, TrendingUp,
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import { useNavigate } from 'react-router-dom';
@@ -37,6 +37,7 @@ const adminMenuGroups = [
       { id: 'worktime', label: '\u5de5\u65f6\u7ba1\u7406', icon: Clock },
       { id: 'projects', label: '\u9879\u76ee\u7ba1\u7406', icon: FolderKanban },
       { id: 'ops-env', label: '\u8fd0\u7ef4\u7ba1\u7406', icon: Monitor },
+      { id: 'biz-opportunity', label: '\u5546\u673a\u7ba1\u7406', icon: TrendingUp },
     ],
   },
   {

@@ -243,4 +243,26 @@ export const addWorktimeUser = (name) => api.post('/worktime/users', { name });
 export const removeWorktimeUser = (id) => api.delete(`/worktime/users/${id}`);
 export const batchAddWorktimeUsers = (names) => api.post('/worktime/users/batch', { names });
 
+// Business Opportunity Management (商机管理)
+export const uploadBizExcel = (file, month) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (month) formData.append('month', month);
+  return api.post('/biz/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  });
+};
+export const getBizList = (params) => api.get('/biz/list', { params });
+export const getBizStats = (params) => api.get('/biz/stats', { params });
+export const getBizHistory = () => api.get('/biz/history');
+export const deleteBizUpload = (id) => api.delete(`/biz/history/${id}`);
+export const getBizMonths = () => api.get('/biz/months');
+export const getBizFilters = (params) => api.get('/biz/filters', { params });
+export const exportBizExcel = (params) => {
+  const token = localStorage.getItem('token');
+  const query = new URLSearchParams(params).toString();
+  return `${API_BASE}/biz/export?${query}&token=${token}`;
+};
+
 export default api;

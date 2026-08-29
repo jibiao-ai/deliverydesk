@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Sidebar from './Sidebar';
 import DashboardPage from '../pages/DashboardPage';
 import WebsitesPage from '../pages/WebsitesPage';
@@ -17,8 +17,10 @@ import SettingsPage from '../pages/SettingsPage';
 import KnowledgeBasePage from '../pages/KnowledgeBasePage';
 import WBSServicePage from '../pages/WBSServicePage';
 import WorkflowPage from '../pages/WorkflowPage';
+import BizOpportunityPage from '../pages/BizOpportunityPage';
 import useStore from '../store/useStore';
-import { Bell, Sun, Moon } from 'lucide-react';
+import { Bell, Sun, Moon, X, Sparkles } from 'lucide-react';
+import { MOTIVATIONAL_QUOTES } from '../data/motivationalQuotes';
 
 const pageComponents = {
   dashboard: DashboardPage,
@@ -38,6 +40,7 @@ const pageComponents = {
   kb: KnowledgeBasePage,
   wbs: WBSServicePage,
   workflows: WorkflowPage,
+  'biz-opportunity': BizOpportunityPage,
 };
 
 const PAGE_META = {
@@ -58,6 +61,7 @@ const PAGE_META = {
   kb:               { title: '\u77e5\u8bc6\u5e93\u751f\u6210', subtitle: 'Jira \u5de5\u5355 \u2192 Confluence \u77e5\u8bc6\u5e93\uff08AI \u6da6\u8272\uff09' },
   wbs:              { title: 'WBS\u670d\u52a1', subtitle: '\u9879\u76ee\u5de5\u4f5c\u4efb\u52a1\u5206\u89e3\u4e0e\u4ea7\u54c1\u670d\u52a1\u62a5\u4ef7\u6c47\u603b' },
   workflows:        { title: '\u5de5\u4f5c\u6d41',     subtitle: '\u53ef\u89c6\u5316\u7f16\u6392\u667a\u80fd\u4f53\u4e0e\u6280\u80fd\u7684\u81ea\u52a8\u5316\u6d41\u7a0b' },
+  'biz-opportunity': { title: '\u5546\u673a\u7ba1\u7406', subtitle: '\u7ef4\u4fdd/\u7eed\u4fdd\u5546\u673a\u6570\u636e\u5206\u6790\u4e0eTOP10\u53ef\u89c6\u5316\u770b\u677f' },
 };
 
 const THEMES = [
@@ -66,7 +70,7 @@ const THEMES = [
 ];
 
 // Pages that require admin role
-const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects', 'ops-env', 'workflows']);
+const ADMIN_PAGES = new Set(['agents', 'ai-models', 'skills', 'ldap', 'users', 'operation-logs', 'settings', 'worktime', 'projects', 'ops-env', 'workflows', 'biz-opportunity']);
 
 export default function MainLayout() {
   const activePage = useStore((s) => s.activePage);
@@ -75,6 +79,60 @@ export default function MainLayout() {
   const setTheme = useStore((s) => s.setTheme);
   const user = useStore((s) => s.user);
   const isDark = theme === 'dark';
+
+  // Notification state
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notifRef = useRef(null);
+
+  // Generate welcome notification on login
+  useEffect(() => {
+    if (user?.username) {
+      const today = new Date().toLocaleDateString('zh-CN');
+      const storageKey = `welcome_shown_${user.username}_${today}`;
+      if (!sessionStorage.getItem(storageKey)) {
+        const quote = MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)];
+        const hour = new Date().getHours();
+        const greeting = hour < 6 ? '夜深了' : hour < 9 ? '早上好' : hour < 12 ? '上午好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+        const welcomeNotif = {
+          id: Date.now(),
+          type: 'welcome',
+          title: `${greeting}，${user.username}！`,
+          message: quote,
+          time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+          read: false,
+        };
+        setNotifications((prev) => [welcomeNotif, ...prev]);
+        setUnreadCount((c) => c + 1);
+        sessionStorage.setItem(storageKey, '1');
+      }
+    }
+  }, [user?.username]);
+
+  // Close notification panel on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleBellClick = () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications) {
+      // Mark all as read when opening
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setUnreadCount(0);
+    }
+  };
+
+  const dismissNotification = (id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
 
   // Redirect non-admin users away from admin pages
   const effectivePage = (user?.role !== 'admin' && ADMIN_PAGES.has(activePage))
@@ -134,12 +192,75 @@ export default function MainLayout() {
                 );
               })}
             </div>
-            <button className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative ${
-              isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-            }`}>
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={handleBellClick}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative ${
+                  isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                )}
+              </button>
+
+              {/* Notification dropdown */}
+              {showNotifications && (
+                <div className={`absolute right-0 top-10 w-80 rounded-xl shadow-2xl border overflow-hidden z-50 ${
+                  isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
+                }`}>
+                  <div className={`px-4 py-3 border-b flex items-center justify-between ${
+                    isDark ? 'border-slate-700' : 'border-gray-100'
+                  }`}>
+                    <h4 className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-gray-800'}`}>通知消息</h4>
+                    <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-400'}`}>{notifications.length} 条</span>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="py-10 text-center">
+                        <Bell className={`w-8 h-8 mx-auto mb-2 ${isDark ? 'text-slate-600' : 'text-gray-200'}`} />
+                        <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-gray-400'}`}>暂无通知</p>
+                      </div>
+                    ) : (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`px-4 py-3 border-b last:border-0 ${
+                            isDark
+                              ? `border-slate-700 ${n.read ? '' : 'bg-slate-750'}`
+                              : `border-gray-50 ${n.read ? '' : 'bg-primary-50/30'}`
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                              n.type === 'welcome'
+                                ? 'bg-gradient-to-br from-amber-100 to-orange-100'
+                                : isDark ? 'bg-slate-700' : 'bg-gray-100'
+                            }`}>
+                              <Sparkles className="w-4 h-4 text-amber-500" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <p className={`text-sm font-medium ${isDark ? 'text-slate-200' : 'text-gray-800'}`}>{n.title}</p>
+                                <button
+                                  onClick={() => dismissNotification(n.id)}
+                                  className={`p-0.5 rounded hover:bg-gray-200 ${isDark ? 'text-slate-500 hover:bg-slate-600' : 'text-gray-300'}`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <p className={`text-xs mt-1 leading-relaxed ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{n.message}</p>
+                              <p className={`text-xs mt-1.5 ${isDark ? 'text-slate-500' : 'text-gray-300'}`}>{n.time}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-primary-600">
                 {(user?.username || 'U').slice(0, 1).toUpperCase()}

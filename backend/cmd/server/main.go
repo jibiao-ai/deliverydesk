@@ -70,6 +70,7 @@ func main() {
 	kbH := handler.NewKBHandler()
 	wbsH := &handler.WBSHandler{}
 	workflowH := handler.NewWorkflowHandler()
+	bizH := handler.NewBizHandler()
 
 	// Start periodic Jira sync (every 2 hours)
 	jiraSvc := service.GetJiraService()
@@ -249,6 +250,16 @@ func main() {
 				admin.POST("/workflows", workflowH.CreateWorkflow)
 				admin.PUT("/workflows/:id", workflowH.UpdateWorkflow)
 				admin.DELETE("/workflows/:id", workflowH.DeleteWorkflow)
+
+				// Business Opportunity Management (商机管理)
+				admin.POST("/biz/upload", bizH.UploadBizExcel)
+				admin.GET("/biz/list", bizH.ListBizOpportunities)
+				admin.GET("/biz/stats", bizH.GetBizStats)
+				admin.GET("/biz/history", bizH.ListUploadHistory)
+				admin.DELETE("/biz/history/:id", bizH.DeleteUpload)
+				admin.GET("/biz/months", bizH.GetAvailableMonths)
+				admin.GET("/biz/filters", bizH.GetFilterOptions)
+				admin.GET("/biz/export", bizH.ExportBizExcel)
 			}
 		}
 	}

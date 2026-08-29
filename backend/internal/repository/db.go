@@ -133,6 +133,8 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"WBSEnvironment":  &model.WBSEnvironment{},
 		"WBSOrderItem":    &model.WBSOrderItem{},
 		"Workflow":         &model.Workflow{},
+		"BizUploadHistory": &model.BizUploadHistory{},
+		"BizOpportunity":   &model.BizOpportunity{},
 	}
 	migrationOrder := []string{
 		"User", "LDAPConfig", "Agent", "Skill", "SkillDocument", "AgentSkill",
@@ -142,6 +144,7 @@ func InitDB(cfg config.DatabaseConfig) error {
 		"ProjectInfo", "OpsEnvironment", "KBHistory",
 		"WBSOrder", "WBSEnvironment", "WBSOrderItem",
 		"Workflow",
+		"BizUploadHistory", "BizOpportunity",
 	}
 	for _, name := range migrationOrder {
 		m := migrationModels[name]
